@@ -1,26 +1,73 @@
-@import "tailwindcss";
+@import 'katex/dist/katex.min.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Custom components */
+@layer components {
+  .login-container {
+  height: 100vh; /* Full viewport height */
+  width: 100vw; /* Full viewport width */
+  background-color: #1f2937;
+  background-image: url('/images/background.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed; /* Fixed background */
+  position: relative;
+  overflow: hidden; /* Prevent container scroll */
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  .login-bg {
+    @apply absolute inset-0 bg-cover bg-center bg-no-repeat;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  .dark-overlay {
+    @apply absolute inset-0 bg-black bg-opacity-70 w-full min-h-screen;
+  }
+
+  .login-card {
+    @apply bg-white rounded-lg shadow-xl overflow-hidden;
+  }
+
+  .form-input-group {
+    @apply relative;
+  }
+
+  .form-input-with-icon {
+    @apply w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Add this to your existing toggle styles in global.css */
+.toggle-bg {
+  @apply bg-gray-200 rounded-full shadow-inner;
+  transition: background-color 0.2s ease-in-out;
+}
+
+.toggle-dot {
+  @apply absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow;
+  transition: transform 0.2s ease-in-out;
+}
+
+/* Make sure the blue background is applied when the class is added */
+.toggle-bg.bg-blue-600 {
+  background-color: #2563eb !important;
+}
+
+@media print {
+  #app-sidebar,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+  }
 }
