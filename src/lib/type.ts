@@ -163,7 +163,7 @@ export interface NavItem {
 export interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<any>;
   logout: () => void;
   loading: boolean;
   authReady: boolean;

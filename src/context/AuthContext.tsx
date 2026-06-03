@@ -123,7 +123,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   // ── Login ─────────────────────────────────────────────────────────────────
-  const login = async (username: string, password: string): Promise<void> => {
+  const login = async (username: string, password: string): Promise<any> => {
     setLoading(true);
     try {
       const response = await authAPI.login({ username, password });
