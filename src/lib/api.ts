@@ -33,13 +33,15 @@ import type {
 
 } from './types';
 
-// API base URL - change this to your Django server
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { getApiUrl } from './getApiUrl';
+
+// API base URL - dynamically resolved from current domain
+const API_BASE_URL = typeof window !== 'undefined' ? getApiUrl() : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000');
 
 // Create axios instance with default configuration
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000, // 10 seconds timeout
+  timeout: 12000, // 10 seconds timeout
   headers: {
     'Content-Type': 'application/json',
   },
@@ -76,7 +78,7 @@ api.interceptors.response.use(
         // Try to refresh the token
         const refreshToken = localStorage.getItem('refresh_token');
         if (refreshToken) {
-          const response = await axios.post(`${API_BASE_URL}/api/token/refresh/`, {
+          const response = await axios.post(`${getApiUrl()}/api/token/refresh/`, {
             refresh: refreshToken,
           });
 
@@ -139,7 +141,7 @@ export const authAPI = {
     }
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/token/refresh/`, {
+      const response = await axios.post(`${getApiUrl()}/api/token/refresh/`, {
         refresh: refreshToken,
       });
 
@@ -2296,11 +2298,11 @@ export const feeAPI = {
 
   // Invoice PDF
   getInvoicePDF: async (invoiceId: number): Promise<string> => {
-    return `${API_BASE_URL}/api/fee/invoices/${invoiceId}/pdf/`;
+    return `${getApiUrl()}/api/fee/invoices/${invoiceId}/pdf/`;
   },
 
   getReceiptPDF: async (paymentId: number): Promise<string> => {
-    return `${API_BASE_URL}/api/fee/payments/${paymentId}/receipt-pdf/`;
+    return `${getApiUrl()}/api/fee/payments/${paymentId}/receipt-pdf/`;
   },
 
   // Gateway configurations
