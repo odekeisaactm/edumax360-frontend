@@ -192,7 +192,8 @@ export interface ResultCommentTemplate {
   configuration_group: number;
   comment_type: 'form_teacher' | 'head_teacher';
   comment_text: string;
-  min_score: string;                      // DecimalField → string
+  created_at: string;
+  min_score: string;
   max_score: string;
 }
 

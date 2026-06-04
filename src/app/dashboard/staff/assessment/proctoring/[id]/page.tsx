@@ -614,7 +614,7 @@ export default function ProctoringRoom() {
   }, []);
 
   // Polling every 10s — recursive setTimeout to avoid drift
-  const pollRef = useRef<NodeJS.Timeout>();
+  const pollRef = useRef<NodeJS.Timeout | undefined>(undefined);
   useEffect(() => {
     const poll = async () => {
       if (!document.hidden) await fetchData(true);

@@ -58,7 +58,7 @@ export default function DocumentsTab({ student, schoolInfo, settings, refreshStu
   const handleGenerateBarcode = async () => {
     if (!confirm('Generate barcode for this student?')) return;
     try {
-      await studentsAPI.generateBarcode(student.id);
+      await (studentsAPI as any).generateBarcode(student.id);
       refreshStudent();
       alert('Barcode generated successfully');
     } catch (e) {

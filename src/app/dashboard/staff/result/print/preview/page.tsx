@@ -1,8 +1,9 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
+import nextDynamic from 'next/dynamic';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import {
@@ -90,7 +91,7 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 
 // Template component mapping
 const templateComponents: Record<string, any> = {
-  'score_1_default': dynamic(() => import('@/components/result/templates/score/1_default/preview'), {
+  'score_1_default': nextDynamic(() => import('@/components/result/templates/score/1_default/preview'), {
     loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
     ssr: false,
   }),

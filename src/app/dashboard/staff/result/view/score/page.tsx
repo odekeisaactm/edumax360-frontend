@@ -1,4 +1,5 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -275,15 +276,15 @@ export default function ViewScoreResultPage() {
 
       // Calculate total_ca for each student
       const rowsWithTotalCa = response.rows.map((student: StudentScore) => {
-        const caFields = response.fields.filter((f: Field) => f.field_type === 'ca');
-        const totalCa = caFields.reduce((sum, field) => {
+        const caFields = (response.fields as any[]).filter((f: any) => f.field_type === 'ca');
+        const totalCa = caFields.reduce((sum: number, field: any) => {
           const score = student.scores[field.name];
           return sum + (typeof score === 'number' ? score : 0);
         }, 0);
 
         return {
           ...student,
-          total_ca: totalCa
+          total_ca: totalCa as any
         };
       });
 
@@ -291,8 +292,9 @@ export default function ViewScoreResultPage() {
         ...response,
         class_config_id: parseInt(classId),
         subject_id: parseInt(subjectId),
+        period_id: (response as any).period_id || 0,
         rows: rowsWithTotalCa,
-      });
+      } as any);
     } catch (err) {
       setPageError(extractError(err));
     } finally {

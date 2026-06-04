@@ -26,7 +26,7 @@ interface ClassModel {
   id: number;
   name: string;
   short_name?: string | null;
-  school_section?: number | null;
+  school_section?: number | SchoolSection | null;
   is_active: boolean;
   order: number;
 }
@@ -479,7 +479,10 @@ export default function ResultGroupsPage() {
       ]);
       setGroups(Array.isArray(groupsData) ? groupsData : []);
       setAllClasses(Array.isArray(classesData) ? classesData : []);
-      setAllConfigs(Array.isArray(configsData) ? configsData : []);
+      setAllConfigs(Array.isArray(configsData) ? configsData.map((c: any) => ({
+        ...c,
+        student_class: typeof c.student_class === 'object' ? c.student_class.id : c.student_class
+      })) : []);
       setSchoolSections(Array.isArray(sectionsData) ? sectionsData : []);
     } catch (err) {
       setPageError(extractError(err));
@@ -544,7 +547,7 @@ export default function ResultGroupsPage() {
     const assignedIds = group.class_configurations.map((c: any) => typeof c === 'object' ? c.id : c);
     const assignedConfigs = allConfigs.filter(c => assignedIds.includes(c.id));
     const byClass: Record<number, ClassConfig[]> = {};
-    assignedConfigs.forEach(cfg => {
+    (assignedConfigs as any[]).forEach(cfg => {
       if (!byClass[cfg.student_class]) byClass[cfg.student_class] = [];
       byClass[cfg.student_class].push(cfg);
     });

@@ -356,11 +356,11 @@ export default function CommentTemplatesPage() {
       };
 
       if (editingTemplate) {
-        const updated = await resultCommentTemplatesAPI.update(editingTemplate.id, payload);
+        const updated = await resultCommentTemplatesAPI.update(editingTemplate.id, payload as any);
         setTemplates(prev => prev.map(t => t.id === editingTemplate.id ? updated : t));
         showToast('success', 'Template updated successfully');
       } else {
-        const created = await resultCommentTemplatesAPI.create(payload);
+        const created = await resultCommentTemplatesAPI.create(payload as any);
         setTemplates(prev => [created, ...prev]);
         showToast('success', 'Template created successfully');
       }

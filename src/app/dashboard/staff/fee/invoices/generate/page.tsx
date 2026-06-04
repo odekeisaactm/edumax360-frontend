@@ -13,7 +13,7 @@ import {
 import {
   ArrowLeft, Check, X, AlertCircle, Loader2,
   FileText, Calendar, Info, Layers, Play,
-  Zap, Clock, BarChart3, TrendingUp, Box,
+  Zap, Clock, BarChart3, TrendingUp, Box, Plus,
   RefreshCw, History, CheckCircle2, AlertTriangle,
   Settings, ChevronDown, Users
 } from 'lucide-react';
@@ -92,7 +92,7 @@ export default function InvoiceGenerationPage() {
       setSessions(sData);
       setAllPeriods(pData);
       setClasses(cData);
-      setJobs(Array.isArray(jData) ? jData : (jData.results || []));
+      setJobs(Array.isArray(jData) ? jData : ((jData as any).results || []));
 
       // Auto-select current session
       const current = sData.find(s => s.is_active);
@@ -399,10 +399,10 @@ export default function InvoiceGenerationPage() {
                            <td className="px-8 py-5">
                               <div className="flex items-center gap-2">
                                  <span className="text-[10px] font-black text-slate-900 uppercase bg-slate-100 px-2 py-0.5 rounded-md">
-                                    {typeof job.session === 'object' ? `${job.session.start_year}/${job.session.end_year}` : `Session ${job.session}`}
+                                    {typeof job.session === 'object' ? `${(job.session as any).start_year}/${(job.session as any).end_year}` : `Session ${job.session}`}
                                  </span>
                                  <span className="text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 px-2 py-0.5 rounded-md">
-                                    {typeof job.period === 'object' ? job.period.name : `Period ${job.period}`}
+                                    {typeof job.period === 'object' ? (job.period as any).name : `Period ${job.period}`}
                                  </span>
                               </div>
                            </td>

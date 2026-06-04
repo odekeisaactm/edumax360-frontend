@@ -14,7 +14,7 @@ import {
 
 // ─── Default form values ───────────────────────────────────────────────────────
 const DEFAULT_FORM: Partial<LearningResourcesAISettings> = {
-    ai_service: null,
+    ai_service: undefined,
   enable_auto_note_generation: true,
   enable_auto_summary: true,
   enable_auto_flashcards: true,

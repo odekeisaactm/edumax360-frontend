@@ -101,7 +101,7 @@ import type {
   // Generic
   SuccessResponse,
   PaginatedResponse,
-} from '@/types/assessment.types';
+} from '@/lib/types';
 
 // ============================================================================
 // HELPERS
@@ -664,6 +664,7 @@ export const examsAPI = {
   getStudentPins: async (id: number, filters?: {
     class_id?: number;
     class_section_id?: number;
+     schedule_id?: number;
   }): Promise<StudentPinsResponse> => {
     const res = await api.get(`/api/assessment/exams/${id}/student_pins/`, { params: filters });
     return res.data;

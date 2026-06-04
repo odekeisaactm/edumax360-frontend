@@ -1,4 +1,5 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -1424,7 +1425,7 @@ export default function StudentFinancialDashboardPage() {
       {showAddItemModal && dashboard && (
         <AddItemModal
           invoiceId={showAddItemModal}
-          studentClassId={dashboard.student_class_id}
+          studentClassId={(dashboard as any).student_class_id}
           onClose={() => setShowAddItemModal(null)}
           onSuccess={load}
         />

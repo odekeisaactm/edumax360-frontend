@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { examsAPI, academicCalendarAPI } from '@/lib/api';
-import { Exam, SchedulesProgress } from '@/types/assessment.types';
+import { Exam, SchedulesProgress } from '@/lib/types';
 import {
   ClipboardList, Plus, Search, Eye, Trash2, X, Check,
   AlertCircle, BookOpen, Calendar, Users, CheckCircle2,
@@ -127,8 +127,8 @@ function ConfirmModal({
 
 interface SessionPeriod {
   id: number;
-  session: number | { id: number; start_year: number; end_year: number; name: string };
-  period: number | { id: number; name: string };
+  session: number | { id: number; start_year: number; end_year: number; };
+  period: number | { id: number; name: string; };
   is_current: boolean;
 }
 

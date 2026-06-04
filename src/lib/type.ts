@@ -1,6 +1,7 @@
 export * from './assessment.types';
 export * from './result.types';
 export * from './learning.types';
+export * from './communication.types';
 
 // User-related types
 export interface User {
@@ -67,6 +68,7 @@ export interface SchoolAIConfig {
   name: string;
   provider: 'openai' | 'anthropic' | 'google' | 'deepseek' | 'custom' | 'local' | 'groq';
   model_name: string;
+  api_base_url: string;
   monthly_token_limit: number;
   tokens_used_this_month: number;
   is_active: boolean;
@@ -169,6 +171,13 @@ export interface AuthContextType {
   authReady: boolean;
   permissions: string[];
   activeModules: Module[];
+  hasPermission: (permission: string) => boolean;
+  hasAnyPermission: (permissions: string[]) => boolean;
+  isUserType: (type: 'staff' | 'student' | 'parent') => boolean;
+  isModuleActive: (moduleCode: string) => boolean;
+  getUserFullName: () => string;
+  getUserDisplayName: () => string;
+  refreshPermissions: () => Promise<void>;
 }
 
 
@@ -812,6 +821,7 @@ export interface StaffListFilters {
   status?: string;
   staff_type?: string;
   department?: number;
+  group?: number;
   search?: string;
   ordering?: string;
   page?: number;
@@ -1067,6 +1077,8 @@ export interface Student {
   current_class_section_name?: string;
   subject_group?: number;
   utility_ids?: number[];
+  utilities?: number[];
+  is_special_need?: boolean;
   image?: string;
   image_url?: string;
   barcode?: string;
@@ -1456,6 +1468,7 @@ export interface FeeGroup {
   id: number;
   name: string;
   description?: string;
+  structure_count: number;
   created_at: string;
 }
 
@@ -1464,7 +1477,10 @@ export interface Fee {
   name: string;
   code: string;
   occurrence: FeeOccurrence;
-  payment_period?: number; // AcademicPeriodModel PK
+  payment_period?: number;
+  payment_period_name?: string;
+  required_utility?: number | null;
+  required_utility_name?: string;
   parent_bound: boolean;
   is_protected: boolean;
   description?: string;
@@ -1543,6 +1559,7 @@ export interface SchoolBankDetail {
   currency: string;
   purpose: GatewayPurpose;
   current_balance: string;
+  opening_balance: string;
   is_active: boolean;
 }
 

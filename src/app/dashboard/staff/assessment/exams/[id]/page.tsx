@@ -1,10 +1,11 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { examsAPI, examSchedulesAPI } from '@/lib/api';
-import { Exam, ExamSchedule } from '@/types/assessment.types';
+import { Exam, ExamSchedule } from '@/lib/types';
 import {
   ClipboardList, ArrowLeft, AlertCircle, X, Check,
   Calendar, Clock, Users, BookOpen, CheckCircle2,

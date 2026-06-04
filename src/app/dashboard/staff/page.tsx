@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { activityLogsAPI, staffDashboardAPI, academicAPI, academicCalendarAPI } from '@/lib/api';
-import { ActivityLog } from '@/types/communication.types';
+import { ActivityLog } from '@/lib/types';
 import { ClassConfiguration, ClassModel, AcademicSettings, Timetable, Day, AcademicSessionPeriod } from '@/lib/types';
 import { MASTER_QUICK_LINKS } from '@/lib/quickLinks';
 import {
@@ -501,7 +501,7 @@ export default function StaffDashboard() {
 
         // Fetch current academic period
         try {
-          const periods = await academicCalendarAPI.listSessionPeriods({ is_current: true });
+          const periods = await academicCalendarAPI.listSessionPeriods({ is_current: true } as any);
           const periodsArr = Array.isArray(periods) ? periods : (periods as any).results || [];
           if (periodsArr.length > 0) setCurrentPeriod(periodsArr[0]);
         } catch { /* non-critical */ }

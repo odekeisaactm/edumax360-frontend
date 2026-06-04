@@ -1,24 +1,36 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import {
-  // --- Auth & User Types (from your original import) ---
-  LoginRequest,
-  LoginResponse,
 
-  // --- Core API Response Types ---
-  ApiResponse,
-  PaginatedResponse,
+import type {
+  LoginRequest, LoginResponse, ApiResponse, PaginatedResponse,
+  ClassModel, ClassSection, SchoolSection, SchoolAIConfig,
+  SchoolInfo, SchoolSettings, Day, Session, AcademicPeriodType,
+  AcademicSessionPeriod, HRSettings, Department, Position, Staff,
+  CustomStaffField, StaffDocument, StaffLeave, BulkStaffUpload,
+  StaffListFilters, LeaveListFilters, StaffFormValues, DepartmentFormValues,
+  PositionFormValues, CustomFieldFormValues, LeaveFormValues, GroupFormValues,
+  PermissionAssignmentFormValues, CustomFieldForForm, BulkDownloadRequest,
+  AcademicSettings, ClassConfiguration, Subject, SubjectGroup,
+  ClassSubjectConfiguration, PromotionMapping, BulkPromotionMappingFormValues,
+  StudentClassHistory, Timetable, LeadershipRole, TimetableFormValues,
+  LeadershipRoleFormValues, Group, Permission, StudentSettings, Utility,
+  CustomField, Parent, Student, OtherGuardian, StudentDocument, Fingerprint,
+  StudentDuplicateCheckResult, ParentDuplicateCheckResult, ParentFormValues,
+  StudentFormValues, ParentListFilters, StudentListFilters, BulkStudentUpload,
+  ResetPasswordPayload, ResetPasswordResponse, ToggleStatusPayload,
+  ToggleStatusResponse, StudentListItem, ParentListItem, StudentWallet,
+  WalletTransaction, Invoice, FamilyInvoice, FeePayment, FamilyFeePayment,
+  OtherPayment, FeeGroup, Fee, FeeStructure, Discount, DiscountApplication,
+  StudentDiscount, FeeWaiver, SchoolBankDetail, PaymentGatewayConfig,
+  StudentFinancialDashboard, InvoiceGenerationJob, FeeSetting,
+  InvoiceItem, FamilyInvoiceItem, ItemBreakdownEntry, FamilyItemBreakdownEntry,
+  PeriodFeeAmount, WalletField, PaymentMode, PaymentStatus, InvoiceStatus,
+  FeeOccurrence, DiscountType, WaiverStatus, GatewayPurpose,
+  ClassFormValues, SubjectFormValues, SubjectGroupFormValues,
+  DuplicateCheckResult,
+  AcademicPeriod,
+  Bank,
 
-  // --- Class & Section Types (from your original import) ---
-  ClassModel,
-  ClassSection,
-  SchoolSection,
-  SchoolAIConfig,
 
-  // --- Academic Calendar Types ---
-  Day,
-  Session,
-  AcademicPeriodType,
-  AcademicSessionPeriod,
 } from './types';
 
 // API base URL - change this to your Django server
@@ -99,7 +111,7 @@ export const authAPI = {
         localStorage.setItem('access_token', response.data.data.token);
         localStorage.setItem('refresh_token', response.data.data.refresh);
 
-        return response.data.data;
+        return response.data.data!;
       } else {
         throw new Error(response.data.error || 'Login failed');
       }
@@ -157,7 +169,7 @@ export const schoolInfoAPI = {
   get: async (): Promise<SchoolInfo | null> => {
     try {
       const response = await api.get('/api/school/info/');
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       // If 404, school info doesn't exist yet - return null (valid state)
       if (error.response?.status === 404) {
@@ -173,7 +185,7 @@ export const schoolInfoAPI = {
    */
   create: async (data: Partial<SchoolInfo>): Promise<SchoolInfo> => {
     const response = await api.post('/api/school/info/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -181,7 +193,7 @@ export const schoolInfoAPI = {
    */
   update: async (data: Partial<SchoolInfo>): Promise<SchoolInfo> => {
     const response = await api.put('/api/school/info/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -271,7 +283,7 @@ export const schoolSettingsAPI = {
   get: async (): Promise<SchoolSettings | null> => {
     try {
       const response = await api.get('/api/school/settings/');
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       // If 404, school settings don't exist yet - return null (valid state)
       if (error.response?.status === 404) {
@@ -287,7 +299,7 @@ export const schoolSettingsAPI = {
    */
   create: async (data: Partial<SchoolSettings>): Promise<SchoolSettings> => {
     const response = await api.post('/api/school/settings/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -295,7 +307,7 @@ export const schoolSettingsAPI = {
    */
   update: async (data: Partial<SchoolSettings>): Promise<SchoolSettings> => {
     const response = await api.put('/api/school/settings/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 };
 
@@ -314,7 +326,7 @@ export const classesAPI = {
   create: async (data: Partial<ClassModel>): Promise<ClassModel> => {
     try {
       const response = await api.post<ApiResponse<ClassModel>>('/api/classes/', data);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to create class');
     }
@@ -323,7 +335,7 @@ export const classesAPI = {
   update: async (id: number, data: Partial<ClassModel>): Promise<ClassModel> => {
     try {
       const response = await api.put<ApiResponse<ClassModel>>(`/api/classes/${id}/`, data);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to update class');
     }
@@ -352,7 +364,7 @@ export const classSectionsAPI = {
   create: async (data: Partial<ClassSection>): Promise<ClassSection> => {
     try {
       const response = await api.post<ApiResponse<ClassSection>>('/api/class-sections/', data);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to create class section');
     }
@@ -361,7 +373,7 @@ export const classSectionsAPI = {
   update: async (id: number, data: Partial<ClassSection>): Promise<ClassSection> => {
     try {
       const response = await api.put<ApiResponse<ClassSection>>(`/api/class-sections/${id}/`, data);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to update class section');
     }
@@ -399,7 +411,7 @@ export const staffDashboardAPI = {
       const response = await api.get('/api/human-resource/dashboard/summary/');
 
       // Our Django view returns Response({'success': True, 'data': summary})
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || 'Failed to fetch dashboard summary');
     }
@@ -416,7 +428,7 @@ export const hrSettingsAPI = {
   get: async (): Promise<HRSettings | null> => {
     try {
       const response = await api.get<ApiResponse<HRSettings>>('/api/human-resource/settings/');
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       if (error.response?.status === 404) {
         return null;
@@ -430,7 +442,7 @@ export const hrSettingsAPI = {
    */
   create: async (data: Partial<HRSettings>): Promise<HRSettings> => {
     const response = await api.post<ApiResponse<HRSettings>>('/api/human-resource/settings/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -438,7 +450,7 @@ export const hrSettingsAPI = {
    */
   update: async (data: Partial<HRSettings>): Promise<HRSettings> => {
     const response = await api.put<ApiResponse<HRSettings>>('/api/human-resource/settings/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 };
 
@@ -458,7 +470,7 @@ export const departmentsAPI = {
    */
   create: async (data: Partial<Department>): Promise<Department> => {
     const response = await api.post<ApiResponse<Department>>('/api/human-resource/departments/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -466,7 +478,7 @@ export const departmentsAPI = {
    */
   get: async (id: number): Promise<Department> => {
     const response = await api.get<ApiResponse<Department>>(`/api/human-resource/departments/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -474,7 +486,7 @@ export const departmentsAPI = {
    */
   update: async (id: number, data: Partial<Department>): Promise<Department> => {
     const response = await api.put<ApiResponse<Department>>(`/api/human-resource/departments/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -501,7 +513,7 @@ export const positionsAPI = {
    */
   create: async (data: Partial<Position>): Promise<Position> => {
     const response = await api.post<ApiResponse<Position>>('/api/human-resource/positions/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -509,7 +521,7 @@ export const positionsAPI = {
    */
   get: async (id: number): Promise<Position> => {
     const response = await api.get<ApiResponse<Position>>(`/api/human-resource/positions/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -517,7 +529,7 @@ export const positionsAPI = {
    */
   update: async (id: number, data: Partial<Position>): Promise<Position> => {
     const response = await api.put<ApiResponse<Position>>(`/api/human-resource/positions/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -537,7 +549,7 @@ export const staffAPI = {
    * List staff with filtering and pagination
    */
   list: async (filters?: StaffListFilters): Promise<Staff[]> => {
-    const response = await api.get<ApiResponse<any>>('/api/human-resource/staff/', { params: filters });
+    const response = await api.get<any>('/api/human-resource/staff/', { params: filters });
 
     // Handle the actual response structure
     if (response.data?.results?.data) {
@@ -559,7 +571,7 @@ create: async (data: StaffFormValues | globalThis.FormData): Promise<Staff> => {
     data,
     isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined
   );
-  return response.data.data;
+  return response.data.data!;
 },
 
 /**
@@ -567,7 +579,7 @@ create: async (data: StaffFormValues | globalThis.FormData): Promise<Staff> => {
  */
 get: async (id: number): Promise<Staff> => {
   const response = await api.get<ApiResponse<Staff>>(`/api/human-resource/staff/${id}/`);
-  return response.data.data;
+  return response.data.data!;
 },
 
 /**
@@ -580,7 +592,7 @@ update: async (id: number, data: Partial<StaffFormValues> | globalThis.FormData)
     data,
     isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined
   );
-  return response.data.data;
+  return response.data.data!;
 },
 
   /**
@@ -601,7 +613,7 @@ update: async (id: number, data: Partial<StaffFormValues> | globalThis.FormData)
     mobile?: string;
   }): Promise<DuplicateCheckResult> => {
     const response = await api.post<ApiResponse<DuplicateCheckResult>>('/api/human-resource/utils/check-duplicate/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 };
 
@@ -622,7 +634,7 @@ export const customFieldsAPI = {
    */
   create: async (data: CustomFieldFormValues): Promise<CustomStaffField> => {
     const response = await api.post<ApiResponse<CustomStaffField>>('/api/human-resource/custom-fields/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -630,7 +642,7 @@ export const customFieldsAPI = {
    */
   get: async (id: number): Promise<CustomStaffField> => {
     const response = await api.get<ApiResponse<CustomStaffField>>(`/api/human-resource/custom-fields/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -638,7 +650,7 @@ export const customFieldsAPI = {
    */
   update: async (id: number, data: Partial<CustomFieldFormValues>): Promise<CustomStaffField> => {
     const response = await api.put<ApiResponse<CustomStaffField>>(`/api/human-resource/custom-fields/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -681,7 +693,7 @@ export const documentsAPI = {
         },
       }
     );
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -689,7 +701,7 @@ export const documentsAPI = {
    */
   get: async (id: number): Promise<StaffDocument> => {
     const response = await api.get<ApiResponse<StaffDocument>>(`/api/human-resource/documents/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -702,7 +714,7 @@ export const documentsAPI = {
         data,
         isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {}
       );
-      return response.data.data;
+      return response.data.data!;
     },
 
   /**
@@ -737,12 +749,12 @@ export const leaveAPI = {
    */
   create: async (data: LeaveFormValues): Promise<StaffLeave> => {
     const response = await api.post<ApiResponse<StaffLeave>>('/api/human-resource/leaves/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
     createForStaff: async (staffId: number, data: object): Promise<StaffLeave> => {
   const response = await api.post<ApiResponse<StaffLeave>>(`/api/human-resource/staff/${staffId}/leaves/`, data);
-  return response.data.data;
+  return response.data.data!;
 },
 
   /**
@@ -750,7 +762,7 @@ export const leaveAPI = {
    */
   get: async (id: number): Promise<StaffLeave> => {
     const response = await api.get<ApiResponse<StaffLeave>>(`/api/human-resource/leaves/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -758,12 +770,12 @@ export const leaveAPI = {
    */
   update: async (id: number, data: Partial<LeaveFormValues>): Promise<StaffLeave> => {
     const response = await api.put<ApiResponse<StaffLeave>>(`/api/human-resource/leaves/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
 
     changeStatus: async (id: number, data: { status: string; actual_end_date?: string }): Promise<StaffLeave> => {
   const response = await api.post<ApiResponse<StaffLeave>>(`/api/human-resource/leaves/${id}/status/`, data);
-  return response.data.data;
+  return response.data.data!;
 },
 
   /**
@@ -778,7 +790,7 @@ export const leaveAPI = {
    */
   approve: async (id: number): Promise<StaffLeave> => {
     const response = await api.post<ApiResponse<StaffLeave>>(`/api/human-resource/leaves/${id}/approve/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -788,7 +800,7 @@ export const leaveAPI = {
     const response = await api.post<ApiResponse<StaffLeave>>(`/api/human-resource/leaves/${id}/decline/`, {
       decline_reason: declineReason,
     });
-    return response.data.data;
+    return response.data.data!;
   },
 };
 
@@ -816,7 +828,7 @@ export const academicCalendarAPI = {
   createSession: async (data: Partial<Session>): Promise<Session> => {
   try {
     const response = await api.post<ApiResponse<Session>>('/api/school/sessions/', data);
-    return response.data.data;
+    return response.data.data!;
   } catch (error: any) {
     throw error;  // ← rethrow original, don't wrap it
   }
@@ -825,7 +837,7 @@ export const academicCalendarAPI = {
 updateSession: async (id: number, data: Partial<Session>): Promise<Session> => {
   try {
     const response = await api.put<ApiResponse<Session>>(`/api/school/sessions/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   } catch (error: any) {
     throw error;  // ← rethrow original
   }
@@ -834,7 +846,7 @@ updateSession: async (id: number, data: Partial<Session>): Promise<Session> => {
   getSession: async (id: number): Promise<Session> => {
     try {
       const response = await api.get<ApiResponse<Session>>(`/api/school/sessions/${id}/`);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to fetch session');
     }
@@ -861,7 +873,7 @@ updateSession: async (id: number, data: Partial<Session>): Promise<Session> => {
   createSchoolSection: async (data: Partial<SchoolSection>): Promise<SchoolSection> => {
     try {
       const response = await api.post<ApiResponse<SchoolSection>>('/api/school/sections/', data);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to create school section');
     }
@@ -870,7 +882,7 @@ updateSession: async (id: number, data: Partial<Session>): Promise<Session> => {
   getSchoolSection: async (id: number): Promise<SchoolSection> => {
     try {
       const response = await api.get<ApiResponse<SchoolSection>>(`/api/school/sections/${id}/`);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to fetch school section');
     }
@@ -879,7 +891,7 @@ updateSession: async (id: number, data: Partial<Session>): Promise<Session> => {
   updateSchoolSection: async (id: number, data: Partial<SchoolSection>): Promise<SchoolSection> => {
     try {
       const response = await api.put<ApiResponse<SchoolSection>>(`/api/school/sections/${id}/`, data);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to update school section');
     }
@@ -906,7 +918,7 @@ updateSession: async (id: number, data: Partial<Session>): Promise<Session> => {
   createPeriodType: async (data: Partial<AcademicPeriodType>): Promise<AcademicPeriodType> => {
     try {
       const response = await api.post<ApiResponse<AcademicPeriodType>>('/api/school/period-types/', data);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to create period type');
     }
@@ -915,7 +927,7 @@ updateSession: async (id: number, data: Partial<Session>): Promise<Session> => {
   getPeriodType: async (id: number): Promise<AcademicPeriodType> => {
     try {
       const response = await api.get<ApiResponse<AcademicPeriodType>>(`/api/school/period-types/${id}/`);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to fetch period type');
     }
@@ -924,7 +936,7 @@ updateSession: async (id: number, data: Partial<Session>): Promise<Session> => {
   updatePeriodType: async (id: number, data: Partial<AcademicPeriodType>): Promise<AcademicPeriodType> => {
     try {
       const response = await api.put<ApiResponse<AcademicPeriodType>>(`/api/school/period-types/${id}/`, data);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to update period type');
     }
@@ -951,7 +963,7 @@ updateSession: async (id: number, data: Partial<Session>): Promise<Session> => {
   getPeriod: async (id: number): Promise<AcademicPeriod> => {
     try {
       const response = await api.get<ApiResponse<AcademicPeriod>>(`/api/school/periods/${id}/`);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to fetch period');
     }
@@ -974,7 +986,7 @@ updateSession: async (id: number, data: Partial<Session>): Promise<Session> => {
   createSessionPeriod: async (data: Partial<AcademicSessionPeriod>): Promise<AcademicSessionPeriod> => {
   try {
     const response = await api.post<ApiResponse<AcademicSessionPeriod>>('/api/school/session-periods/', data);
-    return response.data.data;
+    return response.data.data!;
   } catch (error: any) {
     throw error;  // ← rethrow original, don't wrap
   }
@@ -983,7 +995,7 @@ updateSession: async (id: number, data: Partial<Session>): Promise<Session> => {
 updateSessionPeriod: async (id: number, data: Partial<AcademicSessionPeriod>): Promise<AcademicSessionPeriod> => {
   try {
     const response = await api.put<ApiResponse<AcademicSessionPeriod>>(`/api/school/session-periods/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   } catch (error: any) {
     throw error;
   }
@@ -992,7 +1004,7 @@ updateSessionPeriod: async (id: number, data: Partial<AcademicSessionPeriod>): P
   getSessionPeriod: async (id: number): Promise<AcademicSessionPeriod> => {
     try {
       const response = await api.get<ApiResponse<AcademicSessionPeriod>>(`/api/school/session-periods/${id}/`);
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to fetch session period');
     }
@@ -1010,7 +1022,7 @@ updateSessionPeriod: async (id: number, data: Partial<AcademicSessionPeriod>): P
   getCurrentSession: async (): Promise<Session> => {
     try {
       const response = await api.get<ApiResponse<Session>>('/api/school/sessions/current/');
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       // The new backend view returns a 'message' key for errors.
       throw new Error(error.response?.data?.message || 'Failed to fetch current session');
@@ -1025,7 +1037,7 @@ updateSessionPeriod: async (id: number, data: Partial<AcademicSessionPeriod>): P
       const response = await api.get<ApiResponse<AcademicSessionPeriod>>('/api/school/session-periods/current/', {
         params: { school_section_id: schoolSectionId },
       });
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       // The new backend view returns a 'message' key for errors.
       throw new Error(error.response?.data?.message || 'Failed to fetch current period');
@@ -1051,7 +1063,7 @@ export const bulkOperationsAPI = {
         },
       }
     );
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -1059,7 +1071,7 @@ export const bulkOperationsAPI = {
    */
   getUploadStatus: async (uploadId: number): Promise<BulkStaffUpload> => {
     const response = await api.get<ApiResponse<BulkStaffUpload>>(`/api/human-resource/bulk/upload/${uploadId}/status/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -1067,7 +1079,7 @@ export const bulkOperationsAPI = {
    */
   generateCredentialsDownload: async (data: BulkDownloadRequest): Promise<{ task_id: string }> => {
     const response = await api.post<ApiResponse<{ task_id: string }>>('/api/human-resource/bulk/download-credentials/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 };
 
@@ -1087,7 +1099,7 @@ export const groupsAPI = {
    */
   create: async (data: GroupFormValues): Promise<Group> => {
     const response = await api.post<ApiResponse<Group>>('/api/human-resource/groups/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -1095,7 +1107,7 @@ export const groupsAPI = {
    */
   get: async (id: number): Promise<Group> => {
     const response = await api.get<ApiResponse<Group>>(`/api/human-resource/groups/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   /**
@@ -1103,7 +1115,7 @@ export const groupsAPI = {
    */
   update: async (id: number, data: Partial<GroupFormValues>): Promise<Group> => {
     const response = await api.put<ApiResponse<Group>>(`/api/human-resource/groups/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
     assignPermissions: async (id: number, data: { permissions: string[] }): Promise<void> => {
   await api.post(`/api/human-resource/groups/${id}/permissions/`, data);
@@ -1134,9 +1146,10 @@ export const permissionsAPI = {
   /**
    * Get group permissions
    */
+
   getGroupPermissions: async (groupId: number): Promise<string[]> => {
     const response = await api.get<ApiResponse<{ permissions: string[] }>>(`/api/human-resource/groups/${groupId}/permissions/`);
-    return response.data.data.permissions || [];
+    return response.data.data?.permissions || [];
   },
 
   /**
@@ -1212,7 +1225,7 @@ export const academicAPI = {
   getSettings: async (): Promise<AcademicSettings | null> => {
     try {
       const response = await api.get<ApiResponse<AcademicSettings>>('/api/academic/settings/');
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       if (error.response?.status === 404) {
         return null;
@@ -1223,7 +1236,7 @@ export const academicAPI = {
 
   updateSettings: async (data: Partial<AcademicSettings>): Promise<AcademicSettings> => {
     const response = await api.put<ApiResponse<AcademicSettings>>('/api/academic/settings/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   // --- Class Sections ---
@@ -1234,17 +1247,17 @@ export const academicAPI = {
 
   createClassSection: async (data: Partial<ClassSection>): Promise<ClassSection> => {
     const response = await api.post<ApiResponse<ClassSection>>('/api/academic/class-sections/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   getClassSection: async (id: number): Promise<ClassSection> => {
     const response = await api.get<ApiResponse<ClassSection>>(`/api/academic/class-sections/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   updateClassSection: async (id: number, data: Partial<ClassSection>): Promise<ClassSection> => {
     const response = await api.put<ApiResponse<ClassSection>>(`/api/academic/class-sections/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   deleteClassSection: async (id: number): Promise<void> => {
@@ -1259,17 +1272,17 @@ export const academicAPI = {
 
   createClass: async (data: ClassFormValues): Promise<ClassModel> => {
     const response = await api.post<ApiResponse<ClassModel>>('/api/academic/classes/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   getClass: async (id: number): Promise<ClassModel> => {
     const response = await api.get<ApiResponse<ClassModel>>(`/api/academic/classes/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   updateClass: async (id: number, data: Partial<ClassFormValues>): Promise<ClassModel> => {
     const response = await api.put<ApiResponse<ClassModel>>(`/api/academic/classes/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   deleteClass: async (id: number): Promise<void> => {
@@ -1284,12 +1297,12 @@ export const academicAPI = {
 
   getClassConfiguration: async (id: number): Promise<ClassConfiguration> => {
     const response = await api.get<ApiResponse<ClassConfiguration>>(`/api/academic/class-configurations/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   updateClassConfiguration: async (id: number, data: Partial<ClassConfiguration>): Promise<ClassConfiguration> => {
     const response = await api.put<ApiResponse<ClassConfiguration>>(`/api/academic/class-configurations/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   deleteClassConfiguration: async (id: number): Promise<void> => {
@@ -1304,17 +1317,17 @@ export const academicAPI = {
 
   createSubject: async (data: SubjectFormValues): Promise<Subject> => {
     const response = await api.post<ApiResponse<Subject>>('/api/academic/subjects/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   getSubject: async (id: number): Promise<Subject> => {
     const response = await api.get<ApiResponse<Subject>>(`/api/academic/subjects/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   updateSubject: async (id: number, data: Partial<SubjectFormValues>): Promise<Subject> => {
     const response = await api.put<ApiResponse<Subject>>(`/api/academic/subjects/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   deleteSubject: async (id: number): Promise<void> => {
@@ -1329,17 +1342,17 @@ export const academicAPI = {
 
   createSubjectGroup: async (data: SubjectGroupFormValues): Promise<SubjectGroup> => {
     const response = await api.post<ApiResponse<SubjectGroup>>('/api/academic/subject-groups/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   getSubjectGroup: async (id: number): Promise<SubjectGroup> => {
     const response = await api.get<ApiResponse<SubjectGroup>>(`/api/academic/subject-groups/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   updateSubjectGroup: async (id: number, data: Partial<SubjectGroupFormValues>): Promise<SubjectGroup> => {
     const response = await api.put<ApiResponse<SubjectGroup>>(`/api/academic/subject-groups/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   deleteSubjectGroup: async (id: number): Promise<void> => {
@@ -1354,12 +1367,12 @@ export const academicAPI = {
 
   bulkCreateSubjectConfigurations: async (data: { class_configuration_id: number; subject_ids: number[] }): Promise<{ created_count: number; subject_ids: number[] }> => {
     const response = await api.post<ApiResponse<{ created_count: number; subject_ids: number[] }>>('/api/academic/class-subject-configurations/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   updateClassSubjectConfiguration: async (id: number, data: { teachers: number[] }): Promise<ClassSubjectConfiguration> => {
     const response = await api.put<ApiResponse<ClassSubjectConfiguration>>(`/api/academic/class-subject-configurations/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   deleteClassSubjectConfiguration: async (id: number): Promise<void> => {
@@ -1369,12 +1382,12 @@ export const academicAPI = {
   // --- Promotion Mappings ---
   getPromotionMappings: async (): Promise<{ mappings: PromotionMapping[]; suggestions: any[] }> => {
     const response = await api.get<ApiResponse<{ mappings: PromotionMapping[]; suggestions: any[] }>>('/api/academic/promotion-mappings/');
-    return response.data.data;
+    return response.data.data!;
   },
 
   bulkSavePromotionMappings: async (data: BulkPromotionMappingFormValues): Promise<{ created_count: number; mappings: PromotionMapping[] }> => {
     const response = await api.post<ApiResponse<{ created_count: number; mappings: PromotionMapping[] }>>('/api/academic/promotion-mappings/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   deletePromotionMapping: async (id: number): Promise<void> => {
@@ -1400,17 +1413,17 @@ listTimetable: async (params?: { class_configuration_id?: number; day_id?: numbe
 
 getTimetableEntry: async (id: number): Promise<Timetable> => {
   const response = await api.get<ApiResponse<Timetable>>(`/api/academic/timetable/${id}/`);
-  return response.data.data;
+  return response.data.data!;
 },
 
 createTimetableEntry: async (data: TimetableFormValues): Promise<Timetable> => {
   const response = await api.post<ApiResponse<Timetable>>('/api/academic/timetable/', data);
-  return response.data.data;
+  return response.data.data!;
 },
 
 updateTimetableEntry: async (id: number, data: Partial<TimetableFormValues>): Promise<Timetable> => {
   const response = await api.put<ApiResponse<Timetable>>(`/api/academic/timetable/${id}/`, data);
-  return response.data.data;
+  return response.data.data!;
 },
 
 deleteTimetableEntry: async (id: number): Promise<void> => {
@@ -1425,17 +1438,17 @@ listLeadershipRoles: async (params?: { role_type?: string; school_section_id?: n
 
 getLeadershipRole: async (id: number): Promise<LeadershipRole> => {
   const response = await api.get<ApiResponse<LeadershipRole>>(`/api/academic/leadership-roles/${id}/`);
-  return response.data.data;
+  return response.data.data!;
 },
 
 createLeadershipRole: async (data: LeadershipRoleFormValues): Promise<LeadershipRole> => {
   const response = await api.post<ApiResponse<LeadershipRole>>('/api/academic/leadership-roles/', data);
-  return response.data.data;
+  return response.data.data!;
 },
 
 updateLeadershipRole: async (id: number, data: Partial<LeadershipRoleFormValues>): Promise<LeadershipRole> => {
   const response = await api.put<ApiResponse<LeadershipRole>>(`/api/academic/leadership-roles/${id}/`, data);
-  return response.data.data;
+  return response.data.data!;
 },
 
 deleteLeadershipRole: async (id: number): Promise<void> => {
@@ -1450,7 +1463,7 @@ export const studentSettingsAPI = {
   get: async (): Promise<StudentSettings | null> => {
     try {
       const response = await api.get<ApiResponse<StudentSettings>>('/api/student/settings/');
-      return response.data.data;
+      return response.data.data!;
     } catch (error: any) {
       if (error.response?.status === 404) {
         return null;
@@ -1461,12 +1474,12 @@ export const studentSettingsAPI = {
 
   create: async (data: Partial<StudentSettings>): Promise<StudentSettings> => {
     const response = await api.post<ApiResponse<StudentSettings>>('/api/student/settings/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   update: async (data: Partial<StudentSettings>): Promise<StudentSettings> => {
     const response = await api.put<ApiResponse<StudentSettings>>('/api/student/settings/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 };
 
@@ -1478,17 +1491,17 @@ export const utilitiesAPI = {
 
   create: async (data: Partial<Utility>): Promise<Utility> => {
     const response = await api.post<ApiResponse<Utility>>('/api/student/utilities/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   get: async (id: number): Promise<Utility> => {
     const response = await api.get<ApiResponse<Utility>>(`/api/student/utilities/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   update: async (id: number, data: Partial<Utility>): Promise<Utility> => {
     const response = await api.put<ApiResponse<Utility>>(`/api/student/utilities/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   delete: async (id: number): Promise<void> => {
@@ -1506,17 +1519,17 @@ export const studentCustomFieldsAPI = {
 
   create: async (data: Partial<CustomField>): Promise<CustomField> => {
     const response = await api.post<ApiResponse<CustomField>>('/api/student/custom-fields/', data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   get: async (id: number): Promise<CustomField> => {
     const response = await api.get<ApiResponse<CustomField>>(`/api/student/custom-fields/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   update: async (id: number, data: Partial<CustomField>): Promise<CustomField> => {
     const response = await api.put<ApiResponse<CustomField>>(`/api/student/custom-fields/${id}/`, data);
-    return response.data.data;
+    return response.data.data!;
   },
 
   delete: async (id: number): Promise<void> => {
@@ -1543,12 +1556,12 @@ export const parentsAPI = {
       'Content-Type': 'multipart/form-data',
     },
   });
-  return response.data.data;
+  return response.data.data!;
 },
 
   get: async (id: number): Promise<Parent> => {
     const response = await api.get<ApiResponse<Parent>>(`/api/student/parents/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   update: async (id: number, data: FormData | Partial<ParentFormValues>): Promise<Parent> => {
@@ -1557,7 +1570,7 @@ export const parentsAPI = {
       'Content-Type': data instanceof FormData ? 'multipart/form-data' : 'application/json',
     },
   });
-  return response.data.data;
+  return response.data.data!;
 },
 
   delete: async (id: number): Promise<void> => {
@@ -1580,27 +1593,27 @@ export const parentsAPI = {
       '/api/student/utils/check-duplicate-parent/',
       data
     );
-    return response.data.data;
+    return response.data.data!;
   },
 
     toggleStatus: async (id: number, status: string): Promise<ToggleStatusResponse> => {
     const response = await api.post<ApiResponse<ToggleStatusResponse>>(
         `/api/student/parents/${id}/toggle-status/`, { status }
     );
-    return response.data.data;
+    return response.data.data!;
 },
 
 resetPassword: async (id: number, data: ResetPasswordPayload): Promise<ResetPasswordResponse> => {
     const response = await api.post<ApiResponse<ResetPasswordResponse>>(
         `/api/student/parents/${id}/reset-password/`, data
     );
-    return response.data.data;
+    return response.data.data!;
 },
 changeUsername: async (id: number, username: string): Promise<{ username: string }> => {
   const response = await api.post<ApiResponse<{ username: string }>>(
     `/api/student/parents/${id}/change-username/`, { username }
   );
-  return response.data.data;
+  return response.data.data!;
 },
 
 downloadListExcel: async (params?: object): Promise<void> => {
@@ -1681,7 +1694,7 @@ downloadPasswordSheet: async (params?: { ward_class?: number; ward_class_section
 
 export const studentsAPI = {
   list: async (filters?: StudentListFilters): Promise<Student[]> => {
-    const response = await api.get<ApiResponse<any>>('/api/student/students/', { params: filters });
+    const response = await api.get<any>('/api/student/students/', { params: filters });
     if (response.data?.results?.data) {
       return response.data.results.data;
     }
@@ -1695,12 +1708,12 @@ export const studentsAPI = {
         data,
         isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined
       );
-      return response.data.data;
+      return response.data.data!;
     },
 
   get: async (id: number): Promise<Student> => {
     const response = await api.get<ApiResponse<Student>>(`/api/student/students/${id}/`);
-    return response.data.data;
+    return response.data.data!;
   },
 
   update: async (id: number, data: Partial<StudentFormValues> | globalThis.FormData): Promise<Student> => {
@@ -1714,7 +1727,7 @@ export const studentsAPI = {
       isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined
     );
 
-    return response.data.data;
+    return response.data.data!;
   },
 
   delete: async (id: number): Promise<void> => {
@@ -1749,21 +1762,21 @@ export const studentsAPI = {
       '/api/student/utils/check-duplicate-student/',
       data
     );
-    return response.data.data;
+    return response.data.data!;
   },
 
     toggleStatus: async (id: number, status: string): Promise<ToggleStatusResponse> => {
     const response = await api.post<ApiResponse<ToggleStatusResponse>>(
         `/api/student/students/${id}/toggle-status/`, { status }
     );
-    return response.data.data;
+    return response.data.data!;
 },
 
 resetPassword: async (id: number, data: ResetPasswordPayload): Promise<ResetPasswordResponse> => {
     const response = await api.post<ApiResponse<ResetPasswordResponse>>(
         `/api/student/students/${id}/reset-password/`, data
     );
-    return response.data.data;
+    return response.data.data!;
 },
 getClassHistory: async (studentId: number): Promise<StudentClassHistory[]> => {
     const response = await api.get<ApiResponse<StudentClassHistory[]>>(
@@ -1776,7 +1789,7 @@ changeUsername: async (id: number, username: string): Promise<{ username: string
       `/api/student/students/${id}/change-username/`,
       { username } // Payload matches the backend expectation
     );
-    return response.data.data;
+    return response.data.data!;
   },
 
 downloadPasswordSheet: async (params: { current_class: number; current_class_section?: number }): Promise<void> => {
@@ -1883,13 +1896,13 @@ export const otherGuardiansAPI = {
         const response = await api.post<ApiResponse<OtherGuardian>>(
             `/api/student/students/${studentId}/other-guardians/`, data
         );
-        return response.data.data;
+        return response.data.data!;
     },
     update: async (id: number, data: Partial<OtherGuardian>): Promise<OtherGuardian> => {
         const response = await api.put<ApiResponse<OtherGuardian>>(
             `/api/student/other-guardians/${id}/`, data
         );
-        return response.data.data;
+        return response.data.data!;
     },
     delete: async (id: number): Promise<void> => {
         await api.delete(`/api/student/other-guardians/${id}/`);
@@ -1909,13 +1922,13 @@ export const studentDocumentsAPI = {
             `/api/student/students/${studentId}/documents/`, data,
             { headers: { 'Content-Type': 'multipart/form-data' } }
         );
-        return response.data.data;
+        return response.data.data!;
     },
     get: async (id: number): Promise<StudentDocument> => {
         const response = await api.get<ApiResponse<StudentDocument>>(
             `/api/student/documents/${id}/`
         );
-        return response.data.data;
+        return response.data.data!;
     },
     delete: async (id: number): Promise<void> => {
         await api.delete(`/api/student/documents/${id}/`);
@@ -1933,7 +1946,7 @@ export const fingerprintsAPI = {
         const response = await api.post<ApiResponse<Fingerprint>>(
             `/api/student/students/${studentId}/fingerprints/`, data
         );
-        return response.data.data;
+        return response.data.data!;
     },
     delete: async (id: number): Promise<void> => {
         await api.delete(`/api/student/fingerprints/${id}/`);

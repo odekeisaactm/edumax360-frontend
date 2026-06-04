@@ -262,8 +262,8 @@ export default function StaffCreatePage() {
       setDepartments(toArr(depts));
       setAllPositions(toArr(pos));
       setCustomFields(toArr(fields));
-      setStates(Array.isArray(stateList) ? stateList : stateList?.data ?? []);
-      setBanks(Array.isArray(bankList) ? bankList : bankList?.data ?? []);
+      setStates(Array.isArray(stateList) ? stateList : []);
+        setBanks(Array.isArray(bankList) ? bankList : []);
       setGroups(toArr(groupList));
     }).catch(err => setSubmitError(extractError(err)))
       .finally(() => setLoading(false));
@@ -340,7 +340,7 @@ export default function StaffCreatePage() {
         payload.append('extra_fields', JSON.stringify(form.extra_fields));
       if (imageFile) payload.append('image', imageFile);
       // Delete Content-Type so axios/fetch lets the browser set it with the correct multipart boundary
-      const created = await staffAPI.create(payload, { headers: { 'Content-Type': undefined } } as any);
+      const created = await staffAPI.create(payload);
       router.push(`${STAFF_INDEX}/${created.id}`);
     } catch (err) {
       // If backend rejects due to duplicate, show the warning banner instead of an error

@@ -134,10 +134,10 @@ const EMPTY_FORM: FormState = {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function RegisterGuardianPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
 
   // Permission
-  const canCreate = user?.is_superuser || user?.permissions?.includes('student_management.add_parentmodel') || false;
+  const canCreate = user?.is_superuser || hasPermission('student_management.add_parentmodel') || false;
 
   // Sections open state
   const [openSections, setOpenSections] = useState({
@@ -609,7 +609,7 @@ export default function RegisterGuardianPage() {
                       ))}
                     </select>
                   )}
-                  {field.field_type === 'boolean' && (
+                  {field.field_type === 'checkbox' && (
                     <select className={inputCls} value={extraFields[field.id] ?? ''}
                       onChange={(e) => setExtraFields((p) => ({ ...p, [field.id]: e.target.value }))}>
                       <option value="">Select</option>

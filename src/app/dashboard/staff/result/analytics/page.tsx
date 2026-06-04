@@ -143,7 +143,7 @@ const OverviewTab = ({ sessions, periods, currentSessionId, currentPeriodId, set
     if (!filters.session || !filters.period) return;
     setLoading(true);
     try {
-      const res = await resultAnalyticsAPI.overview({ session: Number(filters.session), period: Number(filters.period) });
+      const res = await resultAnalyticsAPI.overview({ session_id: Number(filters.session), period_id: Number(filters.period) });
       setData(res);
     } catch (e) { showToast(setToasts, 'error', extractError(e)); } finally { setLoading(false); }
   }, [filters]);
@@ -506,7 +506,7 @@ const SubjectTrendsTab = ({ subjects, classLevels, setToasts }: any) => {
     if (!subjectId) return;
     setLoading(true);
     try {
-      const res = await resultAnalyticsAPI.subjectTrend({ subject_id: Number(subjectId), class: classId ? Number(classId) : undefined });
+      const res = await resultAnalyticsAPI.subjectTrend({ subject_id: Number(subjectId), class_id: classId ? Number(classId) : undefined });
       setData(res);
     } catch (e) { showToast(setToasts, 'error', extractError(e)); } finally { setLoading(false); }
   }, [subjectId, classId]);
@@ -661,12 +661,11 @@ const GenderAnalysisTab = ({ sessions, periods, classLevels, classSections, scho
     setLoading(true);
     try {
       const res = await resultAnalyticsAPI.genderAnalysis({
-        session: filters.session || undefined,
-        period: filters.period || undefined,
-        class: filters.class || undefined,
-        class_section: filters.class_section || undefined,
-        school_section: filters.school_section || undefined,
-      });
+      session_id: filters.session ? Number(filters.session) : undefined,
+      period_id: filters.period ? Number(filters.period) : undefined,
+      class_id: filters.class ? Number(filters.class) : undefined,
+      section_id: filters.class_section ? Number(filters.class_section) : undefined,
+    });
       setData(res);
     } catch (e) { showToast(setToasts, 'error', extractError(e)); } finally { setLoading(false); }
   }, [filters]);

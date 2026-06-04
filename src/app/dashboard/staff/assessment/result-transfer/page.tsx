@@ -89,7 +89,7 @@ export default function ResultTransferPage() {
     try {
       // Fetch exams that haven't been transferred yet
       const list = await examsAPI.list({ is_published: true });
-      setExams(list.filter(e => !e.last_transfer_date));
+      setExams(list.filter(e => !(e as any).last_transfer_date));
       
       const fields = await resultFieldsAPI.list();
       setResultFields(fields);
@@ -152,20 +152,17 @@ export default function ResultTransferPage() {
   };
 
   const handlePreview = async () => {
-    if (!selectedExamId || !selectedFieldId) return;
-    setPreviewLoading(true);
-    try {
-        // We use the existing config or create a temporary one for preview
-        // Backend handles this via transfer_preview action
-        // For simplicity, let's assume we fetch attempts and simulate conversion
-        const res = await api.get(`/api/assessment/exams/${selectedExamId}/schedules_status/`);
-        setPreviewData(res.data.schedules);
-    } catch (err) {
-        alert(extractError(err));
-    } finally {
-        setPreviewLoading(false);
-    }
-  };
+  if (!selectedExamId || !selectedFieldId) return;
+  setPreviewLoading(true);
+  try {
+    const res = await examsAPI.getSchedulesStatus(selectedExamId);
+    setPreviewData((res as any).schedules);
+  } catch (err) {
+    alert(extractError(err));
+  } finally {
+    setPreviewLoading(false);
+  }
+};
 
   const handleExecute = async () => {
     if (!selectedExamId || !selectedFieldId) return;
@@ -178,19 +175,16 @@ export default function ResultTransferPage() {
         config = await resultTransferAPI.create({
             exam: selectedExamId,
             result_field: selectedFieldId,
-            scale_score: true
         });
       } else {
         // Update target field if changed
         if (config.result_field !== selectedFieldId) {
-            await api.patch(`/api/assessment/result-transfers/${config.id}/`, {
-                result_field: selectedFieldId
-            });
+            await resultTransferAPI.update(config.id, { result_field: selectedFieldId });
         }
       }
 
       // 2: Execute
-      const res = await resultTransferAPI.execute(config.id, {
+      const res = await resultTransferAPI.executeTransfer(config.id, {
         exempted_class_ids: exemptedIds,
         class_overrides: classOverrides
       });
@@ -381,7 +375,7 @@ export default function ResultTransferPage() {
                          <div className="text-white">
                             <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Final Confirmation</p>
                             <p className="text-sm font-bold opacity-80 leading-relaxed">
-                               You are about to transfer scores for <span className="text-white underline decoration-violet-500 underline-offset-4">{selectedExam.name}</span>.<br/>
+                               You are about to transfer scores for <span className="text-white underline decoration-violet-500 underline-offset-4">{selectedExam?.name}</span>.<br/>
                                Exempted: {exemptedIds.length} classes.
                             </p>
                          </div>

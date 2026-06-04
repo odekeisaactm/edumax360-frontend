@@ -1,6 +1,6 @@
 'use client';
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Module, AuthContextType } from '@/lib/types';
+import { User, Module, AuthContextType } from '@/lib/type';
 import { authAPI, schoolInfoAPI } from '@/lib/api';
 import { tokenManager, sessionManager, authHelpers, userManager } from '@/lib/auth';
 import { useRouter } from 'next/navigation';

@@ -81,7 +81,7 @@ export default function ScannedSchedulePage() {
     try {
       const [subs, stds] = await Promise.all([
         scannedExamsAPI.getSubmissions(scheduleId),
-        academicAPI.listStudentsByClass(schedule?.class_configuration || 0),
+        academicAPI.listStudentClassHistory(schedule?.class_configuration || 0),
       ]);
       setSubmissions(subs);
       setStudents(stds);

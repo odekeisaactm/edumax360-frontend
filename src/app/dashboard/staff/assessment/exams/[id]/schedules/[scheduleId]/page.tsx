@@ -8,7 +8,7 @@ import {
 } from '@/lib/api';
 import {
   ExamScheduleDetail, Question, QuestionBank, ExaminationHall,
-} from '@/types/assessment.types';
+} from '@/lib/types';
 import {
   ArrowLeft, AlertCircle, X, Check, Loader2, Save,
   BookOpen, Settings, Sparkles, Upload, Plus, Target,
@@ -722,7 +722,7 @@ export default function ExamScheduleDetailPage() {
       const [banksResponse, hallData, staffData] = await Promise.all([
         questionBanksAPI.getAvailableForSchedule(scheduleId!),
         examinationHallsAPI.list({ is_active: true }),
-        staffAPI.list({ is_active: true }),
+        staffAPI.list({ status: 'active' }),
       ]);
       const banks = banksResponse.banks ?? [];
       setQuestionBanks(banks);

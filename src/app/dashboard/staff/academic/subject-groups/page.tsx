@@ -142,8 +142,8 @@ function SubjectGroupModal({ editing, schoolSections, allClasses, allSubjects,
       school_section: typeof editing.school_section === 'object'
         ? editing.school_section?.id ?? null : editing.school_section ?? null,
       description: editing.description || '',
-      applicable_classes: editing.applicable_classes?.map(c => typeof c === 'object' ? c.id : c) ?? [],
-      subjects: editing.subjects?.map(s => typeof s === 'object' ? s.id : s) ?? [],
+      applicable_classes: editing.applicable_classes?.map((c: any) => typeof c === 'object' ? c.id : c) ?? [],
+      subjects: editing.subjects?.map((s: any) => typeof s === 'object' ? s.id : s) ?? [],
       is_active: editing.is_active,
     };
   });
@@ -411,12 +411,15 @@ export default function SubjectGroupsPage() {
   const handleSave = async (data: FormValues) => {
     setIsSaving(true);
     try {
+      const payload = { ...data, school_section: data.school_section ?? null };
       if (editingGroup) {
-        const updated = await academicAPI.updateSubjectGroup(editingGroup.id, data);
+        const updated = await academicAPI.updateSubjectGroup(editingGroup.id, payload as any);
+
         setSubjectGroups(prev => prev.map(g => g.id === updated.id ? updated : g));
         showToast('success', 'Subject group updated successfully');
       } else {
-        const created = await academicAPI.createSubjectGroup(data);
+        const created = await academicAPI.createSubjectGroup(payload as any);
+
         setSubjectGroups(prev => [created, ...prev]);
         showToast('success', 'Subject group created successfully');
       }
@@ -457,8 +460,8 @@ export default function SubjectGroupsPage() {
   });
 
   const activeCount = subjectGroups.filter(g => g.is_active).length;
-  const totalClasses = [...new Set(subjectGroups.flatMap(g => g.applicable_classes?.map(c => typeof c === 'object' ? c.id : c) ?? []))].length;
-  const totalSubjects = [...new Set(subjectGroups.flatMap(g => g.subjects?.map(s => typeof s === 'object' ? s.id : s) ?? []))].length;
+  const totalClasses = [...new Set(subjectGroups.flatMap(g => g.applicable_classes?.map((c: any) => typeof c === 'object' ? c.id : c) ?? []))].length;
+  const totalSubjects = [...new Set(subjectGroups.flatMap(g => g.subjects?.map((s: any) => typeof s === 'object' ? s.id : s) ?? []))].length;
 
   if (!canView) return (
     <div className="min-h-[600px] flex items-center justify-center">

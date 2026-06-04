@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { feeAPI } from '@/lib/api';
-import { Discount, Fee, DiscountApplication } from '@/lib/types';
+import { Discount, Fee, FeeOccurrence, DiscountApplication } from '@/lib/types';
 import {
   Tag, Plus, Edit2, Trash2, Check, X, AlertCircle,
   Loader2, Search, ChevronDown, ChevronUp, Percent, Hash,
@@ -87,7 +87,7 @@ function DiscountForm({ initial, fees, onSave, onCancel, title }: DiscountFormPr
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">Occurrence</label>
-            <select value={form.occurrence} onChange={e => setForm(f => ({ ...f, occurrence: e.target.value }))}
+            <select value={form.occurrence} onChange={e => setForm(f => ({ ...f, occurrence: e.target.value as FeeOccurrence }))}
               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-500">
               <option value="periodic">Periodic</option>
               <option value="annually">Annually</option>

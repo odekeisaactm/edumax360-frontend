@@ -1,7 +1,8 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import React, {
-  useState, useEffect, useRef, useCallback, useLayoutEffect, memo,
+  useState, useEffect, useRef, useCallback, useLayoutEffect, memo, Suspense
 } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api, schoolInfoAPI } from '@/lib/api';
@@ -574,7 +575,7 @@ function GraphModal({ open, onInsert, onClose }: {
 
 // ─── Table Toolbar Hook — floating toolbar for table editing ──────────────────
 
-function useTableToolbar(editorRef: React.RefObject<HTMLDivElement>) {
+function useTableToolbar(editorRef: React.RefObject<HTMLDivElement | null>) {
   const [toolbarPos, setToolbarPos] = useState<{ top: number; left: number } | null>(null);
   const [inTable, setInTable]       = useState(false);
 
@@ -686,7 +687,7 @@ const TheoryEditor = memo(function TheoryEditor({
 }: TheoryEditorProps) {
   const editorRef   = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const { inTable, toolbarPos, addRow, addCol, deleteRow, deleteCol } = useTableToolbar(editorRef);
 
   // Initialize innerHTML exactly ONCE when the element mounts — never again (prevents cursor jump)
@@ -906,7 +907,7 @@ function WebcamMonitor({ videoRef, canvasRef, cameraEnabled, cameraError, detect
 
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 
-export default function ExamTakingPage() {
+function ExamTakingPageInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const attemptId    = searchParams?.get('attempt');
@@ -947,7 +948,7 @@ export default function ExamTakingPage() {
   // ── Auto-save ──────────────────────────────────────────────────────────────
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [saving, setSaving]       = useState(false);
-  const autoSaveRef                = useRef<ReturnType<typeof setInterval>>();
+  const autoSaveRef                = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   // ── Webcam + face detection ────────────────────────────────────────────────
   const videoRef                          = useRef<HTMLVideoElement>(null);
@@ -955,8 +956,8 @@ export default function ExamTakingPage() {
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraError, setCameraError]     = useState<string | null>(null);
   const [detectedFaces, setDetectedFaces] = useState<number | null>(null);
-  const faceIntervalRef                   = useRef<ReturnType<typeof setInterval>>();
-  const snapshotIntervalRef               = useRef<ReturnType<typeof setInterval>>();
+  const faceIntervalRef                   = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const snapshotIntervalRef               = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const consecutiveNoFaceRef              = useRef(0);
   const studentDescriptorRef              = useRef<Float32Array | null>(null);
 
@@ -975,7 +976,7 @@ export default function ExamTakingPage() {
 
   // ── Invigilator warnings ───────────────────────────────────────────────────
   const [activeWarning, setActiveWarning] = useState<InvigilatorWarning | null>(null);
-  const warningPollRef                     = useRef<ReturnType<typeof setInterval>>();
+  const warningPollRef                     = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   // ── Math / Graph modals ────────────────────────────────────────────────────
   const [showMathModal, setShowMathModal]   = useState(false);
@@ -1602,7 +1603,9 @@ export default function ExamTakingPage() {
                   )}
                 </div>
               ) : cameraError ? (
-                <CameraOff className="h-4 w-4 text-amber-500" title={cameraError} />
+                <span title={cameraError ?? undefined}>
+                  <CameraOff className="h-4 w-4 text-amber-500" />
+                </span>
               ) : (
                 <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
               )}
@@ -1873,5 +1876,17 @@ export default function ExamTakingPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ExamTakingPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-900">
+        <Loader2 className="h-10 w-10 animate-spin text-white" />
+      </div>
+    }>
+      <ExamTakingPageInner />
+    </Suspense>
   );
 }

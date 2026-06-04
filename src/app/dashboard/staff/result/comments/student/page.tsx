@@ -1,4 +1,5 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -512,7 +513,7 @@ export default function ComputeCommentsIndividualPage() {
   }
 
   const studentName = result?.student_name || fallbackInfo.student_name || 'Student';
-  const regNumber = result?.registration_number || fallbackInfo.registration_number;
+  const regNumber = (result as any)?.registration_number || fallbackInfo.registration_number;
   const className = result?.class_name || 'Class';
   const periodName = result?.period_name || fallbackInfo.period_name || 'Academic Period';
 

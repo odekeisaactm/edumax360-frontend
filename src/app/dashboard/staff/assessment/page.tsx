@@ -8,7 +8,7 @@ import {
   Zap,
   Users,
   CheckCircle2,
-  Clock,
+  Clock, BookOpen,
   ArrowRight,
   TrendingUp,
   BrainCircuit,
@@ -41,7 +41,7 @@ export default function AssessmentDashboard() {
     try {
       const [s, e, q] = await Promise.all([
         dashboardAPI.getStats(),
-        examsAPI.list({ limit: 5 }),
+        examsAPI.list(),
         aiMarkingQueueAPI.getStats()
       ]);
       setStats(s);

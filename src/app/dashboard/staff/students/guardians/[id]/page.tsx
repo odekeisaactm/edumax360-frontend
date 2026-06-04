@@ -441,8 +441,8 @@ export default function ParentDetailPage() {
     // Try to load custom fields if the method exists
     try {
       // Check if the method exists before calling
-      if (typeof parentsAPI.getCustomFields === 'function') {
-        const cfData = await parentsAPI.getCustomFields('parent');
+      if (typeof (parentsAPI as any).getCustomFields === 'function') {
+        const cfData = await (parentsAPI as any).getCustomFields('parent');
         const cfList = Array.isArray(cfData) ? cfData : (cfData as any)?.data ?? [];
         setCustomFields(cfList);
       } else {

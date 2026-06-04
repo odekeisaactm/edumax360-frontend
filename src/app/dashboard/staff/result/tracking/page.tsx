@@ -376,13 +376,13 @@ export default function UploadedResultsPage() {
                       <tr className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-5 py-3 text-sm text-slate-500">{idx + 1}.</td>
                         <td className="px-5 py-3 text-sm font-medium text-slate-800">
-                          {toTitleCase(isPending ? pendingItem.subject_name : trackingItem.subject_name)}
+                          {toTitleCase((isPending ? pendingItem.subject_name : trackingItem.subject_name) || '')}
                         </td>
                         <td className="px-5 py-3 text-sm text-slate-600">
                           {className}
                         </td>
                         <td className="px-5 py-3 text-sm text-slate-500">
-                          {isPending ? '-' : new Date(trackingItem.uploaded_at).toLocaleDateString()}
+                          {isPending ? '-' : trackingItem.uploaded_at ? new Date(trackingItem.uploaded_at).toLocaleDateString() : '-'}
                         </td>
                         <td className="px-5 py-3 text-sm text-slate-600">
                           {isPending ? (
@@ -489,7 +489,7 @@ export default function UploadedResultsPage() {
                                   </div>
                                   <div>
                                     <p className="text-slate-400 text-xs">Last Uploaded</p>
-                                    <p className="font-semibold">{new Date(trackingItem.uploaded_at).toLocaleString()}</p>
+                                    <p className="font-semibold">{trackingItem.uploaded_at ? new Date(trackingItem.uploaded_at).toLocaleString() : '-'}</p>
                                   </div>
                                   <div>
                                     <p className="text-slate-400 text-xs">Status</p>

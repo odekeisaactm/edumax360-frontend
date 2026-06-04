@@ -442,10 +442,14 @@ export default function StudentCreatePage() {
         const extracted: ClassSection[] = [];
 
         for (const config of selectedClass.configurations) {
-          if (config.is_active && !seen.has(config.class_section)) {
-            seen.add(config.class_section);
+          const sectionId = typeof config.class_section === 'number'
+            ? config.class_section
+            : config.class_section?.id;
+
+          if (config.is_active && sectionId !== undefined && !seen.has(sectionId)) {
+            seen.add(sectionId);
             extracted.push({
-              id: config.class_section,
+              id: sectionId,
               name: config.class_section_name,
             } as ClassSection);
           }
@@ -753,7 +757,7 @@ export default function StudentCreatePage() {
       }
 
       return group.applicable_classes.some(cls => {
-        const classId = typeof cls === 'object' ? cls.id : cls;
+        const classId = typeof cls === 'object' ? (cls as any).id : cls;
         return classId === formData.current_class;
       });
     });

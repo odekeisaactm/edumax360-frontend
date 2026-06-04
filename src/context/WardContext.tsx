@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { api } from '@/lib/api';
-import { useRouter, usePathContext } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 export interface Ward {
   id: number;

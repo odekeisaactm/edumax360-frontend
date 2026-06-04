@@ -197,7 +197,12 @@ export default function PromotionMappingsPage() {
         to_class_config_id: mapping.to_config_id,
       }));
 
-      await academicAPI.bulkSavePromotionMappings({ mappings: mappingsData });
+      await academicAPI.bulkSavePromotionMappings({
+      mappings: mappingsData.map(m => ({
+        ...m,
+        to_class_config_id: m.to_class_config_id ?? undefined,
+      })),
+    });
 
       setSuccessMessage('Promotion mappings auto-configured successfully!');
       setShowSuccess(true);
@@ -274,7 +279,12 @@ export default function PromotionMappingsPage() {
         to_class_config_id: mapping.to_config_id,
       }));
 
-      await academicAPI.bulkSavePromotionMappings({ mappings: mappingsToSave });
+      await academicAPI.bulkSavePromotionMappings({
+      mappings: mappingsToSave.map(m => ({
+        ...m,
+        to_class_config_id: m.to_class_config_id ?? undefined,
+      })),
+    });
 
       setSuccessMessage('Promotion mappings saved successfully!');
       setShowSuccess(true);

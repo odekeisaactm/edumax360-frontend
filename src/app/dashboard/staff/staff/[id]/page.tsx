@@ -1093,7 +1093,7 @@ export default function StaffDetailPage() {
                           </button>
                           <button onClick={async () => {
                             try {
-                              const res = await fetch(doc.document_url);
+                              const res = await fetch(doc.document_url || '');
                               const blob = await res.blob();
                               const url = URL.createObjectURL(blob);
                               const a = document.createElement('a');

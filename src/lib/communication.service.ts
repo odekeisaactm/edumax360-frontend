@@ -10,7 +10,8 @@ import type {
   WhatsAppConfig,
   WhatsAppConfigFormValues,
   ActivityLog,
-} from '@/types/communication.types';
+  InAppNotificationResponse,
+} from '@/lib/types';
 
 // ============================================================================
 // HELPERS

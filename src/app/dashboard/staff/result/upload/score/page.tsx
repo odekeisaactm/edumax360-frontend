@@ -1,4 +1,5 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -510,7 +511,7 @@ export default function ScoreUploadPage() {
         ...prev,
         [studentId]: {
           ...prev[studentId],
-          [fieldName]: value === '' ? null : value,
+          [fieldName]: value === '' ? null : Number(value),
         },
       };
       studentScoresRef.current = next;
@@ -555,7 +556,7 @@ export default function ScoreUploadPage() {
         scores: Object.fromEntries(
           Object.entries(studentScoresRef.current[s.student_id] || {}).map(([k, v]) => [k, v === '' ? null : v])
         ),
-      }));
+      })) as any[];
 
       const response: SubmitResponse = await resultUploadAPI.submit({
         class_config_id: current.class_config_id,

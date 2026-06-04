@@ -391,9 +391,9 @@ export default function StudentUpdatePage() {
         medical_conditions: studentData.medical_conditions || '',
         parent: parentId,
         relationship_with_parent: studentData.relationship_with_parent || 'father',
-        current_class: studentData.current_class ? (typeof studentData.current_class === 'number' ? studentData.current_class : studentData.current_class.id) : null,
-        current_class_section: studentData.current_class_section ? (typeof studentData.current_class_section === 'number' ? studentData.current_class_section : studentData.current_class_section.id) : null,
-        subject_group: studentData.subject_group ? (typeof studentData.subject_group === 'number' ? studentData.subject_group : studentData.subject_group.id) : null,
+        current_class: studentData.current_class ? (typeof studentData.current_class === 'number' ? studentData.current_class : (studentData.current_class as any).id) : null,
+        current_class_section: studentData.current_class_section ? (typeof studentData.current_class_section === 'number' ? studentData.current_class_section : (studentData.current_class_section as any).id) : null,
+        subject_group: studentData.subject_group ? (typeof studentData.subject_group === 'number' ? studentData.subject_group : (studentData.subject_group as any).id) : null,
         is_special_need: !!studentData.is_special_need,
         utility_ids: utilityIds,
         extra_fields: studentData.extra_fields || {},
@@ -412,7 +412,7 @@ export default function StudentUpdatePage() {
 
       // --- FIX: Trigger section fetch using the fresh 'classesData' ---
       if (studentData.current_class) {
-        const classId = typeof studentData.current_class === 'number' ? studentData.current_class : studentData.current_class.id;
+        const classId = typeof studentData.current_class === 'number' ? studentData.current_class : (studentData.current_class as any).id;
         // Pass classesData explicitly so we don't wait for state update
         fetchSectionsForClass(classId, classesData);
       }
@@ -429,8 +429,8 @@ export default function StudentUpdatePage() {
     setSearchingParents(true);
     try {
       const res = await parentsAPI.list({ search: term, page_size: 10 });
-      const data = Array.isArray(res) ? res : (res?.results || res?.data || []);
-      setParentSearchResults(data);
+     const data = Array.isArray(res) ? res : ((res as any)?.results || (res as any)?.data || []);
+      setParentSearchResults(data as any as Parent[]);
     } catch (err) {
       setParentSearchResults([]);
     } finally {
@@ -501,10 +501,14 @@ export default function StudentUpdatePage() {
       const extracted: ClassSection[] = [];
 
       for (const config of selectedClass.configurations) {
-        if (config.is_active && !seen.has(config.class_section)) {
-          seen.add(config.class_section);
+        const sectionId = typeof config.class_section === 'number'
+          ? config.class_section
+          : config.class_section?.id;
+
+        if (config.is_active && sectionId !== undefined && !seen.has(sectionId)) {
+          seen.add(sectionId);
           extracted.push({
-            id: config.class_section,
+            id: sectionId,
             name: config.class_section_name,
           } as ClassSection);
         }
@@ -767,7 +771,7 @@ export default function StudentUpdatePage() {
     return subjectGroups.filter(group => {
       if (!group.applicable_classes || group.applicable_classes.length === 0) return false;
       return group.applicable_classes.some(cls => {
-        const classId = typeof cls === 'object' ? cls.id : cls;
+        const classId = typeof cls === 'object' ? (cls as any).id : cls;
         return classId === formData.current_class;
       });
     });

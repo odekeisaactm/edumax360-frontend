@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { aiServicesAPI } from '@/lib/api';
-import { AIServiceConfig, AIServiceConfigFormValues } from '@/lib/types';
+import { AIServiceConfig } from '@/lib/types';
 import {
   Cpu, Plus, Edit3, Trash2, Search, X, Check,
   AlertCircle, AlertTriangle, Loader2, RefreshCw,
@@ -137,6 +137,19 @@ function ConfirmModal({ open, service, isDeleting, onConfirm, onCancel }: {
   );
 }
 
+interface AIServiceConfigFormValues {
+  name: string;
+  service_type: string;
+  model_name: string;
+  api_endpoint: string;
+  api_key: string;
+  is_active: boolean;
+  default_temperature: number;
+  default_max_tokens: number;
+  monthly_token_limit?: number;
+}
+
+
 // ─── Service Form Modal ────────────────────────────────────────────────────────
 const DEFAULT_FORM: AIServiceConfigFormValues = {
   name: '',
@@ -167,7 +180,7 @@ function ServiceModal({ editing, isSaving, onSave, onClose }: {
           is_active: editing.is_active,
           default_temperature: editing.default_temperature,
           default_max_tokens: editing.default_max_tokens,
-          monthly_token_limit: editing.monthly_token_limit,
+          monthly_token_limit: editing.monthly_token_limit ?? undefined,
         }
       : DEFAULT_FORM
   );
@@ -440,11 +453,11 @@ export default function AIServicesPage() {
     setIsSaving(true);
     try {
       if (editingService) {
-        const updated = await aiServicesAPI.update(editingService.id, form);
+        const updated = await aiServicesAPI.update(editingService.id, form as any);
         setServices(prev => prev.map(s => s.id === updated.id ? updated : s));
         showToast('success', `"${updated.name}" updated successfully`);
       } else {
-        const created = await aiServicesAPI.create(form);
+        const created = await aiServicesAPI.create(form as any);
         setServices(prev => [created, ...prev]);
         showToast('success', `"${created.name}" created successfully`);
       }
@@ -481,8 +494,8 @@ export default function AIServicesPage() {
   const handleResetUsage = async (service: AIServiceConfig) => {
     setResettingId(service.id);
     try {
-      const updated = await aiServicesAPI.resetUsage(service.id);
-      setServices(prev => prev.map(s => s.id === updated.id ? updated : s));
+      await aiServicesAPI.resetUsage(service.id);
+setServices(prev => prev.map(s => s.id === service.id ? { ...s, tokens_used_this_month: 0 } : s));
       showToast('success', `Token usage reset for "${service.name}"`);
     } catch (err) {
       showToast('error', extractError(err));
@@ -659,7 +672,7 @@ export default function AIServicesPage() {
                         <div className="min-w-0">
                           <p className="font-semibold text-slate-900 truncate">{service.name}</p>
                           <div className="w-24 mt-0.5">
-                            <TokenUsageBar used={service.tokens_used_this_month ?? 0} limit={service.monthly_token_limit} />
+                            <TokenUsageBar used={service.tokens_used_this_month ?? 0} limit={service.monthly_token_limit ?? undefined} />
                           </div>
                         </div>
                       </div>

@@ -1,4 +1,5 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -98,7 +99,7 @@ export default function ComputeCommentsStudentListPage() {
         class_config_id: parseInt(classId),
         include_all: true,
       });
-      setData(response);
+      setData(response as unknown as StudentListData);
     } catch (err) {
       setPageError(extractError(err));
     } finally {

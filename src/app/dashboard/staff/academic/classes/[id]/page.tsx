@@ -837,7 +837,9 @@ function StudentsTab({
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-slate-900 text-sm truncate">{fullName}</p>
                         {s.is_special_need && (
-                          <Heart className="h-3 w-3 text-rose-400 flex-shrink-0" title="Special needs" />
+                           <span title="Special needs">
+                          <Heart className="h-3 w-3 text-rose-400 flex-shrink-0" />
+                        </span>
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -1029,7 +1031,7 @@ export default function ClassDetailPage() {
   const handleSaveSubjects = async () => {
     setSavingSubjects(true);
     try {
-      await academicAPI.updateClass(Number(params.id), { subjects: selectedSubjectIds });
+      await academicAPI.updateClass(Number(params.id), { subjects: selectedSubjectIds } as any);
       await fetchClassData();
       setShowSubjectModal(false);
       setSelectedSubjectIds([]);
@@ -1045,7 +1047,7 @@ export default function ClassDetailPage() {
     if (!classData) return;
     const newSubjects = (classData.subjects || []).filter(id => id !== subjectId);
     try {
-      await academicAPI.updateClass(Number(params.id), { subjects: newSubjects });
+      await academicAPI.updateClass(Number(params.id), { subjects: newSubjects } as any);
       await fetchClassData();
       showToast('success', 'Subject removed successfully');
     } catch (err) {

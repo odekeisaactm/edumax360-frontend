@@ -234,7 +234,7 @@ export function ApplyDiscountPage() {
     setApplying(true); setError(null);
     try {
       // POST to assign discount to student
-      await feeAPI.assignStudentDiscount?.({ student: selected.id, discount_application: parseInt(selectedDiscount) });
+       await feeAPI.createDiscountApplication({ student: selected.id, discount_application: parseInt(selectedDiscount) } as any);
       setSuccessMsg('Discount applied successfully');
       setTimeout(() => setSuccessMsg(null), 3000);
       setSelected(null); setSelectedDiscount(''); setQuery(''); setResults([]);

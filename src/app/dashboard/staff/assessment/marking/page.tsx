@@ -164,10 +164,10 @@ export default function MarkingHubPage() {
 
     try {
       const statusData = await examsAPI.getSchedulesStatus(exam.id);
-      const bySubject = statusData.schedules_by_subject as Record<
-        string,
-        { subject_id: number; schedules: ScheduleItem[] }
-      >;
+      const bySubject = statusData.schedules_by_subject as unknown as Record <
+      string,
+      { subject_id: number; schedules: ScheduleItem[] }
+    >;
       setSchedulesBySubject(bySubject);
 
       // Derive unique classes from all schedules
@@ -201,7 +201,7 @@ export default function MarkingHubPage() {
     if (useClassSections) {
       setLoadingSections(true);
       try {
-        const sectionData = await academicAPI.listClassSections({ student_class: cls.id });
+          const sectionData = await academicAPI.listClassSections({ school_section_id: cls.id });
         setSections(sectionData.map((s: any) => ({ id: s.id, name: s.name })));
       } catch {
         setError('Failed to load sections.');

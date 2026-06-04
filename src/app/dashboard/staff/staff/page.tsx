@@ -155,7 +155,7 @@ export default function StaffListPage() {
       if (deptFilter)   params.department = deptFilter;
       if (typeFilter)   params.staff_type = typeFilter;
 
-      const data = await staffAPI.list(params);
+      const data = await staffAPI.list(params) as any;
       const results = data?.results ?? data?.data ?? data ?? [];
       setStaff(Array.isArray(results) ? results : []);
       setTotal(data?.count ?? results.length);

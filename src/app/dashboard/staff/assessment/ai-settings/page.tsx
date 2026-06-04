@@ -444,7 +444,7 @@ export default function AISettingsPage() {
       } else {
         setAISettings(settingsData);
       }
-      setAIServices(servicesData.filter(s => s.is_active));
+      setAIServices(servicesData.filter((s: AIServiceConfig) => s.is_active));
       setSchoolSections(sectionsData);
     } catch {
       setPageError('fetch_error');

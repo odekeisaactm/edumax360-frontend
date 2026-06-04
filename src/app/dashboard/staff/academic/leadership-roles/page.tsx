@@ -482,7 +482,7 @@ export default function LeadershipRolesPage() {
       setRoles(rolesData);
       setSchoolSections(sectionsData);
 
-      const staffList: any[] = staffData?.results ?? staffData?.data ?? staffData ?? [];
+      const staffList: any[] = (staffData as any)?.results ?? (staffData as any)?.data ?? staffData ?? [];
       setStaffOptions(
         (Array.isArray(staffList) ? staffList : []).map(s => ({
           id: s.id,

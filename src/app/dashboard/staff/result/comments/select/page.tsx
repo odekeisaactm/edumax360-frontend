@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import {
   MessageSquare, ArrowLeft, Loader2, AlertCircle, FileText,
   Users, Star, BookOpen, RefreshCw, GraduationCap,
-  Layers, ChevronDown, CheckCircle2, AlertTriangle,
+  Layers, ChevronDown, CheckCircle2, AlertTriangle, X
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────

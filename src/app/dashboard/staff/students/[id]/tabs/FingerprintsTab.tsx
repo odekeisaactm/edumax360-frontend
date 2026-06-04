@@ -238,8 +238,7 @@ export default function FingerprintsTab({ student, settings, refreshStudent }: P
       // You need to add this endpoint to your API
       // Assuming it matches the HTML version structure: { student_id, finger_name, raw_fmds }
       await fingerprintsAPI.add(student.id, {
-        finger_name: selectedFinger,
-        fingerprint_template: finalScans.join(','), // Or however your backend accepts the array.
+        finger_name: selectedFinger as any,
         // NOTE: The HTML version sent 'raw_fmds' as an array.
         // If your Django API expects a single string field 'fingerprint_template', we join it.
         // Based on your serializer earlier, it expects 'fingerprint_template'. We will join with a delimiter.

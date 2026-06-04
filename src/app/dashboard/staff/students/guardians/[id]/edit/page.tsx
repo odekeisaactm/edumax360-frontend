@@ -113,11 +113,11 @@ const EMPTY_FORM: FormState = {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function EditParentPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const params = useParams();
   const parentId = Number(params?.id);
 
-  const canEdit = user?.is_superuser || user?.permissions?.includes('student_management.change_parentmodel') || false;
+  const canEdit = user?.is_superuser || hasPermission('student_management.change_parentmodel') || false;
 
   const [openSections, setOpenSections] = useState({
     basic: true,
@@ -569,7 +569,7 @@ export default function EditParentPage() {
                       {(field.choices ?? []).map((c) => <option key={c} value={c}>{c}</option>)}
                     </select>
                   )}
-                  {field.field_type === 'boolean' && (
+                  {field.field_type === 'checkbox' && (
                     <select className={inputCls} value={extraFields[field.id] ?? ''}
                       onChange={(e) => setExtraFields((p) => ({ ...p, [field.id]: e.target.value }))}>
                       <option value="">Select</option>

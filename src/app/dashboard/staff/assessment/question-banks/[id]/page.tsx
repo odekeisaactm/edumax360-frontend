@@ -734,7 +734,7 @@ function QuestionFormModal({ open, editing, bankId, onClose, onSaved }: {
 
       if (type === 'objective') {
         const existingOpts = editing.options || {};
-        setOptions(existingOpts);
+        setOptions(existingOpts as Record<string, string>);
         setCorrectAnswer(editing.correct_answer || '');
         const count = Object.keys(existingOpts).length;
         if (count >= 2) setNumberOfOptions(count);

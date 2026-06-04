@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import {
   Eye, ArrowLeft, Loader2, AlertCircle, FileText,
   Users, Star, BookOpen, RefreshCw, GraduationCap,
-  Layers, ChevronDown,
+  Layers, ChevronDown, Check, AlertTriangle, X,
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -453,9 +453,9 @@ export default function ViewResultPage() {
       setTextClasses(textData);
       setSpecialClasses(specialData);
 
-      setScoreCount(new Set(scoreData.map(c => c.class_name)).size);
-      setTextCount(new Set(textData.map(c => c.class_name)).size);
-      setSpecialCount(new Set(specialData.map(c => c.class_name)).size);
+      setScoreCount(new Set(scoreData.map((c: UploadableClass) => c.class_name)).size);
+      setTextCount(new Set(textData.map((c: UploadableClass) => c.class_name)).size);
+      setSpecialCount(new Set(specialData.map((c: UploadableClass) => c.class_name)).size);
     } catch (err) {
       setPageError(extractError(err));
     } finally {

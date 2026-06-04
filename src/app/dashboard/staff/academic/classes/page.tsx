@@ -96,7 +96,7 @@ interface ClassFormValues {
   school_section: number | null;
   result_type: 'score' | 'text' | 'combined';
   is_graduation_class: boolean;
-  can_have_special_student: editing.can_have_special_student,
+  can_have_special_student: boolean;
   next_class: number | '';
   order: number;
   section_ids: number[];

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { feeAPI, utilitiesAPI, academicCalendarAPI } from '@/lib/api';
-import { Fee, Utility, AcademicPeriod } from '@/lib/types';
+import { Fee, Utility, AcademicPeriod, FeeOccurrence } from '@/lib/types';
 import {
   List, Plus, Edit3, Trash2, Check, X, AlertCircle,
   AlertTriangle, Loader2, Search, Lock, RefreshCw, HelpCircle,
@@ -433,10 +433,11 @@ export default function FeesPage() {
     setIsSaving(true);
     try {
       const payload = {
-        ...data,
-        payment_period:   data.payment_period   || null,
-        required_utility: data.required_utility || null,
-      };
+      ...data,
+      occurrence:       data.occurrence as FeeOccurrence,
+      payment_period:   data.payment_period   || undefined,
+      required_utility: data.required_utility || undefined,
+    };
       if (editingFee) {
         const updated = await feeAPI.updateFee(editingFee.id, payload);
         setFees(prev => prev.map(f => f.id === editingFee.id ? updated : f));
@@ -615,7 +616,9 @@ export default function FeesPage() {
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="font-semibold text-slate-900 truncate">{f.name}</span>
                     {f.is_protected && (
-                      <Lock className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" title="Protected — cannot be deleted" />
+                        <span title="Protected — cannot be deleted" >
+                         <Lock className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+                         </span>
                     )}
                   </div>
 

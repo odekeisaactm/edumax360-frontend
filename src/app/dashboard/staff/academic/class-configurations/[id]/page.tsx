@@ -1009,7 +1009,10 @@ function StudentsTab({ configId, configName, studentClassId, classSectionId }: {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-slate-900 text-sm truncate">{fullName}</p>
-                        {s.is_special_need && <Heart className="h-3 w-3 text-rose-400 flex-shrink-0" title="Special needs" />}
+                        {s.is_special_need && <span title="Special needs">
+                          <Heart className="h-3 w-3 text-rose-400 flex-shrink-0" />
+                        </span>
+                        }
                       </div>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         {s.registration_number && (
@@ -1171,7 +1174,7 @@ export default function ClassConfigDetailPage() {
       setConfig(configData);
       setDays(daysData);
 
-      const staffList: any[] = staffData?.results ?? staffData?.data ?? staffData ?? [];
+      const staffList: any[] = (staffData as any)?.results ?? (staffData as any)?.data ?? staffData ?? [];
       setStaffOptions(staffList.map(s => ({
         id: s.id,
         name: s.full_name ?? (`${s.first_name ?? ''} ${s.last_name ?? ''}`.trim() || `Staff #${s.id}`),
@@ -1204,7 +1207,9 @@ export default function ClassConfigDetailPage() {
         // FIX #5 & #6: fetch students scoped to this config only
         studentsAPI.list({
       current_class: studentClassId,        // from configData.student_class
-      current_class_section: configData.class_section,
+      current_class_section: typeof configData.class_section === 'object'
+      ? configData.class_section?.id
+      : configData.class_section,
       page_size: 500
     }),
       ]);

@@ -47,7 +47,7 @@ export default function OverviewTab({ student, settings }: { student: Student; s
       <InfoCard title="Location" icon={MapPin} iconGradient="from-violet-500 to-purple-600">
         <InfoRow label="State" value={student.state} />
         <InfoRow label="LGA" value={student.lga} />
-        <InfoRow label="Address" value={student.address || 'N/A'} />
+        <InfoRow label="Address" value={(student as any).address || 'N/A'} />
       </InfoCard>
 
       {/* Extra fields if needed */}

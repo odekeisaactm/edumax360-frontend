@@ -1,4 +1,5 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -53,6 +54,7 @@ interface PrepareData {
   rating_options: RatingOption[];
   categories: TextCategory[];
   is_update: boolean;
+  image?: string;
 }
 
 interface FieldData {
@@ -199,7 +201,7 @@ export default function TextStudentUploadPage() {
   const [correctingFieldId, setCorrectingFieldId] = useState<number | null>(null);
   
   const recognitionRef = React.useRef<any>(null);
-  const commentTimeoutRef = React.useRef<NodeJS.Timeout>();
+  const commentTimeoutRef = React.useRef<NodeJS.Timeout | undefined>(undefined);
 
   const showToast = useCallback((type: 'success' | 'error' | 'warn', message: string) => {
     const id = ++_toastId;

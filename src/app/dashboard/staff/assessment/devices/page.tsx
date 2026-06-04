@@ -275,7 +275,7 @@ export default function DevicesPage() {
         ...formData,
         browser_fingerprint: formData.device_fingerprint,
       };
-      let result;
+      let result: AuthorizedDevice;
       if (editingDevice) {
         result = await authorizedDevicesAPI.update(editingDevice.id, formData);
         setDevices(prev => prev.map(d => d.id === result.id ? result : d));

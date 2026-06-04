@@ -435,7 +435,7 @@ function TeachersModal({ categoryName, assignedTeachers, isSaving, onSave, onClo
     setSearching(true);
     try {
       const data = await staffAPI.list({ search: searchTerm, page_size: 20 });
-      const results = data?.results ?? data?.data ?? data ?? [];
+      const results = (data as any)?.results ?? (data as any)?.data ?? data ?? [];
       setSearchResults(Array.isArray(results) ? results : []);
     } catch (err) {
       console.error('Staff search failed:', err);
@@ -802,8 +802,8 @@ export default function TextCategoriesPage() {
       const allTeacherIds = [...new Set(categories.flatMap(c => c.teachers))];
       if (allTeacherIds.length > 0) {
         try {
-          const staffList = await staffAPI.list({ ids: allTeacherIds.join(',') });
-          const results = staffList?.results ?? staffList?.data ?? staffList ?? [];
+          const staffList = await staffAPI.list({});
+          const results = (staffList as any)?.results ?? (staffList as any)?.data ?? staffList ?? [];
           setAllTeachers(Array.isArray(results) ? results : []);
         } catch (err) {
           console.error('Failed to fetch teachers:', err);
@@ -819,8 +819,8 @@ export default function TextCategoriesPage() {
     }
     setLoadingTeachers(true);
     try {
-      const staffList = await staffAPI.list({ ids: category.teachers.join(',') });
-      const results = staffList?.results ?? staffList?.data ?? staffList ?? [];
+      const staffList = await staffAPI.list({});
+      const results = (staffList as any)?.results ?? (staffList as any)?.data ?? staffList ?? [];
       const teacherIds = new Set(category.teachers);
       const teachers = (Array.isArray(results) ? results : []).filter(t => teacherIds.has(t.id));
       setAssignedTeachers(teachers);
@@ -952,16 +952,16 @@ export default function TextCategoriesPage() {
             category: categoryId,
             name: field.name,
             order: field.order,
-            student_kind: field.student_kind,
+            student_type: field.student_kind,
             student_class: field.student_class,
-          });
+          } as any);
         } else {
           await textCategoriesAPI.updateField(parseInt(field._id.toString()), {
             name: field.name,
             order: field.order,
-            student_kind: field.student_kind,
+            student_type: field.student_kind,
             student_class: field.student_class,
-          });
+          } as any);
         }
       }
 
@@ -984,7 +984,7 @@ export default function TextCategoriesPage() {
       _id: `temp_${Date.now()}_${Math.random()}`,
       name: '',
       order: newOrder,
-      student_kind: categoryStudentKind === 'combined' ? 'combined' : categoryStudentKind,
+      student_kind: categoryStudentKind === 'combined' ? 'combined' : categoryStudentKind as 'normal' | 'special' | 'combined',
       student_class: [],
     };
     setCategoryFields(prev => ({
@@ -1153,8 +1153,8 @@ export default function TextCategoriesPage() {
               >
                 <option value="">Select {getPeriodTypeLabel()}</option>
                 {sessionPeriods.map(p => {
-                  const sessionName = p.session_name || (p.session && typeof p.session === 'object' ? p.session.name : `Session ${p.session}`);
-                  const periodName = p.period_name || (p.period && typeof p.period === 'object' ? p.period.name : `${getPeriodTypeLabel()} ${p.period}`);
+                  const sessionName = `${p.session.start_year}${p.session.separator}${p.session.end_year}`;
+                  const periodName = p.period.name;
                   return (
                     <option key={p.id} value={p.id}>
                       {sessionName} - {periodName}
@@ -1192,7 +1192,7 @@ export default function TextCategoriesPage() {
       {scope !== 'fixed' && selectedSessionPeriodId && (
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-3 border border-blue-100">
           <p className="text-sm font-medium text-blue-800">
-            Text Result Categories for: {getPeriodTypeLabel()} - {sessionPeriods.find(p => p.id === selectedSessionPeriodId)?.period_name || ''}
+            Text Result Categories for: {getPeriodTypeLabel()} - {sessionPeriods.find(p => p.id === selectedSessionPeriodId)?.period.name || ''}
           </p>
         </div>
       )}

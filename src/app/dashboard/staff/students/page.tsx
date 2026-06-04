@@ -934,7 +934,9 @@ export default function StudentsPage() {
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-slate-900 text-sm truncate">{fullName}</p>
                         {s.is_special_need && (
-                          <Heart className="h-3 w-3 text-rose-400 flex-shrink-0" title="Special needs" />
+                          <span title="Special needs" className="flex-shrink-0 flex items-center">
+                            <Heart className="h-3 w-3 text-rose-400" />
+                          </span>
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">

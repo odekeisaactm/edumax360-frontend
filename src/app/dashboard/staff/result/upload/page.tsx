@@ -460,9 +460,9 @@ export default function ResultUploadPage() {
       setSpecialClasses(specialData);
 
       // Calculate counts (unique class names, not sections)
-      setScoreCount(new Set(scoreData.map(c => c.class_name)).size);
-      setTextCount(new Set(textData.map(c => c.class_name)).size);
-      setSpecialCount(new Set(specialData.map(c => c.class_name)).size);
+      setScoreCount(new Set(scoreData.map((c: UploadableClass) => c.class_name)).size);
+      setTextCount(new Set(textData.map((c: UploadableClass) => c.class_name)).size);
+      setSpecialCount(new Set(specialData.map((c: UploadableClass) => c.class_name)).size);
     } catch (err) {
       setPageError(extractError(err));
     } finally {

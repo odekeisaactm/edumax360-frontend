@@ -270,7 +270,7 @@ function GuardianFormModal({ studentId, guardian, onClose, onSave }: GuardianFor
   }, [guardian]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value, type, checked } = e.target;
+    const { name, value, type, checked } = e.target as HTMLInputElement;
     setForm(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
@@ -282,8 +282,8 @@ function GuardianFormModal({ studentId, guardian, onClose, onSave }: GuardianFor
     setLoading(true);
     try {
       const data = guardian
-        ? await otherGuardiansAPI.update(guardian.id, form)
-        : await otherGuardiansAPI.create(studentId, form);
+        ? await otherGuardiansAPI.update(guardian.id, { ...form, relationship: form.relationship as OtherGuardian['relationship'] })
+: await otherGuardiansAPI.create(studentId, { ...form, relationship: form.relationship as OtherGuardian['relationship'] });
       onSave(data);
     } catch (err: any) {
       const errorDetail = err?.response?.data?.detail || err?.message || 'Failed to save guardian';

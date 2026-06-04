@@ -70,14 +70,14 @@ function buildPreviewProps(settings: ResultSettings | null, schoolInfo: any) {
     student:            dummyStudent,
     result: {
       ...dummyStudent,
-      session_name:   dummyPeriod.session,
-      period_name:    dummyPeriod.term,
-      result_data:    dummyScoreResult.subjects,
-      result_type:    'score',
-      total_score:    dummyScoreResult.summary.total_score,
-      average_score:  parseFloat(dummyScoreResult.summary.student_average),
-      text_categories: dummyTextCategories,
       ...dummyScoreResult.summary,
+      session_name:    dummyPeriod.session,
+      period_name:     dummyPeriod.term,
+      result_data:     dummyScoreResult.subjects,
+      result_type:     'score',
+      total_score:     dummyScoreResult.summary.total_score,
+      average_score:   parseFloat(dummyScoreResult.summary.student_average),
+      text_categories: dummyTextCategories,
     },
     // Use dummy settings for layout/structure, but live colors AND custom field config
     settings: {

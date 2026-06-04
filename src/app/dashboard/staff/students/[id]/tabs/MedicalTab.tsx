@@ -39,7 +39,7 @@ export default function MedicalTab({ student }: { student: Student }) {
           <Star className="h-4 w-4 text-indigo-500" /> Special Needs
         </h3>
 
-        {student.is_special_need ? (
+        {(student as any).is_special_need ? (
           <div className="flex flex-col items-center justify-center p-4 bg-indigo-50 border border-indigo-100 rounded-xl text-center gap-2">
             <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
               <AlertCircle className="h-5 w-5 text-indigo-600" />

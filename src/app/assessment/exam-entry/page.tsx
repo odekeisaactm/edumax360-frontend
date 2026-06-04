@@ -10,7 +10,7 @@ import {
   BookOpen, User, Key, AlertTriangle, X, Sparkles,
   ChevronRight, Search, ArrowLeft, GraduationCap,
 } from 'lucide-react';
-import type { Exam, ExamDetail } from '@/types/assessment.types';
+import type { Exam, ExamDetail } from '@/lib/types';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -87,7 +87,7 @@ function HelperDrawer({
     try {
       if (useClassSections) {
         // Load sections immediately — find exam later after section is chosen
-        const sectionData = await academicAPI.listClassSections({ student_class: cls.id });
+        const sectionData = await academicAPI.listClassSections({ school_section_id: cls.id });
         setSections(sectionData.map((s: any) => ({ id: s.id, name: s.name })));
         setStep('section');
       } else {

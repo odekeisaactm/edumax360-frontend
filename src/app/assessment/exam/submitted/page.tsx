@@ -1,4 +1,5 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import React, { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -11,7 +12,9 @@ import {
   FileText,
 } from 'lucide-react';
 
-export default function ExamSubmittedPage() {
+import { Suspense } from 'react';
+
+function ExamSubmittedPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
@@ -185,5 +188,13 @@ export default function ExamSubmittedPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ExamSubmittedPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Clock className="h-8 w-8 animate-spin text-gray-400" /></div>}>
+      <ExamSubmittedPageInner />
+    </Suspense>
   );
 }

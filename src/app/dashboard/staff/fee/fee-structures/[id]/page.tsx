@@ -1,4 +1,5 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -85,11 +86,11 @@ export default function FeeStructurePricingPage() {
       ]);
       
       setStructure(sData);
-      const blueprint = feesData.find(f => f.id === sData.fee) || null;
+      const blueprint = feesData.find((f: Fee) => f.id === sData.fee) || null;
       setFeeBlueprint(blueprint);
 
       // 2. Identify Active Session
-      const current = sessionsData.find(s => s.is_active);
+      const current = sessionsData.find((s: Session) => s.is_active);
       if (!current) {
         showToast('error', 'No active Academic Session found. Configure a session first.');
         setLoading(false);
@@ -108,7 +109,7 @@ export default function FeeStructurePricingPage() {
 
       // 4. Initialize amounts from existing data
       const initialAmounts: Record<number, string> = {};
-      sData.period_amounts?.forEach(pa => {
+      sData.period_amounts?.forEach((pa: { period: number; amount: string }) => {
         initialAmounts[pa.period] = pa.amount;
       });
       setAmounts(initialAmounts);

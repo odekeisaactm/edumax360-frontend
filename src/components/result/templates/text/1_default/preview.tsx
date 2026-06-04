@@ -21,6 +21,20 @@ function ensureAbsoluteUrl(url: string | null | undefined): string | undefined {
   return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
+// Helper function to safely render comment values
+function renderCommentValue(value: any): React.ReactNode {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'object') {
+    // If it's a nested object with a message property
+    if ('message' in value) return value.message;
+    // If it's an array
+    if (Array.isArray(value)) return value.join(', ');
+    // Otherwise stringify
+    return JSON.stringify(value);
+  }
+  return value;
+}
+
 export default function DefaultTextTemplate({
   student,
   result,
@@ -41,6 +55,11 @@ export default function DefaultTextTemplate({
   const isMidterm = termType === 'midterm';
   const textCategories = result.text_categories || [];
   const customFields: string[] = settings.enable_custom_comment_fields ? (settings.custom_comment_fields ?? []) : [];
+
+  // Helper to get fields from behavior category (only uses fields_list since that's what exists in the type)
+  const getBehaviorFields = (category: ResultBehaviorCategory): any[] => {
+    return (category.fields_list || []) as any[];
+  };
 
   return (
     <div className="max-w-4xl mx-auto bg-white border-2 border-black font-sans text-sm">
@@ -81,7 +100,7 @@ export default function DefaultTextTemplate({
             <div className="font-bold text-white px-2 py-0.5" style={{ backgroundColor: colors.header, border: '1px solid black' }}>
               {cat.name.toUpperCase()}
             </div>
-            {cat.fields.map((field: any) => (
+            {cat.fields?.map((field: any) => (
               <div key={field.id} className="flex border border-t-0 border-gray-400 h-6 items-center font-mono text-sm text-black">
                 <div className="w-4/5 px-2">{field.name}</div>
                 <div className="w-1/5 border-l border-black text-center font-bold">{field.score || '-'}</div>
@@ -108,10 +127,10 @@ export default function DefaultTextTemplate({
                 </tr>
               </thead>
               <tbody>
-                {(category.fields_list ?? category.fields ?? []).map((field: any) => (
+                {getBehaviorFields(category).map((field: any) => (
                   <tr key={field.id} className="border border-black">
                     <td className="text-left font-bold text-xs pl-2 border border-black">{field.name}</td>
-                    <td className="text-center border border-black">{behaviorRatings[field.name] || '-'}</td>
+                    <td className="text-center border border-black">{behaviorRatings?.[field.name] || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -127,13 +146,13 @@ export default function DefaultTextTemplate({
       <div className="border border-black m-2 p-1 font-sans text-xs">
         {customFields.map((fieldName: string, i: number) => (
           <p key={i} className="border-b border-black font-bold py-0.5">
-            {fieldName}: {comments.custom_comments?.[fieldName] ?? comments?.[fieldName] ?? '—'}
+            {fieldName}: {renderCommentValue(comments?.custom_comments?.[fieldName] ?? comments?.[fieldName] ?? '—')}
           </p>
         ))}
-        <p className="border-b border-black font-bold py-0.5">Teacher's Name: {comments.form_teacher || '—'}</p>
-        <p className="py-0.5 text-white px-1" style={{ backgroundColor: colors.header }}>Teacher's Comment: {comments.form_teacher_comment || '—'}</p>
-        <p className="border-b border-black font-bold py-0.5">{comments.head_teacher_title || 'Principal'}'s Name: {comments.head_teacher || '—'}</p>
-        <p className="py-0.5 text-white px-1" style={{ backgroundColor: colors.header }}>{comments.head_teacher_title || 'Principal'}'s Comment: {comments.head_teacher_comment || '—'}</p>
+        <p className="border-b border-black font-bold py-0.5">Teacher's Name: {renderCommentValue(comments?.form_teacher || '—')}</p>
+        <p className="py-0.5 text-white px-1" style={{ backgroundColor: colors.header }}>Teacher's Comment: {renderCommentValue(comments?.form_teacher_comment || '—')}</p>
+        <p className="border-b border-black font-bold py-0.5">{comments?.head_teacher_title || 'Principal'}'s Name: {renderCommentValue(comments?.head_teacher || '—')}</p>
+        <p className="py-0.5 text-white px-1" style={{ backgroundColor: colors.header }}>{comments?.head_teacher_title || 'Principal'}'s Comment: {renderCommentValue(comments?.head_teacher_comment || '—')}</p>
       </div>
     </div>
   );

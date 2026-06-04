@@ -259,8 +259,8 @@ export default function StaffEditPage() {
       setDepartments(toArr(depts));
       setAllPositions(toArr(pos));
       setCustomFields(toArr(fields));
-      setStates(Array.isArray(stateList) ? stateList : stateList?.data ?? []);
-      setBanks(Array.isArray(bankList) ? bankList : bankList?.data ?? []);
+      setStates(Array.isArray(stateList) ? stateList : []);
+setBanks(Array.isArray(bankList) ? bankList : []);
       setGroups(toArr(groupList));
 
       // Populate form with existing staff data
@@ -296,7 +296,7 @@ export default function StaffEditPage() {
 
       // Set existing image preview
       if (staff.image_url ?? staff.image) {
-        setImagePreview(staff.image_url ?? staff.image);
+        setImagePreview(staff.image_url ?? staff.image ?? null);
       }
     }).catch(err => setSubmitError(extractError(err)))
       .finally(() => setLoading(false));
@@ -355,7 +355,7 @@ export default function StaffEditPage() {
         payload.append('image', ''); // signal backend to clear the image
       }
 
-      await staffAPI.update(staffId, payload, { headers: { 'Content-Type': undefined } } as any);
+      await staffAPI.update(staffId, payload);
       router.push(`${STAFF_INDEX}/${staffId}`);
     } catch (err) {
       setSubmitError(extractError(err));

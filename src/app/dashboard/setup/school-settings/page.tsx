@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { schoolSettingsAPI, aiConfigAPI } from '@/lib/api';
 import { useAuth, useRequireAuth } from '@/context/AuthContext';
-import { SchoolAIConfig } from '@/lib/types';
+import { SchoolAIConfig, SchoolInfo, SchoolSettings } from '@/lib/types';
 import {
   Settings, Edit3, X, Check, AlertCircle, Sparkles,
   Monitor, Building, Calendar, Loader2, Bot,
@@ -13,17 +13,17 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface SettingsForm {
-  school_type: string;
+  school_type: 'day' | 'boarding' | 'mixed';
   enable_notifications: boolean;
   parent_portal_enabled: boolean;
   student_portal_enabled: boolean;
   separate_school_sections_data: boolean;
   enable_sms_notifications: boolean;
   enable_email_notifications: boolean;
-  default_period_type: string;
-  school_week_start_day: string;
-  items_per_page: number;
-  date_format: string;
+  default_period_type: 'term' | 'semester' | 'quarter' | 'trimester';
+  school_week_start_day: 'monday' | 'sunday' | 'saturday';
+  items_per_page: 10 | 25 | 50 | 100;
+  date_format: 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
   delete_archived_data_after_years: number;
   backup_frequency_days: number;
   enable_automatic_backup: boolean;
@@ -149,8 +149,8 @@ export default function SchoolSettingsPage() {
     setIsSaving(true);
     try {
       const updated = schoolSettings
-        ? await schoolSettingsAPI.update(form)
-        : await schoolSettingsAPI.create(form);
+      ? await schoolSettingsAPI.update(form as any)
+      : await schoolSettingsAPI.create(form as any);
       setSchoolSettings(updated);
       setIsEditing(false);
       setPageError(null);
@@ -511,7 +511,7 @@ function SettingsModal({ settings, aiConfigs, isSaving, onSave, onClose }: {
               <>
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">School Type</label>
-                  <select value={form.school_type} onChange={e => set('school_type', e.target.value)} className={inputCls}>
+                  <select value={form.school_type} onChange={e => set('school_type', e.target.value as 'day' | 'boarding' | 'mixed')} className={inputCls}>
                     <option value="day">Day School</option>
                     <option value="boarding">Boarding School</option>
                     <option value="mixed">Mixed (Day & Boarding)</option>
@@ -533,7 +533,7 @@ function SettingsModal({ settings, aiConfigs, isSaving, onSave, onClose }: {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Default Period Type</label>
-                  <select value={form.default_period_type} onChange={e => set('default_period_type', e.target.value)} className={inputCls}>
+                  <select value={form.default_period_type} onChange={e => set('default_period_type', e.target.value as 'term' | 'semester' | 'quarter' | 'trimester')} className={inputCls}>
                     <option value="term">Term</option>
                     <option value="semester">Semester</option>
                     <option value="quarter">Quarter</option>
@@ -542,7 +542,7 @@ function SettingsModal({ settings, aiConfigs, isSaving, onSave, onClose }: {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Week Start Day</label>
-                  <select value={form.school_week_start_day} onChange={e => set('school_week_start_day', e.target.value)} className={inputCls}>
+                  <select value={form.school_week_start_day} onChange={e => set('school_week_start_day', e.target.value as 'monday' | 'sunday' | 'saturday')} className={inputCls}>
                     <option value="monday">Monday</option>
                     <option value="sunday">Sunday</option>
                     <option value="saturday">Saturday</option>
@@ -557,13 +557,13 @@ function SettingsModal({ settings, aiConfigs, isSaving, onSave, onClose }: {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Items Per Page</label>
-                    <select value={form.items_per_page} onChange={e => set('items_per_page', Number(e.target.value))} className={inputCls}>
+                    <select value={form.items_per_page} onChange={e => set('items_per_page', Number(e.target.value) as 10 | 25 | 50 | 100)} className={inputCls}>
                       {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Date Format</label>
-                    <select value={form.date_format} onChange={e => set('date_format', e.target.value)} className={inputCls}>
+                    <select value={form.date_format} onChange={e => set('date_format', e.target.value as 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD')} className={inputCls}>
                       <option value="DD/MM/YYYY">DD/MM/YYYY</option>
                       <option value="MM/DD/YYYY">MM/DD/YYYY</option>
                       <option value="YYYY-MM-DD">YYYY-MM-DD</option>

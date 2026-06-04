@@ -153,7 +153,7 @@ export const StudentSidebar: React.FC<{ isOpen: boolean; onClose: () => void }> 
 
         {hasChildren && isExpanded && (
           <div className="mt-1 space-y-1">
-            {item.children.map((child) => renderNavItem(child, level + 1))}
+            {item.children?.map((child) => renderNavItem(child, level + 1))}
           </div>
         )}
       </div>

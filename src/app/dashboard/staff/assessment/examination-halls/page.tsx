@@ -347,7 +347,7 @@ export default function ExaminationHallsPage() {
     const matchActive = !showActiveOnly || h.is_active;
     const matchSection = !filterSection || (
       typeof h.school_section === 'object'
-        ? (h.school_section as SchoolSection)?.id === filterSection
+        ? (h.school_section as unknown as SchoolSection)?.id === filterSection
         : h.school_section === filterSection
     );
     return matchSearch && matchActive && matchSection;

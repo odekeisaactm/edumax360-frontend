@@ -11,7 +11,7 @@ import {
   LayoutGrid, X, RefreshCw, ChevronDown, Table2, Grid3X3,
   FileSpreadsheet, GraduationCap,
 } from 'lucide-react';
-import type { ExamDetail, ExamSchedulesStatusResponse, StudentExamAccess } from '@/types/assessment.types';
+import type { ExamDetail, ExamSchedulesStatusResponse, StudentExamAccess } from '@/lib/types';
 import type { AcademicSettings } from '@/lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -320,7 +320,7 @@ export default function PrintPinsPage() {
     if (useClassSections) {
       setLoadingSections(true);
       try {
-        const res = await academicAPI.listClassSections({ student_class: classId });
+        const res = await academicAPI.listClassSections({ school_section_id: classId });
         setSections(res);
       } catch { setSections([]); }
       finally { setLoadingSections(false); }
@@ -342,7 +342,7 @@ export default function PrintPinsPage() {
       });
 
       setPins(response.pins);
-      setExamCode(response.exam_code ?? subject.exam_code);
+      setExamCode((response as any).exam_code ?? subject.exam_code);
       console.log(response.pins);
     } catch (err) {
       setPageError(extractError(err));

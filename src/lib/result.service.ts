@@ -2,6 +2,34 @@
 
 // ── Settings (singleton) ─────────────────────────────────────
 import api from './api';
+import type {
+  ResultSettings,
+  ResultTemplate,
+  ActiveTemplates,
+  ResultConfigurationGroup,
+  ResultConfigurationGroupWrite,
+  ResultGradeSet,
+  ResultGrade,
+  ResultPublish,
+  PublishStats,
+  ResultFieldSet,
+  ResultField,
+  ResultBehaviorCategory,
+  ResultBehaviorField,
+  TextResultCategory,
+  TextResultField,
+  ResultCommentTemplate,
+  ResultUploadPayload,
+  ResultUploadTracking,
+  TextRatingOption,
+  TextResultUploadPayload,
+  StudentResultComment,
+  ResultSpreadsheet,
+  ResultStatistics,
+  ResultModel,
+  CumulativeResult,
+  ConfigurationReadiness,
+} from '@/lib/types';
 
 
 export const resultSettingsAPI = {

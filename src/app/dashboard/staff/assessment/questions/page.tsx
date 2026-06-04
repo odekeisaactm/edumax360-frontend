@@ -464,17 +464,17 @@ export default function AllQuestionsPage() {
                 placeholder="Search questions..."
                 className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent" />
             </div>
-            <select value={filterSubject} onChange={e => { setFilterSubject(e.target.value); setFilterTopic(''); setFilterBank(''); }}
+            <select value={filterSubject} onChange={e => { setFilterSubject(e.target.value); setFilterTopic(''); }}
               className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 text-slate-700 bg-white">
               <option value="">All Subjects</option>
               {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-            <select value={filterClass} onChange={e => { setFilterClass(e.target.value); setFilterTopic(''); setFilterBank(''); }}
+            <select value={filterClass} onChange={e => { setFilterClass(e.target.value); setFilterTopic(''); }}
               className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 text-slate-700 bg-white">
               <option value="">All Classes</option>
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            <select value={filterTopic} onChange={e => { setFilterTopic(e.target.value); setFilterBank(''); }}
+            <select value={filterTopic} onChange={e => setFilterTopic(e.target.value)}
               className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 text-slate-700 bg-white"
               disabled={filteredTopics.length === 0}>
               <option value="">All Topics</option>
@@ -492,9 +492,9 @@ export default function AllQuestionsPage() {
             </select>
             {(filterSubject || filterClass || filterTopic || filterDifficulty || searchTerm) && (
               <button onClick={() => {
-                setFilterSubject(''); setFilterClass(''); setFilterTopic('');
-                setFilterBank(''); setFilterDifficulty(''); setSearchTerm('');
-              }} className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-500 hover:text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+                  setFilterSubject(''); setFilterClass(''); setFilterTopic('');
+                  setFilterDifficulty(''); setSearchTerm('');
+                }} className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-500 hover:text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
                 <X className="h-3.5 w-3.5" /> Clear filters
               </button>
             )}

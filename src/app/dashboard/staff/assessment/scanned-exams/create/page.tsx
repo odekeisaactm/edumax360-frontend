@@ -70,7 +70,7 @@ export default function CreateScannedExamPage() {
   const handleSessionChange = async (sessionId: number) => {
     setFormData({ ...formData, session: sessionId.toString(), term: '' });
     try {
-      const res = await academicCalendarAPI.listSessionPeriods(sessionId);
+      const res = await academicCalendarAPI.listSessionPeriods({ session_id: sessionId });
       setPeriods(res);
     } catch (e) {}
   };

@@ -345,7 +345,7 @@ export default function PaymentGatewaysPage() {
     setLoading(true); setPageError(null);
     try {
       const res = await feeAPI.getGatewayConfigs();
-      setGateways(Array.isArray(res) ? res : (res.results || []));
+      setGateways(Array.isArray(res) ? res : ((res as any).results || []));
     }
     catch (err) { setPageError(extractError(err)); }
     finally { setLoading(false); }

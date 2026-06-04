@@ -42,7 +42,7 @@ export type Proctoringseverity = 'low' | 'medium' | 'high' | 'critical';
 export type AIServiceType = 'openai' | 'anthropic' | 'google' | 'local' | 'custom';
 
 export type DeviceApprovalStatus = 'pending' | 'approved' | 'rejected';
-export type DeviceCheckStatus = 'approved' | 'pending' | 'unknown';
+export type DeviceCheckStatus = 'approved' | 'pending' | 'blocked' | 'unknown';
 
 export type FileType = 'pdf' | 'image';
 
@@ -53,6 +53,7 @@ export type FileType = 'pdf' | 'image';
 export interface AIServiceConfig {
   id: number;
   name: string;
+  model_name: string;
   service_type: AIServiceType;
   api_endpoint: string;
   api_key?: string; // write-only, not returned on read
@@ -180,8 +181,6 @@ export interface DeviceApprovalRequest {
   rejection_reason?: string;
 }
 
-export type DeviceCheckStatus = 'approved' | 'pending' | 'unknown' | 'blocked';
-
 export interface DeviceCheckResponse {
   status: DeviceCheckStatus;
   device_id?: number;
@@ -216,6 +215,7 @@ export interface Topic {
   subject_name?: string;
   student_class: number;
   class_name?: string;
+  created_by_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -503,6 +503,7 @@ export interface ExamScheduleDetail extends ExamSchedule {
   questions: ExamQuestionDetail[];
   students: StudentAttemptSummary[];
   statistics?: ExamScheduleStatistics | null;
+  is_published: boolean;
 }
 
 export interface ExamScheduleStatistics {

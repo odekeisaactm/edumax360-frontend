@@ -81,9 +81,9 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
         groupsAPI.getGroupPermissions(groupId),
         staffAPI.list({ group: groupId }),
       ]);
-      const permsArray = groupPerms?.data ?? groupPerms ?? [];
+      const permsArray = (groupPerms as any)?.data ?? groupPerms ?? [];
       setGroup({ ...groupData, permissions: Array.isArray(permsArray) ? permsArray : [] });
-      const staffList = staffData?.results ?? staffData?.data ?? staffData ?? [];
+      const staffList = (staffData as any)?.results ?? (staffData as any)?.data ?? staffData ?? [];
       setStaff(Array.isArray(staffList) ? staffList : []);
     } catch (err: any) {
       setPageError(err?.response?.status === 404 ? 'Group not found' : extractError(err));

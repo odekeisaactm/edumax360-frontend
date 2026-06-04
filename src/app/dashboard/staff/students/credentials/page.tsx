@@ -204,8 +204,8 @@ async function fetchCredentials(type: 'students' | 'parents', params: Record<str
   const qs = new URLSearchParams();
   Object.entries(params).forEach(([k, v]) => { if (v !== '' && v != null) qs.set(k, String(v)); });
   // Using the same pattern as your existing API calls:
-  if (type === 'students') return studentsAPI.get(`/students/credentials/?${qs}`);
-  return parentsAPI.get(`/parents/credentials/?${qs}`);
+  if (type === 'students') return (studentsAPI as any).get(`/students/credentials/?${qs}`);
+  return (parentsAPI as any).get(`/parents/credentials/?${qs}`);
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────

@@ -504,7 +504,7 @@ export default function BankAccountsPage() {
     setLoading(true); setPageError(null);
     try {
       const res = await feeAPI.getBankAccounts();
-      setAccounts(Array.isArray(res) ? res : (res.results || []));
+      setAccounts(Array.isArray(res) ? res : []);
     } catch (err) { setPageError(extractError(err)); }
     finally { setLoading(false); }
   }, []);

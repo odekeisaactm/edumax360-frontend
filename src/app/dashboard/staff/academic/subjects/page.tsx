@@ -305,12 +305,13 @@ export default function SubjectsPage() {
   const handleSave = async (data: FormValues) => {
     setIsSaving(true);
     try {
+      const payload = { ...data, school_section: data.school_section ?? undefined };
       if (editingSubject) {
-        const updated = await academicAPI.updateSubject(editingSubject.id, data);
+        const updated = await academicAPI.updateSubject(editingSubject.id, payload as any);
         setSubjects(prev => prev.map(s => s.id === updated.id ? updated : s));
         showToast('success', 'Subject updated successfully');
       } else {
-        const created = await academicAPI.createSubject(data);
+        const created = await academicAPI.createSubject(payload as any);
         setSubjects(prev => [created, ...prev]);
         showToast('success', 'Subject created successfully');
       }

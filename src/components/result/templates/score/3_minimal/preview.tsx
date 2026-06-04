@@ -65,6 +65,20 @@ function ensureAbsoluteUrl(url: string | null | undefined): string | undefined {
   return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
+// Helper function to safely render comment values
+function renderCommentValue(value: any): React.ReactNode {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'object') {
+    // If it's a nested object with a message property
+    if ('message' in value) return value.message;
+    // If it's an array
+    if (Array.isArray(value)) return value.join(', ');
+    // Otherwise stringify
+    return JSON.stringify(value);
+  }
+  return value;
+}
+
 export default function MinimalScoreTemplate({
   student,
   result,
@@ -127,7 +141,7 @@ export default function MinimalScoreTemplate({
             <th className="py-2 text-center font-bold uppercase">Class Avg</th>
             <th className="py-2 text-center font-bold uppercase">Grade</th>
             <th className="py-2 text-left font-bold uppercase pl-4">Remark</th>
-          </tr>
+           </tr>
         </thead>
         <tbody>
           {subjectList.map(([id, data]) => (
@@ -143,8 +157,8 @@ export default function MinimalScoreTemplate({
             <td className="py-3 px-2">OVERALL PERFORMANCE</td>
             <td className="py-3 text-center">{result.total_score || '-'}</td>
             <td className="py-3 text-center" colSpan={3}>
-              Avg: {result.average_score || '-'} | 
-              Class Avg: {result.class_average || '-'} | 
+              Avg: {result.average_score || '-'} |
+              Class Avg: {result.class_average || '-'} |
               Pos: {result.position || '-'}
             </td>
           </tr>
@@ -169,13 +183,17 @@ export default function MinimalScoreTemplate({
         </div>
         <div className="w-1/2">
           <h3 className="font-bold uppercase border-b-2 border-slate-900 pb-1 mb-3">Official Remarks</h3>
-          
-          {/* Custom Fields */}
+
+          {/* Custom Fields - FIXED LINE BELOW */}
           {settings.enable_custom_comment_fields && (settings.custom_comment_fields ?? []).map((fieldName: string) => (
             <div key={fieldName} className="mb-3">
               <div className="text-[10px] text-slate-500 uppercase font-bold">{fieldName}</div>
               <div className="text-sm border-l-2 border-slate-200 pl-3 py-1">
-                {comments.custom_comments?.[fieldName] ?? comments?.[fieldName as keyof typeof comments] ?? '—'}
+                {renderCommentValue(
+                  comments.custom_comments?.[fieldName] ??
+                  comments?.[fieldName as keyof typeof comments] ??
+                  '—'
+                )}
               </div>
             </div>
           ))}
@@ -183,7 +201,7 @@ export default function MinimalScoreTemplate({
           <div className="mb-4">
             <div className="text-xs text-slate-500 uppercase font-bold">Form Teacher: {toTitleCase(comments.form_teacher)}</div>
             <div className="text-sm italic mt-1 border-l-2 border-slate-900 pl-3 py-1">
-               {comments.form_teacher_comment || '—'}
+               {renderCommentValue(comments.form_teacher_comment || '—')}
             </div>
             {comments.form_teacher_signature && (
               <div className="mt-2 h-12">
@@ -194,7 +212,7 @@ export default function MinimalScoreTemplate({
           <div className="mb-4">
             <div className="text-xs text-slate-500 uppercase font-bold">{comments.head_teacher_title || 'Principal'}: {toTitleCase(comments.head_teacher)}</div>
             <div className="text-sm italic mt-1 border-l-2 border-slate-900 pl-3 py-1">
-              {comments.head_teacher_comment || '—'}
+              {renderCommentValue(comments.head_teacher_comment || '—')}
             </div>
             {comments.head_teacher_signature && (
               <div className="mt-2 h-12">
