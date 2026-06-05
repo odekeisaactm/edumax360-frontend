@@ -8,7 +8,7 @@ import { examsAPI } from '@/lib/assessment.service';
 import {
   ArrowLeft, Printer, Download, Search, Loader2, AlertCircle,
   Key, Users, CheckCircle2, Shield, FileText, BookOpen, School,
-  LayoutGrid, X, RefreshCw, ChevronDown, Table2, Grid3X3,
+  LayoutGrid, X, ChevronDown, Table2, Grid3X3,
   FileSpreadsheet, GraduationCap,
 } from 'lucide-react';
 import type { ExamDetail, ExamSchedulesStatusResponse, StudentExamAccess } from '@/lib/types';
@@ -16,7 +16,7 @@ import type { AcademicSettings } from '@/lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface ClassOption  { id: number; name: string; }
+interface ClassOption   { id: number; name: string; }
 interface SectionOption { id: number; name: string; }
 interface SubjectSchedule {
   subject_id: number;
@@ -241,24 +241,24 @@ export default function PrintPinsPage() {
   const [pageError, setPageError]               = useState('');
 
   // ── Filters ──
-  const [classes, setClasses]               = useState<ClassOption[]>([]);
-  const [sections, setSections]             = useState<SectionOption[]>([]);
-  const [subjects, setSubjects]             = useState<SubjectSchedule[]>([]);
-  const [selectedClassId, setSelectedClassId]   = useState<number | null>(null);
+  const [classes, setClasses]                     = useState<ClassOption[]>([]);
+  const [sections, setSections]                   = useState<SectionOption[]>([]);
+  const [subjects, setSubjects]                   = useState<SubjectSchedule[]>([]);
+  const [selectedClassId, setSelectedClassId]     = useState<number | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<number | null>(null);
-  const [selectedSubject, setSelectedSubject]   = useState<SubjectSchedule | null>(null);
-  const [loadingSections, setLoadingSections]   = useState(false);
+  const [selectedSubject, setSelectedSubject]     = useState<SubjectSchedule | null>(null);
 
   // ── PIN data ──
-  const [pins, setPins]           = useState<StudentExamAccess[]>([]);
-  const [examCode, setExamCode]   = useState<string | null>(null);
+  const [pins, setPins]               = useState<StudentExamAccess[]>([]);
+  const [examCode, setExamCode]       = useState<string | null>(null);
   const [loadingPins, setLoadingPins] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // ── Print mode (stored for print view) ──
+  // ── Print mode ──
   const [printMode, setPrintMode] = useState<PrintMode>('grid');
 
-  const useClassSections = academicSettings?.use_class_sections ?? false;
+  // sections.length > 0 drives all section-related UI — no dependency on academicSettings flag
+  const hasSections = sections.length > 0;
 
   // ── Load page ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -295,17 +295,34 @@ export default function PrintPinsPage() {
   }, [examId]);
 
   // ── Class change ───────────────────────────────────────────────────────────
-  const handleClassChange = useCallback(async (classId: number) => {
+  const handleClassChange = useCallback((classId: number) => {
     setSelectedClassId(classId);
     setSelectedSectionId(null);
     setSelectedSubject(null);
     setPins([]);
     setExamCode(null);
 
-    if (schedulesStatus) {
+    if (!schedulesStatus) return;
+
+    // Derive sections from the schedules data (no extra API call needed)
+    const sectionMap = new Map<number, string>();
+    Object.values(schedulesStatus.schedules_by_subject).forEach((group: any) => {
+      group.schedules.forEach((s: any) => {
+        if (s.class_id === classId && s.section_id && s.section) {
+          sectionMap.set(s.section_id, s.section);
+        }
+      });
+    });
+    const derivedSections = Array.from(sectionMap.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    setSections(derivedSections);
+
+    // If no sections, populate subjects immediately
+    if (sectionMap.size === 0) {
       const subjectList: SubjectSchedule[] = [];
       Object.entries(schedulesStatus.schedules_by_subject).forEach(([subjectName, group]) => {
-        const match = group.schedules.find(s => (s as any).class_id === classId);
+        const match = (group.schedules as any[]).find(s => s.class_id === classId);
         if (match) subjectList.push({
           subject_id: group.subject_id,
           subject_name: subjectName,
@@ -315,22 +332,36 @@ export default function PrintPinsPage() {
         });
       });
       setSubjects(subjectList.sort((a, b) => a.subject_name.localeCompare(b.subject_name)));
+    } else {
+      setSubjects([]);
     }
+  }, [schedulesStatus]);
 
-    const sectionMap = new Map<number, string>();
-    Object.values(schedulesStatus.schedules_by_subject).forEach((group: any) => {
-      group.schedules.forEach((s: any) => {
-        if (s.class_id === classId && s.section_id && s.section) {
-          sectionMap.set(s.section_id, s.section);
-        }
+  // ── Section change ─────────────────────────────────────────────────────────
+  const handleSectionChange = useCallback((sectionId: number) => {
+    setSelectedSectionId(sectionId);
+    setSelectedSubject(null);
+    setPins([]);
+    setExamCode(null);
+
+    if (!schedulesStatus || !selectedClassId) return;
+
+    // Re-derive subjects scoped to this class + section
+    const subjectList: SubjectSchedule[] = [];
+    Object.entries(schedulesStatus.schedules_by_subject).forEach(([subjectName, group]) => {
+      const match = (group.schedules as any[]).find(
+        s => s.class_id === selectedClassId && s.section_id === sectionId
+      );
+      if (match) subjectList.push({
+        subject_id: group.subject_id,
+        subject_name: subjectName,
+        subject_code: group.subject_code,
+        schedule_id: match.id,
+        exam_code: match.exam_code,
       });
     });
-    setSections(
-      Array.from(sectionMap.entries())
-        .map(([id, name]) => ({ id, name }))
-        .sort((a, b) => a.name.localeCompare(b.name))
-    );
-  }, [schedulesStatus, useClassSections]);
+    setSubjects(subjectList.sort((a, b) => a.subject_name.localeCompare(b.subject_name)));
+  }, [schedulesStatus, selectedClassId]);
 
   // ── Load pins ──────────────────────────────────────────────────────────────
   const loadPins = useCallback(async (
@@ -345,10 +376,8 @@ export default function PrintPinsPage() {
         class_section_id: sectionId ?? undefined,
         schedule_id: subject.schedule_id,
       });
-
       setPins(response.pins);
       setExamCode((response as any).exam_code ?? subject.exam_code);
-      console.log(response.pins);
     } catch (err) {
       setPageError(extractError(err));
     } finally {
@@ -358,15 +387,8 @@ export default function PrintPinsPage() {
 
   const handleSubjectChange = (subject: SubjectSchedule) => {
     setSelectedSubject(subject);
-    if (selectedClassId && (!useClassSections || selectedSectionId)) {
+    if (selectedClassId && (!hasSections || selectedSectionId)) {
       loadPins(subject, selectedClassId, selectedSectionId);
-    }
-  };
-
-  const handleSectionChange = (sectionId: number) => {
-    setSelectedSectionId(sectionId);
-    if (selectedSubject && selectedClassId) {
-      loadPins(selectedSubject, selectedClassId, sectionId);
     }
   };
 
@@ -384,7 +406,6 @@ export default function PrintPinsPage() {
   // ── Print handler ─────────────────────────────────────────────────────────
   const handlePrint = (mode: PrintMode) => {
     setPrintMode(mode);
-    // Wait for state to flush then print
     setTimeout(() => window.print(), 50);
   };
 
@@ -415,28 +436,21 @@ export default function PrintPinsPage() {
       return;
     }
 
-    // XLSX — build via SheetJS if available, otherwise fall back to CSV
-    try {
-      // Dynamic import for environments that have xlsx
-      import('xlsx').then(XLSX => {
-        const headers = isPinOnly
-          ? ['Student Name', 'Registration Number', 'PIN', 'Status']
-          : ['Student Name', 'Registration Number', 'Subject', 'Exam Code', 'PIN', 'Status'];
+    import('xlsx').then(XLSX => {
+      const headers = isPinOnly
+        ? ['Student Name', 'Registration Number', 'PIN', 'Status']
+        : ['Student Name', 'Registration Number', 'Subject', 'Exam Code', 'PIN', 'Status'];
 
-        const data = filteredPins.map(p => isPinOnly
-          ? [p.student_full_name, p.registration_number, p.pin, p.is_used ? 'Used' : 'Unused']
-          : [p.student_full_name, p.registration_number, selectedSubject.subject_name, examCode ?? '', p.pin, p.is_used ? 'Used' : 'Unused']
-        );
+      const data = filteredPins.map(p => isPinOnly
+        ? [p.student_full_name, p.registration_number, p.pin, p.is_used ? 'Used' : 'Unused']
+        : [p.student_full_name, p.registration_number, selectedSubject.subject_name, examCode ?? '', p.pin, p.is_used ? 'Used' : 'Unused']
+      );
 
-        const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'PINs');
-        XLSX.writeFile(wb, `pins-${exam?.name ?? examId}-${selectedSubject.subject_code}${isPinOnly ? '-pin-only' : ''}.xlsx`);
-      });
-    } catch {
-      // Fallback: treat as CSV with xlsx extension
-      handleDownload('csv', mode);
-    }
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'PINs');
+      XLSX.writeFile(wb, `pins-${exam?.name ?? examId}-${selectedSubject.subject_code}${isPinOnly ? '-pin-only' : ''}.xlsx`);
+    }).catch(() => handleDownload('csv', mode));
   };
 
   // ── Guards ────────────────────────────────────────────────────────────────
@@ -471,7 +485,7 @@ export default function PrintPinsPage() {
     </div>
   );
 
-  const readyToLoad = selectedClassId && selectedSubject && (sections.length === 0 || selectedSectionId);
+  const readyToLoad = selectedClassId && selectedSubject && (!hasSections || selectedSectionId);
 
   return (
     <>
@@ -500,45 +514,59 @@ export default function PrintPinsPage() {
             <p className="text-xs text-slate-400 ml-1">Select a class and subject to load PINs</p>
           </div>
 
-          <div className={`grid gap-4 ${sections.length > 0 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
+          <div className={`grid gap-4 ${hasSections ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
+            {/* Class */}
             <div>
               <label className={labelCls}><School className="inline h-3 w-3 mr-1" />Class</label>
-              <select value={selectedClassId ?? ''} onChange={e => e.target.value && handleClassChange(parseInt(e.target.value))} className={inputCls}>
+              <select
+                value={selectedClassId ?? ''}
+                onChange={e => e.target.value && handleClassChange(parseInt(e.target.value))}
+                className={inputCls}
+              >
                 <option value="">— Select class —</option>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
 
-            {sections.length > 0 && (
+            {/* Section — only shown when the selected class actually has sections */}
+            {hasSections && (
               <div>
                 <label className={labelCls}><LayoutGrid className="inline h-3 w-3 mr-1" />Section</label>
                 <select
                   value={selectedSectionId ?? ''}
                   onChange={e => e.target.value && handleSectionChange(parseInt(e.target.value))}
-                  disabled={!selectedClassId || loadingSections}
+                  disabled={!selectedClassId}
                   className={inputCls}
                 >
-                  <option value="">{loadingSections ? 'Loading…' : !selectedClassId ? '— Select class first —' : '— Select section —'}</option>
+                  <option value="">{!selectedClassId ? '— Select class first —' : '— Select section —'}</option>
                   {sections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
             )}
 
+            {/* Subject */}
             <div>
               <label className={labelCls}><BookOpen className="inline h-3 w-3 mr-1" />Subject</label>
               <select
                 value={selectedSubject?.schedule_id ?? ''}
-                onChange={e => { const found = subjects.find(s => s.schedule_id === parseInt(e.target.value)); if (found) handleSubjectChange(found); }}
-                disabled={!selectedClassId || (sections.length > 0 && !selectedSectionId)}
+                onChange={e => {
+                  const found = subjects.find(s => s.schedule_id === parseInt(e.target.value));
+                  if (found) handleSubjectChange(found);
+                }}
+                disabled={!selectedClassId || (hasSections && !selectedSectionId)}
                 className={inputCls}
               >
                 <option value="">
                   {!selectedClassId ? '— Select class first —'
-                    : sections.length > 0 && !selectedSectionId ? '— Select section first —'
+                    : hasSections && !selectedSectionId ? '— Select section first —'
                     : subjects.length === 0 ? 'No subjects for this class'
                     : '— Select subject —'}
                 </option>
-                {subjects.map(s => <option key={s.schedule_id} value={s.schedule_id}>{s.subject_name} ({s.exam_code})</option>)}
+                {subjects.map(s => (
+                  <option key={s.schedule_id} value={s.schedule_id}>
+                    {s.subject_name} ({s.exam_code})
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -547,10 +575,10 @@ export default function PrintPinsPage() {
         {/* Stats */}
         {pins.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatChip icon={Users}        label="Total Students" value={pins.length}    color="bg-gradient-to-br from-violet-500 to-purple-600" />
-            <StatChip icon={CheckCircle2} label="PINs Used"      value={usedCount}      color="bg-gradient-to-br from-emerald-500 to-green-600" />
-            <StatChip icon={Key}          label="PINs Unused"    value={unusedCount}    color="bg-gradient-to-br from-amber-400 to-orange-500"  />
-            <StatChip icon={FileText}     label="Exam Code"      value={examCode ?? '—'} color="bg-gradient-to-br from-sky-500 to-blue-600"     />
+            <StatChip icon={Users}        label="Total Students" value={pins.length}     color="bg-gradient-to-br from-violet-500 to-purple-600" />
+            <StatChip icon={CheckCircle2} label="PINs Used"      value={usedCount}       color="bg-gradient-to-br from-emerald-500 to-green-600" />
+            <StatChip icon={Key}          label="PINs Unused"    value={unusedCount}     color="bg-gradient-to-br from-amber-400 to-orange-500"  />
+            <StatChip icon={FileText}     label="Exam Code"      value={examCode ?? '—'} color="bg-gradient-to-br from-sky-500 to-blue-600"      />
           </div>
         )}
 
@@ -596,7 +624,7 @@ export default function PrintPinsPage() {
                 <Key className="h-7 w-7 text-violet-300" />
               </div>
               <p className="text-sm font-medium text-slate-500">
-                Select a class{useClassSections ? ', section,' : ''} and subject above to load student PINs
+                Select a class{hasSections ? ', section,' : ''} and subject above to load student PINs
               </p>
             </div>
           </div>
@@ -609,7 +637,6 @@ export default function PrintPinsPage() {
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-            {/* Table header row */}
             <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
                 {filteredPins.length} student{filteredPins.length !== 1 ? 's' : ''}
@@ -623,7 +650,6 @@ export default function PrintPinsPage() {
               )}
             </div>
 
-            {/* Column headers */}
             <div
               className="hidden sm:grid items-center gap-3 px-5 py-3 bg-slate-50/60 border-b border-slate-100"
               style={{ gridTemplateColumns: '2.5rem 1fr 140px 140px 80px' }}
@@ -642,35 +668,29 @@ export default function PrintPinsPage() {
                   className="flex sm:grid items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 transition-colors"
                   style={{ gridTemplateColumns: '2.5rem 1fr 140px 140px 80px' }}
                 >
-                  {/* Avatar */}
                   <StudentAvatar imageUrl={(pin as any).student_image} name={pin.student_full_name} />
 
-                  {/* Name */}
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-slate-900 text-sm truncate">{pin.student_full_name}</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">{pin.registration_number}</p>
                   </div>
 
-                  {/* Reg */}
                   <div className="hidden sm:block min-w-0">
                     <p className="text-sm font-mono text-slate-500 truncate">{pin.registration_number}</p>
                   </div>
 
-                  {/* PIN */}
                   <div className="hidden sm:block">
                     <code className="px-2.5 py-1 bg-violet-50 text-violet-800 rounded-lg font-mono text-base font-bold tracking-widest border border-violet-100">
                       {pin.pin}
                     </code>
                   </div>
 
-                  {/* Mobile PIN (visible on small screens) */}
                   <div className="sm:hidden">
                     <code className="px-2 py-0.5 bg-violet-50 text-violet-800 rounded font-mono text-sm font-bold tracking-widest border border-violet-100">
                       {pin.pin}
                     </code>
                   </div>
 
-                  {/* Status */}
                   <div className="hidden sm:block">
                     {pin.is_used ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-full border border-emerald-100">
@@ -752,7 +772,6 @@ export default function PrintPinsPage() {
         `}</style>
 
         <div className="p-6">
-          {/* Print header */}
           <div className="text-center mb-6 pb-4 border-b-2 border-slate-300">
             <h1 className="text-2xl font-bold text-slate-900">Student Exam Access PINs</h1>
             <p className="text-base text-slate-600 mt-1">{exam?.name}</p>
@@ -781,7 +800,6 @@ export default function PrintPinsPage() {
                       {colIndex === 1 && <div className="cut-line-vertical" />}
                       <div className="flex-1 p-3 break-inside-avoid">
                         <div className="flex items-start gap-2 mb-2">
-                          {/* Photo in print slip */}
                           {(pin as any).student_image ? (
                             <img
                               src={(pin as any).student_image}
