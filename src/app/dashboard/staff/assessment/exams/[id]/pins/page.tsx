@@ -317,14 +317,19 @@ export default function PrintPinsPage() {
       setSubjects(subjectList.sort((a, b) => a.subject_name.localeCompare(b.subject_name)));
     }
 
-    if (useClassSections) {
-      setLoadingSections(true);
-      try {
-        const res = await academicAPI.listClassSections({ student_class_id: classId });
-        setSections(res);
-      } catch { setSections([]); }
-      finally { setLoadingSections(false); }
-    }
+    const sectionMap = new Map<number, string>();
+    Object.values(schedulesStatus.schedules_by_subject).forEach((group: any) => {
+      group.schedules.forEach((s: any) => {
+        if (s.class_id === classId && s.section_id && s.section) {
+          sectionMap.set(s.section_id, s.section);
+        }
+      });
+    });
+    setSections(
+      Array.from(sectionMap.entries())
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    );
   }, [schedulesStatus, useClassSections]);
 
   // ── Load pins ──────────────────────────────────────────────────────────────
