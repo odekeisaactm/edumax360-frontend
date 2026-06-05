@@ -78,9 +78,16 @@
     display: none !important;
   }
 
+  .md\:ml-64 {
+    margin-left: 0 !important;
+  }
+
+  .pt-16 {
+    padding-top: 0 !important;
+  }
+
   main {
     padding: 0 !important;
-    margin-left: 0 !important;
     width: 100% !important;
   }
 
