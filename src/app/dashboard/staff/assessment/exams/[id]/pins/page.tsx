@@ -320,7 +320,7 @@ export default function PrintPinsPage() {
     if (useClassSections) {
       setLoadingSections(true);
       try {
-        const res = await academicAPI.listClassSections({ school_section_id: classId });
+        const res = await academicAPI.listClassSections({ student_class_id: classId });
         setSections(res);
       } catch { setSections([]); }
       finally { setLoadingSections(false); }
