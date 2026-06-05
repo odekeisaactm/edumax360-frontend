@@ -95,6 +95,10 @@ const templateComponents: Record<string, any> = {
     loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
     ssr: false,
   }),
+'text_1_default': nextDynamic(() => import('@/components/result/templates/text/1_default/preview'), {
+    loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
+    ssr: false,
+  }),
   // Add more templates here as they are created
   // 'score_2_classic': dynamic(() => import('@/components/result/templates/score/2_classic/preview')),
   // 'text_1_default': dynamic(() => import('@/components/result/templates/text/1_default/preview')),
