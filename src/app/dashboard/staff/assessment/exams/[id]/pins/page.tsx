@@ -471,7 +471,7 @@ export default function PrintPinsPage() {
     </div>
   );
 
-  const readyToLoad = selectedClassId && selectedSubject && (!useClassSections || selectedSectionId);
+  const readyToLoad = selectedClassId && selectedSubject && (sections.length === 0 || selectedSectionId);
 
   return (
     <>
@@ -500,7 +500,7 @@ export default function PrintPinsPage() {
             <p className="text-xs text-slate-400 ml-1">Select a class and subject to load PINs</p>
           </div>
 
-          <div className={`grid gap-4 ${useClassSections ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
+          <div className={`grid gap-4 ${sections.length > 0 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
             <div>
               <label className={labelCls}><School className="inline h-3 w-3 mr-1" />Class</label>
               <select value={selectedClassId ?? ''} onChange={e => e.target.value && handleClassChange(parseInt(e.target.value))} className={inputCls}>
@@ -509,7 +509,7 @@ export default function PrintPinsPage() {
               </select>
             </div>
 
-            {useClassSections && (
+            {sections.length > 0 && (
               <div>
                 <label className={labelCls}><LayoutGrid className="inline h-3 w-3 mr-1" />Section</label>
                 <select
@@ -529,12 +529,12 @@ export default function PrintPinsPage() {
               <select
                 value={selectedSubject?.schedule_id ?? ''}
                 onChange={e => { const found = subjects.find(s => s.schedule_id === parseInt(e.target.value)); if (found) handleSubjectChange(found); }}
-                disabled={!selectedClassId || (useClassSections && !selectedSectionId)}
+                disabled={!selectedClassId || (sections.length > 0 && !selectedSectionId)}
                 className={inputCls}
               >
                 <option value="">
                   {!selectedClassId ? '— Select class first —'
-                    : useClassSections && !selectedSectionId ? '— Select section first —'
+                    : sections.length > 0 && !selectedSectionId ? '— Select section first —'
                     : subjects.length === 0 ? 'No subjects for this class'
                     : '— Select subject —'}
                 </option>
