@@ -198,19 +198,24 @@ export default function MarkingHubPage() {
     setMarkingData(null);
     setError(null);
 
-    if (useClassSections) {
-      setLoadingSections(true);
-      try {
-          const sectionData = await academicAPI.listClassSections({ school_section_id: cls.id });
-        setSections(sectionData.map((s: any) => ({ id: s.id, name: s.name })));
-      } catch {
-        setError('Failed to load sections.');
-      } finally {
-        setLoadingSections(false);
-      }
-    } else {
-      deriveSubjects(cls.id, null);
+
+// TO
+const sectionMap = new Map<number, string>();
+Object.values(schedulesBySubject).forEach(group => {
+  group.schedules.forEach((s: any) => {
+    if (s.class_id === cls.id && s.section_id && s.section) {
+      sectionMap.set(s.section_id, s.section);
     }
+  });
+});
+const derivedSections = Array.from(sectionMap.entries())
+  .map(([id, name]) => ({ id, name }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+setSections(derivedSections);
+
+if (derivedSections.length === 0) {
+  deriveSubjects(cls.id, null);
+}
   };
 
   // Step 3: Section selected → subjects
@@ -345,7 +350,7 @@ export default function MarkingHubPage() {
             </div>
 
             {/* Section — only when use_class_sections */}
-            {useClassSections && (
+            {sections.length > 0 && (
               <div className="flex-1 min-w-[140px]">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5 block">Section</label>
                 {loadingSections ? (
@@ -374,7 +379,7 @@ export default function MarkingHubPage() {
               <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5 block">Subject</label>
               <select
                 value={selectedSubject?.scheduleId ?? ''}
-                disabled={!(useClassSections ? selectedSection : selectedClass) || subjects.length === 0}
+                disabled={!(sections.length > 0 ? selectedSection : selectedClass) || subjects.length === 0} || subjects.length === 0}
                 onChange={e => {
                   const sub = subjects.find(s => s.scheduleId === Number(e.target.value));
                   if (sub) handleSubjectSelect(sub);
