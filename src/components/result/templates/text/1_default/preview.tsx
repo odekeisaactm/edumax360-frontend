@@ -1,7 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ResultSettings, ResultBehaviorCategory } from '@/lib/types';
+import { getApiUrl } from '@/lib/getApiUrl';
+
+const API_BASE_URL = typeof window !== 'undefined' ? getApiUrl() : (process.env.NEXT_PUBLIC_API_URL || '');
 
 interface TextResultTemplateProps {
   student: any;
@@ -14,25 +17,17 @@ interface TextResultTemplateProps {
   schoolInfo?: any;
 }
 
-import { getApiUrl } from '@/lib/getApiUrl';
-
-const API_BASE_URL = typeof window !== 'undefined' ? getApiUrl() : (process.env.NEXT_PUBLIC_API_URL || '');
-
 function ensureAbsoluteUrl(url: string | null | undefined): string | undefined {
   if (!url) return undefined;
   if (url.startsWith('http')) return url;
   return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
-// Helper function to safely render comment values
 function renderCommentValue(value: any): React.ReactNode {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'object') {
-    // If it's a nested object with a message property
     if ('message' in value) return value.message;
-    // If it's an array
     if (Array.isArray(value)) return value.join(', ');
-    // Otherwise stringify
     return JSON.stringify(value);
   }
   return value;
@@ -56,10 +51,29 @@ export default function DefaultTextTemplate({
   };
 
   const isMidterm = termType === 'midterm';
-  const textCategories = result.text_categories || [];
   const customFields: string[] = settings.enable_custom_comment_fields ? (settings.custom_comment_fields ?? []) : [];
 
-  // Helper to get fields from behavior category (only uses fields_list since that's what exists in the type)
+  // Group result_data by category_name
+  const textCategories = useMemo(() => {
+    const resultData = result.result_data ?? {};
+    const grouped: Record<string, { id: string; name: string; fields: any[] }> = {};
+
+    Object.entries(resultData).forEach(([fieldId, data]: [string, any]) => {
+      const catName = data.category_name || 'General';
+      if (!grouped[catName]) {
+        grouped[catName] = { id: catName, name: catName, fields: [] };
+      }
+      grouped[catName].fields.push({
+        id: fieldId,
+        name: data.field_name,
+        score: data.rating,
+        comment: data.comment,
+      });
+    });
+
+    return Object.values(grouped);
+  }, [result.result_data]);
+
   const getBehaviorFields = (category: ResultBehaviorCategory): any[] => {
     return (category.fields_list || []) as any[];
   };
