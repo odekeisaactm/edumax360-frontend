@@ -71,3 +71,21 @@
     padding: 0;
   }
 }
+
+@media print {
+  aside,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+  }
+}
