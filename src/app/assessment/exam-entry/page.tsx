@@ -207,7 +207,7 @@ function HelperDrawer({
     setError('');
     if (step === 'confirm') { setStep('student'); return; }
     if (step === 'student') { setStep('subject'); return; }
-    if (step === 'subject') { setStep(useClassSections ? 'section' : 'class'); return; }
+    if (step === 'subject') { setStep(hasSections ? 'section' : 'class'); return; }
     if (step === 'section') { setStep('class'); return; }
     onClose();
   };
