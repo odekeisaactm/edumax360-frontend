@@ -43,6 +43,7 @@ function HelperDrawer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [rawClasses, setRawClasses] = useState<any[]>([]);
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [sections, setSections] = useState<SectionOption[]>([]);
   const [subjects, setSubjects] = useState<SubjectOption[]>([]);
@@ -56,14 +57,14 @@ function HelperDrawer({
   const [studentSearch, setStudentSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Load classes + settings on mount
+  // Load classes on mount — derive sections from configurations, no settings call needed
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
         const classData = await academicAPI.listClasses();
+        setRawClasses(classData);
         setClasses(classData.map((c: any) => ({ id: c.id, name: c.name })));
-
       } catch {
         setError('Failed to load class list. Please try again.');
       } finally {
@@ -77,33 +78,40 @@ function HelperDrawer({
   }, [step]);
 
   const handleClassSelect = async (cls: ClassOption) => {
-  setSelectedClass(cls);
-  setError('');
-  setLoading(true);
-  try {
-    const sectionData = await academicAPI.listClassSections({ school_section_id: cls.id });
-    const derivedSections = sectionData.map((s: any) => ({ id: s.id, name: s.name }));
-    setSections(derivedSections);
+    setSelectedClass(cls);
+    setError('');
+    setLoading(true);
+    try {
+      // Derive sections from the configurations array already in the classes response
+      const raw = rawClasses.find((c: any) => c.id === cls.id);
+      const derivedSections: SectionOption[] = (raw?.configurations ?? [])
+        .filter((cfg: any) => cfg.is_active)
+        .map((cfg: any) => ({ id: cfg.class_section, name: cfg.class_section_name }))
+        .sort((a: SectionOption, b: SectionOption) => a.name.localeCompare(b.name));
 
-    if (derivedSections.length > 0) {
-      setStep('section');
-    } else {
-      const exam = await findActiveExam(cls.id);
-      if (!exam) {
-        setError(`No active exam found for ${cls.name}. Please check with your teacher.`);
-        return;
+      setSections(derivedSections);
+
+      if (derivedSections.length > 0) {
+        // Class has sections — show section step
+        setStep('section');
+      } else {
+        // No sections — go straight to subjects
+        const exam = await findActiveExam(cls.id);
+        if (!exam) {
+          setError(`No active exam found for ${cls.name}. Please check with your teacher.`);
+          return;
+        }
+        setActiveExam(exam);
+        await loadSubjects(exam, cls.id, null);
       }
-      setActiveExam(exam);
-      await loadSubjects(exam, cls.id);
+    } catch {
+      setError('Failed to load. Please try again.');
+    } finally {
+      setLoading(false);
     }
-  } catch {
-    setError('Failed to load. Please try again.');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
-  // Find the active exam that includes a given class — fetches detail for each candidate
+  // Find the active exam that includes a given class
   const findActiveExam = async (classId: number): Promise<ExamDetail | null> => {
     const today = new Date().toISOString().split('T')[0];
     const candidates = await examsAPI.list({ is_published: true, is_active: true });
@@ -124,14 +132,13 @@ function HelperDrawer({
     setError('');
     setLoading(true);
     try {
-      // Now that we have class + section, find the active exam
       const exam = await findActiveExam(selectedClass!.id);
       if (!exam) {
         setError(`No active exam found for ${selectedClass!.name}. Please check with your teacher.`);
         return;
       }
       setActiveExam(exam);
-      await loadSubjects(exam, selectedClass!.id);
+      await loadSubjects(exam, selectedClass!.id, section);
     } catch {
       setError('Failed to load subjects. Please try again.');
     } finally {
@@ -139,12 +146,17 @@ function HelperDrawer({
     }
   };
 
-  const loadSubjects = async (exam: ExamDetail, classId: number) => {
+  // Derive subjects from schedules_by_subject, filtering by class and section
+  const loadSubjects = async (exam: ExamDetail, classId: number, section: SectionOption | null) => {
     const statusData = await examsAPI.getSchedulesStatus(exam.id);
     const subjectList: SubjectOption[] = [];
 
     Object.entries(statusData.schedules_by_subject).forEach(([subjectName, group]: [string, any]) => {
-      const match = group.schedules?.find((s: any) => s.class_id === classId);
+      const match = group.schedules?.find((s: any) => {
+        if (s.class_id !== classId) return false;
+        if (section && s.section_id !== section.id) return false;
+        return true;
+      });
       if (match) {
         subjectList.push({
           subject_name: subjectName,
@@ -207,7 +219,7 @@ function HelperDrawer({
     setError('');
     if (step === 'confirm') { setStep('student'); return; }
     if (step === 'student') { setStep('subject'); return; }
-    if (step === 'subject') { setStep(hasSections ? 'section' : 'class'); return; }
+    if (step === 'subject') { setStep(sections.length > 0 ? 'section' : 'class'); return; }
     if (step === 'section') { setStep('class'); return; }
     onClose();
   };
@@ -219,15 +231,15 @@ function HelperDrawer({
       )
     : students;
 
-    const hasSections = sections.length > 0;
-const stepNumber: Record<HelperStep, number> = {
-  class: 1,
-  section: 2,
-  subject: hasSections ? 3 : 2,
-  student: hasSections ? 4 : 3,
-  confirm: hasSections ? 5 : 4,
-};
-const totalSteps = hasSections ? 5 : 4;
+  const hasSections = sections.length > 0;
+  const stepNumber: Record<HelperStep, number> = {
+    class: 1,
+    section: 2,
+    subject: hasSections ? 3 : 2,
+    student: hasSections ? 4 : 3,
+    confirm: hasSections ? 5 : 4,
+  };
+  const totalSteps = hasSections ? 5 : 4;
 
   const stepLabel: Record<HelperStep, string> = {
     class: 'Select Your Class',
