@@ -952,14 +952,14 @@ export default function TextCategoriesPage() {
             category: categoryId,
             name: field.name,
             order: field.order,
-            student_type: field.student_kind,
+            student_kind: field.student_kind,
             student_class: field.student_class,
           } as any);
         } else {
           await textCategoriesAPI.updateField(parseInt(field._id.toString()), {
             name: field.name,
             order: field.order,
-            student_type: field.student_kind,
+            student_kind: field.student_kind,
             student_class: field.student_class,
           } as any);
         }

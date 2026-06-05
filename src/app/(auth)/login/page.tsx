@@ -88,7 +88,7 @@ export default function LoginPage() {
                           alt="School Logo"
                           style={{ background: 'white', padding: '5px' }}
                         />
-                        <span className="hidden lg:block ps-2 text-white text-xl font-bold">SCHOOL PORTAL</span>
+                        <span className="hidden lg:block ps-2 text-white text-xl font-bold">EDUMAX360</span>
                       </a>
                     </div>
 
