@@ -14,10 +14,13 @@ interface TextResultTemplateProps {
   schoolInfo?: any;
 }
 
+import { getApiUrl } from '@/lib/getApiUrl';
+
+const API_BASE_URL = typeof window !== 'undefined' ? getApiUrl() : (process.env.NEXT_PUBLIC_API_URL || '');
+
 function ensureAbsoluteUrl(url: string | null | undefined): string | undefined {
   if (!url) return undefined;
   if (url.startsWith('http')) return url;
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 

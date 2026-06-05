@@ -13,7 +13,9 @@ import {
   dummySettings, dummyFieldList, dummyScoreSubjects, dummyPeriod,
 } from '@/lib/result-template-dummy-data';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { getApiUrl } from '@/lib/getApiUrl';
+
+const API_BASE_URL = typeof window !== 'undefined' ? getApiUrl() : (process.env.NEXT_PUBLIC_API_URL || '');
 
 interface ScoreTemplateProps {
   student?:            any;
