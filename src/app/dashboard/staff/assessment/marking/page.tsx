@@ -54,12 +54,12 @@ interface MarkingListResponse {
   attempts: AttemptRow[];
 }
 
-// Shape of each item in schedules_by_subject[subjectName].schedules
 interface ScheduleItem {
   id: number;
   class_id: number;
   class: string;
   section: string | null;
+  section_id?: number | null;
   full_class_name: string;
 }
 
@@ -112,7 +112,6 @@ export default function MarkingHubPage() {
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [selectedClass, setSelectedClass] = useState<ClassOption | null>(null);
 
-  const [useClassSections, setUseClassSections] = useState(false);
   const [sections, setSections] = useState<SectionOption[]>([]);
   const [selectedSection, setSelectedSection] = useState<SectionOption | null>(null);
 
@@ -127,20 +126,18 @@ export default function MarkingHubPage() {
   // Loading / error
   const [loadingExams, setLoadingExams] = useState(true);
   const [loadingSchedules, setLoadingSchedules] = useState(false);
-  const [loadingSections, setLoadingSections] = useState(false);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load exams + settings on mount
+  // sections.length > 0 drives all section UI — no dependency on settings flag
+  const hasSections = sections.length > 0;
+
+  // Load exams on mount
   useEffect(() => {
     (async () => {
       try {
-        const [examList, settings] = await Promise.all([
-          examsAPI.list({ is_published: true }),
-          academicAPI.getSettings(),
-        ]);
+        const examList = await examsAPI.list({ is_published: true });
         setExams(examList);
-        setUseClassSections(settings?.use_class_sections ?? false);
       } catch {
         setError('Failed to load exams.');
       } finally {
@@ -164,13 +161,12 @@ export default function MarkingHubPage() {
 
     try {
       const statusData = await examsAPI.getSchedulesStatus(exam.id);
-      const bySubject = statusData.schedules_by_subject as unknown as Record <
-      string,
-      { subject_id: number; schedules: ScheduleItem[] }
-    >;
+      const bySubject = statusData.schedules_by_subject as unknown as Record<
+        string,
+        { subject_id: number; schedules: ScheduleItem[] }
+      >;
       setSchedulesBySubject(bySubject);
 
-      // Derive unique classes from all schedules
       const classMap = new Map<number, string>();
       Object.values(bySubject)
         .flatMap(g => g.schedules)
@@ -188,8 +184,8 @@ export default function MarkingHubPage() {
     }
   };
 
-  // Step 2: Class selected → sections or subjects
-  const handleClassSelect = async (cls: ClassOption) => {
+  // Step 2: Class selected → derive sections from schedules data (no API call)
+  const handleClassSelect = (cls: ClassOption) => {
     setSelectedClass(cls);
     setSelectedSection(null);
     setSelectedSubject(null);
@@ -198,24 +194,25 @@ export default function MarkingHubPage() {
     setMarkingData(null);
     setError(null);
 
+    const sectionMap = new Map<number, string>();
+    Object.values(schedulesBySubject).forEach(group => {
+      group.schedules.forEach((s: any) => {
+        if (s.class_id === cls.id && s.section_id && s.section) {
+          sectionMap.set(s.section_id, s.section);
+        }
+      });
+    });
 
-// TO
-const sectionMap = new Map<number, string>();
-Object.values(schedulesBySubject).forEach(group => {
-  group.schedules.forEach((s: any) => {
-    if (s.class_id === cls.id && s.section_id && s.section) {
-      sectionMap.set(s.section_id, s.section);
+    const derivedSections = Array.from(sectionMap.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    setSections(derivedSections);
+
+    // If no sections exist, go straight to subjects
+    if (derivedSections.length === 0) {
+      deriveSubjects(cls.id, null);
     }
-  });
-});
-const derivedSections = Array.from(sectionMap.entries())
-  .map(([id, name]) => ({ id, name }))
-  .sort((a, b) => a.name.localeCompare(b.name));
-setSections(derivedSections);
-
-if (derivedSections.length === 0) {
-  deriveSubjects(cls.id, null);
-}
   };
 
   // Step 3: Section selected → subjects
@@ -300,7 +297,7 @@ if (derivedSections.length === 0) {
 
       <div className="max-w-6xl mx-auto p-6 space-y-6">
 
-        {/* Selector Card — compact dropdowns in one row */}
+        {/* Selector Card */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <div className="flex flex-wrap gap-3 items-end">
 
@@ -349,28 +346,22 @@ if (derivedSections.length === 0) {
               )}
             </div>
 
-            {/* Section — only when use_class_sections */}
-            {sections.length > 0 && (
+            {/* Section — only shown when the selected class has sections */}
+            {hasSections && (
               <div className="flex-1 min-w-[140px]">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5 block">Section</label>
-                {loadingSections ? (
-                  <div className="flex items-center gap-2 h-10 text-sm text-slate-400">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
-                  </div>
-                ) : (
-                  <select
-                    value={selectedSection?.id ?? ''}
-                    disabled={!selectedClass || sections.length === 0}
-                    onChange={e => {
-                      const sec = sections.find(s => s.id === Number(e.target.value));
-                      if (sec) handleSectionSelect(sec);
-                    }}
-                    className="w-full h-10 px-3 text-sm border border-slate-200 rounded-xl bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <option value="">Select section…</option>
-                    {sections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                )}
+                <select
+                  value={selectedSection?.id ?? ''}
+                  disabled={!selectedClass}
+                  onChange={e => {
+                    const sec = sections.find(s => s.id === Number(e.target.value));
+                    if (sec) handleSectionSelect(sec);
+                  }}
+                  className="w-full h-10 px-3 text-sm border border-slate-200 rounded-xl bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <option value="">Select section…</option>
+                  {sections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
               </div>
             )}
 
@@ -379,7 +370,7 @@ if (derivedSections.length === 0) {
               <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5 block">Subject</label>
               <select
                 value={selectedSubject?.scheduleId ?? ''}
-                disabled={!(sections.length > 0 ? selectedSection : selectedClass) || subjects.length === 0} || subjects.length === 0}
+                disabled={!(hasSections ? selectedSection : selectedClass) || subjects.length === 0}
                 onChange={e => {
                   const sub = subjects.find(s => s.scheduleId === Number(e.target.value));
                   if (sub) handleSubjectSelect(sub);
@@ -416,12 +407,12 @@ if (derivedSections.length === 0) {
             {/* Summary chips */}
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
               {[
-                { label: 'Total',        value: markingData.summary.total_students, color: 'text-slate-800', bg: 'bg-white' },
+                { label: 'Total',        value: markingData.summary.total_students, color: 'text-slate-800',   bg: 'bg-white' },
                 { label: 'Submitted',    value: markingData.summary.submitted,      color: 'text-emerald-700', bg: 'bg-emerald-50' },
-                { label: 'Ungraded',     value: markingData.summary.ungraded,       color: 'text-slate-600', bg: 'bg-slate-50' },
-                { label: 'Pending',      value: markingData.summary.pending,        color: 'text-amber-700', bg: 'bg-amber-50' },
-                { label: 'Marked',       value: markingData.summary.fully_marked,   color: 'text-blue-700', bg: 'bg-blue-50' },
-                { label: 'Needs Review', value: markingData.summary.needs_review,   color: 'text-rose-700', bg: 'bg-rose-50' },
+                { label: 'Ungraded',     value: markingData.summary.ungraded,       color: 'text-slate-600',   bg: 'bg-slate-50' },
+                { label: 'Pending',      value: markingData.summary.pending,        color: 'text-amber-700',   bg: 'bg-amber-50' },
+                { label: 'Marked',       value: markingData.summary.fully_marked,   color: 'text-blue-700',    bg: 'bg-blue-50' },
+                { label: 'Needs Review', value: markingData.summary.needs_review,   color: 'text-rose-700',    bg: 'bg-rose-50' },
               ].map(chip => (
                 <div key={chip.label} className={`${chip.bg} border border-slate-200 rounded-xl p-3 text-center`}>
                   <p className={`text-2xl font-bold ${chip.color}`}>{chip.value}</p>
@@ -432,7 +423,6 @@ if (derivedSections.length === 0) {
 
             {/* Table card */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              {/* Table header controls */}
               <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-violet-500" />
@@ -475,7 +465,6 @@ if (derivedSections.length === 0) {
                 </div>
               </div>
 
-              {/* Table */}
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
