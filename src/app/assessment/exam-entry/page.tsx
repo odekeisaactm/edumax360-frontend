@@ -47,7 +47,6 @@ function HelperDrawer({
   const [sections, setSections] = useState<SectionOption[]>([]);
   const [subjects, setSubjects] = useState<SubjectOption[]>([]);
   const [students, setStudents] = useState<StudentOption[]>([]);
-  const [useClassSections, setUseClassSections] = useState(false);
   const [activeExam, setActiveExam] = useState<ExamDetail | null>(null);
 
   const [selectedClass, setSelectedClass] = useState<ClassOption | null>(null);
@@ -62,12 +61,9 @@ function HelperDrawer({
     (async () => {
       setLoading(true);
       try {
-        const [classData, settings] = await Promise.all([
-          academicAPI.listClasses(),
-          academicAPI.getSettings(),
-        ]);
+        const classData = await academicAPI.listClasses();
         setClasses(classData.map((c: any) => ({ id: c.id, name: c.name })));
-        setUseClassSections(settings?.use_class_sections ?? false);
+
       } catch {
         setError('Failed to load class list. Please try again.');
       } finally {
@@ -81,31 +77,31 @@ function HelperDrawer({
   }, [step]);
 
   const handleClassSelect = async (cls: ClassOption) => {
-    setSelectedClass(cls);
-    setError('');
-    setLoading(true);
-    try {
-      if (useClassSections) {
-        // Load sections immediately — find exam later after section is chosen
-        const sectionData = await academicAPI.listClassSections({ school_section_id: cls.id });
-        setSections(sectionData.map((s: any) => ({ id: s.id, name: s.name })));
-        setStep('section');
-      } else {
-        // No sections — find exam now then go to subjects
-        const exam = await findActiveExam(cls.id);
-        if (!exam) {
-          setError(`No active exam found for ${cls.name}. Please check with your teacher.`);
-          return;
-        }
-        setActiveExam(exam);
-        await loadSubjects(exam, cls.id);
+  setSelectedClass(cls);
+  setError('');
+  setLoading(true);
+  try {
+    const sectionData = await academicAPI.listClassSections({ school_section_id: cls.id });
+    const derivedSections = sectionData.map((s: any) => ({ id: s.id, name: s.name }));
+    setSections(derivedSections);
+
+    if (derivedSections.length > 0) {
+      setStep('section');
+    } else {
+      const exam = await findActiveExam(cls.id);
+      if (!exam) {
+        setError(`No active exam found for ${cls.name}. Please check with your teacher.`);
+        return;
       }
-    } catch {
-      setError('Failed to load. Please try again.');
-    } finally {
-      setLoading(false);
+      setActiveExam(exam);
+      await loadSubjects(exam, cls.id);
     }
-  };
+  } catch {
+    setError('Failed to load. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Find the active exam that includes a given class — fetches detail for each candidate
   const findActiveExam = async (classId: number): Promise<ExamDetail | null> => {
@@ -223,14 +219,15 @@ function HelperDrawer({
       )
     : students;
 
-  const stepNumber: Record<HelperStep, number> = {
-    class: 1,
-    section: 2,
-    subject: useClassSections ? 3 : 2,
-    student: useClassSections ? 4 : 3,
-    confirm: useClassSections ? 5 : 4,
-  };
-  const totalSteps = useClassSections ? 5 : 4;
+    const hasSections = sections.length > 0;
+const stepNumber: Record<HelperStep, number> = {
+  class: 1,
+  section: 2,
+  subject: hasSections ? 3 : 2,
+  student: hasSections ? 4 : 3,
+  confirm: hasSections ? 5 : 4,
+};
+const totalSteps = hasSections ? 5 : 4;
 
   const stepLabel: Record<HelperStep, string> = {
     class: 'Select Your Class',
