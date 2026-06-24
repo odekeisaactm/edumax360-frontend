@@ -46,13 +46,27 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
   };
 
   const hasAccess = (item: NavItem): boolean => {
-    if (user?.is_superuser) {
-      if (item.moduleCode) return activeModules.some(m => m.code === item.moduleCode);
-      return true;
-    }
-    if (item.requiredPermissions) return hasPermission(item.requiredPermissions[0]);
+  if (user?.is_superuser) {
+    if (item.moduleCode) return activeModules.some(m => m.code === item.moduleCode);
     return true;
-  };
+  }
+
+  // Check module first
+  if (item.moduleCode && !activeModules.some(m => m.code === item.moduleCode)) return false;
+
+  // If has children, show only if at least one child is accessible
+  if (item.children && item.children.length > 0) {
+    return item.children.some(child => hasAccess(child));
+  }
+
+  // Leaf item — check permission
+  if (item.requiredPermissions && item.requiredPermissions.length > 0) {
+    return hasPermission(item.requiredPermissions[0]);
+  }
+
+  // No permission required — always show (Dashboard etc)
+  return true;
+};
 
   const navItems: NavItem[] = [
     {
