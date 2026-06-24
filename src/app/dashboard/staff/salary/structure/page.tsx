@@ -460,7 +460,7 @@ export default function SalaryStructureListPage() {
 
                     {/* Annual Salary */}
                     <div className="text-right">
-                      <span className="text-sm text-slate-600">{fmtMoney(s.annual_salary || s.monthly_salary * 12)}</span>
+                      <span className="text-sm text-slate-600">{fmtMoney(s.annual_salary || Number(s.monthly_salary) * 12)}</span>
                     </div>
 
                     {/* Effective From */}

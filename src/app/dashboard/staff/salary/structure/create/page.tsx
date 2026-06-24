@@ -398,8 +398,8 @@ export default function SalaryStructureCreatePage() {
       setLoadingSettings(true);
       try {
         const [staffData, settingsData] = await Promise.all([
-          staffAPI.list({ page_size: 1000 }),
-          salarySettingsAPI.list(),
+          staffAPI.list({ page_size: 1000 }) as any,
+          salarySettingsAPI.list() as any,
         ]);
         setStaffList(Array.isArray(staffData) ? staffData : staffData?.results || []);
         setSalarySettings(Array.isArray(settingsData) ? settingsData : settingsData?.results || []);

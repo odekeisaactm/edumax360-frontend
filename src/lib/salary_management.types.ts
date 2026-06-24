@@ -4,9 +4,7 @@
 // Matching the Django models, serializers, and API endpoints
 // ====================================================================
 
-import { Staff } from './hr.types';
-import { AcademicSessionPeriodModel } from './academic.types';
-import { User } from './index'; // adjust if needed
+import { Staff, AcademicSessionPeriod, User } from './type';
 
 // ====================================================================
 // ENUMS & CHOICES
@@ -245,7 +243,7 @@ export interface SalaryRecord {
   month: number;
   year: number;
   month_name?: string; // read-only
-  academic_period?: number | AcademicSessionPeriodModel | null;
+  academic_period?: number | AcademicSessionPeriod | null;
   monthly_salary: string;
   annual_salary: string;
   basic_components_breakdown: Record<string, BasicComponentBreakdown>;
@@ -300,7 +298,7 @@ export interface Bonus {
   year: number;
   due_date: string;
   status: BonusStatus;
-  academic_period?: number | AcademicSessionPeriodModel | null;
+  academic_period?: number | AcademicSessionPeriod | null;
   notes?: string | null;
   created_by?: number | User | null;
   created_at: string;
@@ -329,7 +327,7 @@ export interface SalaryAdvance {
   request_date: string;
   status: AdvanceStatus;
   repaid_amount: string;
-  academic_period?: number | AcademicSessionPeriodModel | null;
+  academic_period?: number | AcademicSessionPeriod | null;
   approved_by?: number | User | null;
   approved_date?: string | null;
   created_at: string;
@@ -361,7 +359,7 @@ export interface StaffLoan {
   request_date: string;
   status: LoanStatus;
   repaid_amount: string;
-  academic_period?: number | AcademicSessionPeriodModel | null;
+  academic_period?: number | AcademicSessionPeriod | null;
   approved_by?: number | User | null;
   approved_date?: string | null;
   created_at: string;
@@ -389,7 +387,7 @@ export interface StaffLoanRepayment {
   staff_name?: string; // read-only
   amount_paid: string;
   payment_date: string;
-  academic_period?: number | AcademicSessionPeriodModel | null;
+  academic_period?: number | AcademicSessionPeriod | null;
   created_at: string;
   created_by?: number | User | null;
 }

@@ -545,29 +545,35 @@ export default function ItemsPage() {
   };
 
   const handleSave = async (form: ItemFormValues, initialStocks: OpeningBalance[]) => {
-    setIsSaving(true);
-    try {
-      if (editingItem) {
-        const updated = await inventoryItemAPI.update(editingItem.id, form);
-        setItems(prev => prev.map(i => i.id === updated.id ? updated : i));
-        showToast('success', `"${updated.name}" updated successfully`);
-      } else {
-        const payload = {
-          ...form,
-          category: Number(form.category),
-          current_selling_price: form.current_selling_price || '0',
-          reorder_level: form.reorder_level || '0',
-          initial_stocks: initialStocks.filter(ob => ob.location_id && Number(ob.quantity) > 0)
-        };
-        const created = await inventoryItemAPI.create(payload);
-        showToast('success', `"${created.name}" created successfully`);
-        fetchItems(pendingSearch, selectedCategory, showActiveOnly, 1);
-      }
-      setShowFormModal(false);
-    } catch (err) {
-      throw err;
-    } finally { setIsSaving(false); }
-  };
+      setIsSaving(true);
+      try {
+        if (editingItem) {
+          // Transform category to match API expectations
+          const updateData = {
+            ...form,
+            category: form.category === '' ? undefined : Number(form.category),
+          };
+          await inventoryItemAPI.update(editingItem.id, updateData);
+          showToast('success', `"${editingItem.name}" updated successfully`);
+          // Refresh the list to get the updated item with all fields
+          fetchItems(pendingSearch, selectedCategory, showActiveOnly, page);
+        } else {
+          const payload = {
+            ...form,
+            category: Number(form.category),
+            current_selling_price: form.current_selling_price || '0',
+            reorder_level: form.reorder_level || '0',
+            initial_stocks: initialStocks.filter(ob => ob.location_id && Number(ob.quantity) > 0)
+          };
+          const created = await inventoryItemAPI.create(payload);
+          showToast('success', `"${created.name}" created successfully`);
+          fetchItems(pendingSearch, selectedCategory, showActiveOnly, 1);
+        }
+        setShowFormModal(false);
+      } catch (err) {
+        throw err;
+      } finally { setIsSaving(false); }
+    };
 
   const handleDelete = async () => {
     if (!deletingItem) return;

@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { salarySettingsAPI } from '@/lib/salary_management.service';
-import { SalarySetting, User } from '@/lib/salary_management.types';
+import { SalarySetting } from '@/lib/salary_management.types';
 import {
   Settings, ArrowLeft, Edit3, AlertCircle, Loader2, CheckCircle,
   ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Lock, Pause,
@@ -52,7 +52,7 @@ function fmtDate(d?: string | null) {
 function getCreatedByName(createdBy: SalarySetting['created_by']): string {
   if (!createdBy) return 'System';
   if (typeof createdBy === 'number') return `User #${createdBy}`;
-  const u = createdBy as User;
+  const u = createdBy as any;
   // FIX: User shape may vary; fall back gracefully across common name fields.
   return (u as any).full_name || (u as any).get_full_name || (u as any).username || (u as any).email || `User #${(u as any).id ?? ''}`;
 }

@@ -102,10 +102,9 @@ export const inventoryLocationAPI = {
 // ── Suppliers ────────────────────────────────────────────────
 
 export const inventorySupplierAPI = {
-  list: async (params?: { search?: string }): Promise<InventorySupplier[]> => {
+  list: async (params?: Record<string, any>): Promise<any> => {
     const r = await api.get('/api/inventory/suppliers/', { params });
-    const data = unwrap(r);
-    return Array.isArray(data) ? data : data?.results || [];
+    return unwrap(r);
   },
   get: async (id: number): Promise<InventorySupplier> => {
     const r = await api.get(`/api/inventory/suppliers/${id}/`);
@@ -220,7 +219,7 @@ export const saleAPI = {
 // ── Reports ──────────────────────────────────────────────────
 
 export const inventoryReportAPI = {
-  get: async (params: { type: 'low_stock' | 'sales_summary' }): Promise<any> => {
+  get: async (params: { type: 'low_stock' | 'sales_summary' | 'top_selling' }): Promise<any> => {
     const r = await api.get('/api/inventory/reports/', { params });
     return unwrap(r);
   },

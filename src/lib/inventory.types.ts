@@ -90,6 +90,7 @@ export interface InventoryItemList {
   category_name?: string;
   unit: InventoryUnit;
   current_selling_price: string;
+  last_cost_price: string;
   location_quantity: number | null;
   total_quantity: string;
   is_low_stock?: boolean;
@@ -201,6 +202,7 @@ export interface Sale {
   status: SaleStatus;
   academic_period?: number | null;
   created_by?: number | null;
+  created_by_name?: string | null;
   created_at: string;
   items: SaleItem[];
   subtotal?: string; // Read-only
@@ -231,8 +233,8 @@ export interface StockInPayload {
     item: number;
     quantity_received: string;
     unit_cost: string;
-    batch_number?: string;
-    expiry_date?: string;
+    batch_number?: string | null;
+    expiry_date?: string | null;
   }>;
 }
 
@@ -275,6 +277,7 @@ export interface SalePayload {
 export interface InventoryItemFilters {
   search?: string;
   category?: number;
+  location?: number;
   is_active?: boolean;
   page?: number;
   page_size?: number;

@@ -557,8 +557,9 @@ export default function SalaryStructureEditPage() {
           salaryStructuresAPI.get(structureId),
         ]);
 
-        setStaffList(Array.isArray(staffData) ? staffData : staffData?.results || []);
-        const settingsList = Array.isArray(settingsData) ? settingsData : settingsData?.results || [];
+        setStaffList(Array.isArray(staffData) ? staffData : (staffData as any)?.results || []);
+        const settingsList = Array.isArray(settingsData) ? settingsData : (settingsData as any)?.results || [];
+
         setSalarySettings(settingsList);
 
         // Populate form from existing structure
