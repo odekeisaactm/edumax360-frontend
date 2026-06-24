@@ -14,7 +14,7 @@ import {
   HelpCircle, Tags, Database, List, CheckSquare, Video, BarChart,
   BarChart2, Archive, Edit, Send, Info, Smartphone, Cpu, Sliders,
   ArrowRight, Award, Printer, Shield, Upload, Download, CalendarDays,
-  FileSearch, Package, User, Zap,
+  FileSearch, Package, User, Zap, MapPin, Gift
 } from 'lucide-react';
 
 interface NavItem {
@@ -60,6 +60,22 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
       href: '/dashboard/staff',
       icon: <Home className="h-5 w-5" />,
       current: pathname === '/dashboard/staff',
+    },
+    {
+      // Top-level for Tuckshop Attendant
+      name: 'Place Order',
+      href: '/dashboard/staff/inventory/pos',
+      icon: <CreditCard className="h-5 w-5" />,
+      current: pathname === '/dashboard/staff/inventory/pos',
+      requiredPermissions: ['inventory.add_salemodel'],
+    },
+    {
+      // Top-level for Tuckshop Attendant
+      name: 'View Orders',
+      href: '/dashboard/staff/inventory/sales',
+      icon: <ClipboardList className="h-5 w-5" />,
+      current: isCurrentPath('/dashboard/staff/inventory/sales'),
+      requiredPermissions: ['inventory.view_salemodel'],
     },
     {
       name: 'Student Management',
@@ -504,6 +520,204 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/fee/settings'),
           requiredPermissions: ['fee_management.view_feesettingmodel'],
         },
+      ],
+    },
+    {
+      "name": "Salary Management",
+      "href": "#",
+      "icon": <DollarSign className="h-5 w-5" />,
+      "moduleCode": "salary_management",
+      "children": [
+        {
+          "name": "Dashboard",
+          "href": "/dashboard/staff/salary/dashboard",
+          "icon": <Layout className="h-4 w-4" />,
+          "requiredPermissions": ["finance.add_salaryrecord"]
+        },
+        {
+          "name": "Payroll",
+          "href": "#",
+          "icon": <FileText className="h-4 w-4" />,
+          "children": [
+            {
+              "name": "All Payroll",
+              "href": "/dashboard/staff/salary/payroll",
+              "icon": <List className="h-4 w-4" />,
+              "requiredPermissions": ["finance.view_salaryrecord"]
+            },
+            {
+              "name": "Bulk Payslips",
+              "href": "/dashboard/staff/salary/bulk-payslips",
+              "icon": <Layers className="h-4 w-4" />,
+              "requiredPermissions": ["finance.add_salaryrecord"]
+            },
+            {
+              "name": "Annual Payslips",
+              "href": "/dashboard/staff/salary/annual-payslips",
+              "icon": <Calendar className="h-4 w-4" />,
+              "requiredPermissions": ["finance.view_salaryrecord"]
+            }
+          ]
+        },
+        {
+          "name": "Salary Structure",
+          "href": "/dashboard/staff/salary/structure",
+          "icon": <Building className="h-4 w-4" />,
+          "requiredPermissions": ["finance.add_salaryrecord"]
+        },
+        {
+          "name": "Salary Settings",
+          "href": "/dashboard/staff/salary/settings",
+          "icon": <Settings className="h-4 w-4" />,
+          "requiredPermissions": ["finance.add_salaryrecord"]
+        },
+        {
+          "name": "Bonuses",
+          "href": "#",
+          "icon": <Award className="h-4 w-4" />,
+          "children": [
+            {
+              "name": "Special Bonuses",
+              "href": "/dashboard/staff/salary/bonuses",
+              "icon": <Star className="h-4 w-4" />,
+              "requiredPermissions": ["finance.add_salaryrecord"]
+            },
+            {
+              "name": "My Special Bonus",
+              "href": "/dashboard/staff/salary/my-bonus",
+              "icon": <Gift className="h-4 w-4" />,
+              "requiredPermissions": []
+            }
+          ]
+        },
+        {
+          "name": "Reports & Export",
+          "href": "#",
+          "icon": <BarChart2 className="h-4 w-4" />,
+          "children": [
+            {
+              "name": "Salary Report",
+              "href": "/dashboard/staff/salary/report",
+              "icon": <FileSpreadsheet className="h-4 w-4" />,
+              "requiredPermissions": ["finance.add_salaryrecord"]
+            },
+            {
+              "name": "Salary Excel Export",
+              "href": "/dashboard/staff/salary/excel-export",
+              "icon": <Download className="h-4 w-4" />,
+              "requiredPermissions": ["finance.add_salaryrecord"]
+            }
+          ]
+        },
+        {
+          "name": "Loans & Advances",
+          "href": "#",
+          "icon": <CreditCard className="h-4 w-4" />,
+          "children": [
+            {
+              "name": "Salary Advance",
+              "href": "/dashboard/staff/salary/advances",
+              "icon": <ArrowUpCircle className="h-4 w-4" />,
+              "requiredPermissions": ["finance.view_salaryrecord"]
+            },
+            {
+              "name": "Staff Loans",
+              "href": "/dashboard/staff/salary/loans",
+              "icon": <Users className="h-4 w-4" />,
+              "requiredPermissions": ["finance.view_salaryrecord"]
+            },
+            {
+              "name": "Staff Loan Debtors",
+              "href": "/dashboard/staff/salary/loan-debtors",
+              "icon": <UserCheck className="h-4 w-4" />,
+              "requiredPermissions": ["finance.view_salaryrecord"]
+            }
+          ]
+        },
+        {
+          "name": "My Payslip",
+          "href": "/dashboard/staff/salary/my-payslip",
+          "icon": <User className="h-4 w-4" />,
+          "requiredPermissions": []
+        },
+        {
+          "name": "My Annual Payslip",
+          "href": "/dashboard/staff/salary/my-annual-payslip",
+          "icon": <CalendarDays className="h-4 w-4" />,
+          "requiredPermissions": []
+        }
+      ]
+    },
+    {
+      name: 'Inventory',
+      href: '#',
+      icon: <Package className="h-5 w-5" />,
+      moduleCode: 'inventory',
+      children: [
+        {
+          name: 'Inventory Report',
+          href: '/dashboard/staff/inventory/inventory-report',
+          icon: <FileText className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/inventory/inventory-report'),
+          requiredPermissions: ['inventory.view_salemodel'],
+        },
+        {
+          name: 'Items',
+          href: '/dashboard/staff/inventory/items',
+          icon: <Package className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/inventory/items'),
+          requiredPermissions: ['inventory.view_itemmodel'],
+        },
+        {
+          name: 'Stock In',
+          href: '/dashboard/staff/inventory/stock-in/new',
+          icon: <ArrowUpCircle className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/inventory/stock-in/new'),
+          requiredPermissions: ['inventory.add_stockinmodel'],
+        },
+        {
+          name: 'Stock Transfers',
+          href: '/dashboard/staff/inventory/transfers',
+          icon: <RefreshCw className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/inventory/transfers'),
+          requiredPermissions: ['inventory.add_stockinmodel'],
+        },
+        {
+          name: 'View Stock In',
+          href: '/dashboard/staff/inventory/stock-in',
+          icon: <Eye className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/inventory/stock-in'),
+          requiredPermissions: ['inventory.view_stockinmodel'],
+        },
+        {
+          name: 'View Stock Outs',
+          href: '/dashboard/staff/inventory/stock-out',
+          icon: <Eye className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/inventory/stock-out'),
+          requiredPermissions: ['inventory.view_stockinmodel'],
+        },
+        {
+          name: 'Suppliers',
+          href: '/dashboard/staff/inventory/suppliers',
+          icon: <Building className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/inventory/suppliers'),
+          requiredPermissions: ['inventory.view_itemmodel'],
+        },
+        {
+          name: 'Categories',
+          href: '/dashboard/staff/inventory/categories',
+          icon: <FolderOpen className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/inventory/categories'),
+          requiredPermissions: ['inventory.view_itemmodel'],
+        },
+        {
+          name: 'Locations',
+          href: '/dashboard/staff/inventory/locations',
+          icon: <MapPin className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/inventory/locations'),
+          requiredPermissions: ['inventory.view_itemmodel'],
+        },
+
       ],
     },
     {

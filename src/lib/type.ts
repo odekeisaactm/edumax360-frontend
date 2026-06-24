@@ -1,7 +1,9 @@
 export * from './assessment.types';
 export * from './result.types';
 export * from './learning.types';
+export * from './inventory.types';
 export * from './communication.types';
+export * from './salary_management.types';
 
 // User-related types
 export interface User {

@@ -2463,6 +2463,8 @@ export * from './assessment.service';
 export * from './communication.service';
 export * from './learning.service';
 export * from './result.service';
+export * from './inventory.service';
+export * from './salary_management.service';
 
 
 // Export the default api instance for custom requests
