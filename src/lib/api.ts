@@ -2464,6 +2464,7 @@ export * from './communication.service';
 export * from './learning.service';
 export * from './result.service';
 export * from './inventory.service';
+export * from './finance.service';
 export * from './salary_management.service';
 
 

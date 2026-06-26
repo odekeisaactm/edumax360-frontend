@@ -280,9 +280,87 @@ export const MODULES: ModuleDef[] = [
       },
     ],
   },
-
+    {
+    key: 'finance',
+    label: 'Finance',
+    description: 'General ledger, student funding, expenses, and finance settings',
+    areas: [
+      {
+        key: 'ledger_funding',
+        label: 'Ledger & Funding',
+        description: 'Income, expenses, and student funding records',
+        permissions: [
+          { codename: 'view_expensemodel',        label: 'View Ledger',          desc: 'Read income and expense entries' },
+          { codename: 'add_expensemodel',         label: 'Add Ledger Entries',   desc: 'Create new income or expense entries' },
+          { codename: 'change_expensemodel',      label: 'Edit Ledger Entries',  desc: 'Update existing ledger entries' },
+          { codename: 'delete_expensemodel',      label: 'Delete Ledger Entries',desc: 'Permanently remove ledger entries' },
+          { codename: 'view_studentfundingmodel',   label: 'View Student Funding',  desc: 'Read student funding records' },
+          { codename: 'add_studentfundingmodel',    label: 'Add Student Funding',   desc: 'Create new student funding records' },
+          { codename: 'change_studentfundingmodel', label: 'Edit Student Funding',  desc: 'Update existing student funding records' },
+        ],
+      },
+      {
+        key: 'finance_settings',
+        label: 'Finance Settings',
+        description: 'Singleton finance configuration',
+        permissions: [
+          { codename: 'view_financesettingmodel',   label: 'View Finance Settings',   desc: 'Read finance configuration settings' },
+          { codename: 'change_financesettingmodel', label: 'Manage Finance Settings', desc: 'Update finance configuration settings' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'salary_management',
+    label: 'Salary Management',
+    description: 'Payroll processing, salary structures, bonuses, loans, and advances',
+    areas: [
+      {
+        key: 'payroll_processing',
+        label: 'Payroll Processing',
+        description: 'Salary settings, structures, records, bonuses, loans, and advances',
+        permissions: [
+          { codename: 'view_salaryrecordmodel',   label: 'View Salary Records',   desc: 'Read salary settings, structures, records, bonuses, loans, and advances' },
+          { codename: 'add_salaryrecordmodel',    label: 'Process Payroll',       desc: 'Create salary structures and process payroll records' },
+          { codename: 'change_salaryrecordmodel', label: 'Edit Salary Records',   desc: 'Update salary settings, structures, and manage loans/advances' },
+          { codename: 'delete_salaryrecordmodel', label: 'Delete Salary Records', desc: 'Permanently remove salary records, structures, or bonuses' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'fee_management',
+    label: 'Fee Management',
+    description: 'Invoices, payments, fee waivers, and payment gateway webhooks',
+    areas: [
+      {
+        key: 'fee_operations',
+        label: 'Fee Operations',
+        description: 'Manage invoices, payments, and fee records',
+        permissions: [
+          { codename: 'manage_fees', label: 'Manage Fees', desc: 'Create and update invoices, payments, and fee records' },
+        ],
+      },
+      {
+        key: 'fee_waivers',
+        label: 'Fee Waivers',
+        description: 'Approve or reject fee waiver requests',
+        permissions: [
+          { codename: 'approve_fee_waiver', label: 'Approve/Reject Fee Waivers', desc: 'Review and decide on submitted fee waiver requests' },
+        ],
+      },
+      {
+        key: 'payment_confirmation',
+        label: 'Payment Confirmation',
+        description: 'Confirm parent/staff-submitted payments',
+        permissions: [
+          { codename: 'confirm_payment', label: 'Confirm Payments', desc: 'Verify and confirm submitted fee payments' },
+        ],
+      },
+    ],
+  },
    {
-    key: 'assesment',
+    key: 'assessment',
     label: 'Assessment Permissions',
     description: 'Classes, subjects, timetable, and academic setup',
     areas: [

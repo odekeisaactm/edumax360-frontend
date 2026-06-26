@@ -131,10 +131,9 @@ export const payrollAPI = {
    * Process payroll (generate payslips) for a given month/year
    */
   process: async (payload: ProcessPayrollPayload): Promise<ProcessPayrollResponse> => {
-    const response = await api.post('/api/salary-management/payroll/process/', payload);
-    return response.data;
-  },
-
+  const response = await api.post('/api/salary-management/payroll/process/', payload);
+  return response.data;
+},
   /**
    * List salary records (payslips) with optional filters
    */

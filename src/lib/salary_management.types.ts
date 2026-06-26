@@ -472,17 +472,18 @@ export interface StaffBankDetailListFilters {
 
 // For the custom endpoints:
 
-// Process Payroll
-export interface ProcessPayrollPayload {
+export interface ProcessPayrollRecordPayload {
+  structure_id: number;
   month: number;
   year: number;
-  staff_ids?: number[]; // if omitted, process all active staff
   bonus?: string | number;
   custom_deductions?: Record<string, string | number>;
   additional_income?: Record<string, string | number>;
   amount_paid?: string | number;
-  academic_period?: number; // optional, will be auto-filled if not given?
+  academic_period?: number;
 }
+
+export type ProcessPayrollPayload = ProcessPayrollRecordPayload[];
 
 export interface ProcessPayrollResponse {
   processed_count: number;

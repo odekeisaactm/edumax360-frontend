@@ -14,7 +14,7 @@ import {
   HelpCircle, Tags, Database, List, CheckSquare, Video, BarChart,
   BarChart2, Archive, Edit, Send, Info, Smartphone, Cpu, Sliders,
   ArrowRight, Award, Printer, Shield, Upload, Download, CalendarDays,
-  FileSearch, Package, User, Zap, MapPin, Gift
+  FileSearch, Package, User, Zap, MapPin, Gift, TrendingDown
 } from 'lucide-react';
 
 interface NavItem {
@@ -533,6 +533,201 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           icon: <Settings className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/fee/settings'),
           requiredPermissions: ['fee_management.view_feesettingmodel'],
+        },
+      ],
+    },
+
+    {
+      name: 'Finance',
+      href: '#',
+      icon: <DollarSign className="h-5 w-5" />,
+      moduleCode: 'finance',
+      children: [
+        // ==================== DASHBOARD ====================
+        {
+          name: 'Finance Dashboard',
+          href: '/dashboard/staff/finance/dashboard',
+          icon: <PieChart className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/finance/dashboard'),
+          requiredPermissions: ['finance.view_expensemodel'],
+        },
+
+        // ==================== WALLET FUNDING ====================
+        {
+          name: 'Wallet Funding',
+          href: '#',
+          icon: <CreditCard className="h-4 w-4" />,
+          children: [
+            {
+              name: 'Deposit',
+              href: '/dashboard/staff/finance/deposit',
+              icon: <UserPlus className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/deposit'),
+              requiredPermissions: ['finance.add_studentfundingmodel'],
+            },
+
+            {
+              name: 'Deposit History',
+              href: '/dashboard/staff/finance/deposits',
+              icon: <FileText className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/deposits'),
+              requiredPermissions: ['finance.view_studentfundingmodel'],
+            },
+
+            {
+              name: 'Student Pending Deposits',
+              href: '/dashboard/staff/finance/student-pending',
+              icon: <Clock className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/student-pending'),
+              requiredPermissions: ['finance.change_studentfundingmodel'],
+            },
+            {
+              name: 'Staff Pending Deposits',
+              href: '/dashboard/staff/finance/staff-pending',
+              icon: <Clock className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/staff-pending'),
+              requiredPermissions: ['finance.change_studentfundingmodel'],
+            },
+            {
+              name: 'Bulk Wallet Funding',
+              href: '/dashboard/staff/finance/bulk-funding',
+              icon: <Upload className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/bulk-funding'),
+              requiredPermissions: ['finance.add_studentfundingmodel'],
+            },
+            {
+              name: 'My Funding History',
+              href: '/dashboard/staff/finance/my-funding',
+              icon: <User className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/my-funding'),
+              requiredPermissions: [],
+            },
+          ],
+        },
+
+        // ==================== INCOME & EXPENSES ====================
+        {
+          name: 'Income & Expenses',
+          href: '#',
+          icon: <BarChart2 className="h-4 w-4" />,
+          children: [
+            {
+              name: 'Income Records',
+              href: '/dashboard/staff/finance/incomes',
+              icon: <TrendingUp className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/incomes'),
+              requiredPermissions: ['finance.view_expensemodel'],
+            },
+            {
+              name: 'Add Income',
+              href: '/dashboard/staff/finance/incomes/create',
+              icon: <Plus className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/incomes/create'),
+              requiredPermissions: ['finance.add_expensemodel'],
+            },
+            {
+              name: 'Expense Records',
+              href: '/dashboard/staff/finance/expenses',
+              icon: <TrendingDown className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/expenses'),
+              requiredPermissions: ['finance.view_expensemodel'],
+            },
+            {
+              name: 'Add Expense',
+              href: '/dashboard/staff/finance/expenses/create',
+              icon: <Plus className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/expenses/create'),
+              requiredPermissions: ['finance.add_expensemodel'],
+            },
+            {
+              name: 'Income Report',
+              href: '/dashboard/staff/finance/income-report',
+              icon: <FileSpreadsheet className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/income-report'),
+              requiredPermissions: ['finance.view_expensemodel'],
+            },
+            {
+              name: 'Expense Report',
+              href: '/dashboard/staff/finance/expense-report',
+              icon: <FileSpreadsheet className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/expense-report'),
+              requiredPermissions: ['finance.view_expensemodel'],
+            },
+          ],
+        },
+
+        // ==================== SUPPLIER & ADVANCE PAYMENTS ====================
+        {
+          name: 'Procurement',
+          href: '#',
+          icon: <Package className="h-4 w-4" />,
+          children: [
+            {
+              name: 'Supplier Orders',
+              href: '/dashboard/staff/finance/supplier-orders',
+              icon: <FileText className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/supplier-orders'),
+              requiredPermissions: ['finance.view_expensemodel'],
+            },
+            {
+              name: 'Supplier Payments',
+              href: '/dashboard/staff/finance/supplier-payments',
+              icon: <CreditCard className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/supplier-payments'),
+              requiredPermissions: ['finance.view_expensemodel'],
+            },
+            {
+              name: 'Advance Payments',
+              href: '/dashboard/staff/finance/advance-payments',
+              icon: <ArrowUpCircle className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/advance-payments'),
+              requiredPermissions: ['finance.view_expensemodel'],
+            },
+            {
+              name: 'Advance Settlements',
+              href: '/dashboard/staff/finance/advance-settlements',
+              icon: <RefreshCw className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/advance-settlements'),
+              requiredPermissions: ['finance.view_expensemodel'],
+            },
+          ],
+        },
+
+        // ==================== CONFIGURATION ====================
+        {
+          name: 'Configuration',
+          href: '#',
+          icon: <Settings className="h-4 w-4" />,
+          children: [
+            {
+              name: 'Bank Accounts',
+              href: '/dashboard/staff/finance/bank-accounts',
+              icon: <Building className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/bank-accounts'),
+              requiredPermissions: ['finance.add_expensemodel'],
+            },
+            {
+              name: 'Income Categories',
+              href: '/dashboard/staff/finance/income-categories',
+              icon: <Tag className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/income-categories'),
+              requiredPermissions: ['finance.add_expensemodel'],
+            },
+            {
+              name: 'Expense Categories',
+              href: '/dashboard/staff/finance/expense-categories',
+              icon: <Tag className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/expense-categories'),
+              requiredPermissions: ['finance.add_expensemodel'],
+            },
+            {
+              name: 'Settings',
+              href: '/dashboard/staff/finance/settings',
+              icon: <Settings className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/settings'),
+              requiredPermissions: ['finance.change_financesettingmodel'],
+            },
+          ],
         },
       ],
     },
