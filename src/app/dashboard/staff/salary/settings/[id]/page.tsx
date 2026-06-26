@@ -178,8 +178,8 @@ export default function SalarySettingDetailPage() {
     return () => { cancelled = true; };
   }, [id]);
 
-  const canEdit = !!(user?.is_superuser || hasPermission?.('finance.change_salaryrecord'));
-  const canActivate = !!(user?.is_superuser || hasPermission?.('finance.change_salaryrecord'));
+  const canEdit = !!(user?.is_superuser || hasPermission?.('salary_management.change_salaryrecordmodel'));
+  const canActivate = !!(user?.is_superuser || hasPermission?.('salary_management.change_salaryrecordmodel'));
 
   // ── Activate / deactivate ──
   // NOTE: backend has no dedicated toggle endpoint — PUT on the detail view

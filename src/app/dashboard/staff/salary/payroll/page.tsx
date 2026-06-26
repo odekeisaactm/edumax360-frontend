@@ -135,8 +135,8 @@ export default function PayslipListPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canView = user?.is_superuser || hasPermission('finance.view_salaryrecord');
-  const canManage = user?.is_superuser || hasPermission('finance.add_salaryrecord');
+  const canView = user?.is_superuser || hasPermission('salary_management.view_salaryrecordmodel');
+  const canManage = user?.is_superuser || hasPermission('salary_management.add_salaryrecordmodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

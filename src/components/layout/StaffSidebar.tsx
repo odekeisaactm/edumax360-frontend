@@ -741,7 +741,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           "name": "Dashboard",
           "href": "/dashboard/staff/salary/dashboard",
           "icon": <Layout className="h-4 w-4" />,
-          "requiredPermissions": ["finance.add_salaryrecord"]
+          "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
         },
         {
           "name": "Payroll",
@@ -752,19 +752,19 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               "name": "All Payroll",
               "href": "/dashboard/staff/salary/payroll",
               "icon": <List className="h-4 w-4" />,
-              "requiredPermissions": ["finance.view_salaryrecord"]
+              "requiredPermissions": ["salary_management.view_salaryrecordmodel"]
             },
             {
               "name": "Bulk Payslips",
               "href": "/dashboard/staff/salary/bulk-payslips",
               "icon": <Layers className="h-4 w-4" />,
-              "requiredPermissions": ["finance.add_salaryrecord"]
+              "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
             },
             {
               "name": "Annual Payslips",
               "href": "/dashboard/staff/salary/annual-payslips",
               "icon": <Calendar className="h-4 w-4" />,
-              "requiredPermissions": ["finance.view_salaryrecord"]
+              "requiredPermissions": ["salary_management.view_salaryrecordmodel"]
             }
           ]
         },
@@ -772,13 +772,13 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           "name": "Salary Structure",
           "href": "/dashboard/staff/salary/structure",
           "icon": <Building className="h-4 w-4" />,
-          "requiredPermissions": ["finance.add_salaryrecord"]
+          "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
         },
         {
           "name": "Salary Settings",
           "href": "/dashboard/staff/salary/settings",
           "icon": <Settings className="h-4 w-4" />,
-          "requiredPermissions": ["finance.add_salaryrecord"]
+          "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
         },
         {
           "name": "Bonuses",
@@ -789,7 +789,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               "name": "Special Bonuses",
               "href": "/dashboard/staff/salary/bonuses",
               "icon": <Star className="h-4 w-4" />,
-              "requiredPermissions": ["finance.add_salaryrecord"]
+              "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
             },
             {
               "name": "My Special Bonus",
@@ -808,13 +808,13 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               "name": "Salary Report",
               "href": "/dashboard/staff/salary/report",
               "icon": <FileSpreadsheet className="h-4 w-4" />,
-              "requiredPermissions": ["finance.add_salaryrecord"]
+              "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
             },
             {
               "name": "Salary Excel Export",
               "href": "/dashboard/staff/salary/excel-export",
               "icon": <Download className="h-4 w-4" />,
-              "requiredPermissions": ["finance.add_salaryrecord"]
+              "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
             }
           ]
         },
@@ -827,19 +827,19 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               "name": "Salary Advance",
               "href": "/dashboard/staff/salary/advances",
               "icon": <ArrowUpCircle className="h-4 w-4" />,
-              "requiredPermissions": ["finance.view_salaryrecord"]
+              "requiredPermissions": ["salary_management.view_salaryrecordmodel"]
             },
             {
               "name": "Staff Loans",
               "href": "/dashboard/staff/salary/loans",
               "icon": <Users className="h-4 w-4" />,
-              "requiredPermissions": ["finance.view_salaryrecord"]
+              "requiredPermissions": ["salary_management.view_salaryrecordmodel"]
             },
             {
               "name": "Staff Loan Debtors",
               "href": "/dashboard/staff/salary/loan-debtors",
               "icon": <UserCheck className="h-4 w-4" />,
-              "requiredPermissions": ["finance.view_salaryrecord"]
+              "requiredPermissions": ["salary_management.view_salaryrecordmodel"]
             }
           ]
         },

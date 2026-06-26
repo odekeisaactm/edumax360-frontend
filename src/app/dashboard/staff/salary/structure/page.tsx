@@ -164,10 +164,10 @@ export default function SalaryStructureListPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const canCreate = user?.is_superuser || hasPermission('finance.add_salaryrecord');
-  const canEdit = user?.is_superuser || hasPermission('finance.change_salaryrecord');
-  const canDelete = user?.is_superuser || hasPermission('finance.delete_salaryrecord');
-  const canView = user?.is_superuser || hasPermission('finance.view_salaryrecord');
+  const canCreate = user?.is_superuser || hasPermission('salary_management.add_salaryrecordmodel');
+  const canEdit = user?.is_superuser || hasPermission('salary_management.change_salaryrecordmodel');
+  const canDelete = user?.is_superuser || hasPermission('salary_management.delete_salaryrecordmodel');
+  const canView = user?.is_superuser || hasPermission('salary_management.view_salaryrecordmodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

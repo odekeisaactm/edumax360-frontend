@@ -521,7 +521,7 @@ export default function SalaryStructureEditPage() {
     preview: true,
   });
 
-  const canEdit = user?.is_superuser || hasPermission('finance.change_salaryrecord');
+  const canEdit = user?.is_superuser || hasPermission('salary_management.change_salaryrecordmodel');
 
   // ── Toast helpers ──
   const showToast = (type: 'success' | 'error', message: string) => {

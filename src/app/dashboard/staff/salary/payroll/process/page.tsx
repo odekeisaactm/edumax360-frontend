@@ -86,7 +86,7 @@ export default function ProcessPayrollPage() {
   const month = Number(searchParams.get('month'));
   const year = Number(searchParams.get('year'));
 
-  const canManage = user?.is_superuser || hasPermission('finance.add_salaryrecord');
+  const canManage = user?.is_superuser || hasPermission('salary_management.add_salaryrecordmodel');
 
   // ── State ──
   const [structure, setStructure] = useState<SalaryStructure | null>(null);

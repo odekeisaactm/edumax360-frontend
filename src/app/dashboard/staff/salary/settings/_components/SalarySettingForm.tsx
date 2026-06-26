@@ -725,7 +725,7 @@ export default function SalarySettingForm({ initialData }: SalarySettingFormProp
   };
   const dismissToast = (id: number) => setToasts((p) => p.filter((t) => t.id !== id));
 
-  const canManage = user?.is_superuser || hasPermission('finance.add_salaryrecord');
+  const canManage = user?.is_superuser || hasPermission('salary_management.add_salaryrecordmodel');
   if (!canManage) {
     return (
       <div className="min-h-[500px] flex items-center justify-center">

@@ -228,7 +228,7 @@ export default function SalaryStructureDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const canEdit = user?.is_superuser || hasPermission('finance.change_salaryrecord');
+  const canEdit = user?.is_superuser || hasPermission('salary_management.change_salaryrecordmodel');
 
   const load = async () => {
     setLoading(true);

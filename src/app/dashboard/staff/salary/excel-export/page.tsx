@@ -54,7 +54,7 @@ interface PaymentRow {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function BankPaymentExportPage() {
   const { user, hasPermission } = useAuth();
-  const canView = user?.is_superuser || hasPermission('finance.view_salaryrecord');
+  const canView = user?.is_superuser || hasPermission('salary_management.view_salaryrecordmodel');
 
   const [month, setMonth]           = useState(currentMonth);
   const [year, setYear]             = useState(currentYear);

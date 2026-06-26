@@ -364,7 +364,7 @@ export default function SalaryStructureCreatePage() {
   });
   const [previewSalary, setPreviewSalary] = useState<number>(0);
 
-  const canCreate = user?.is_superuser || hasPermission('finance.add_salaryrecord');
+  const canCreate = user?.is_superuser || hasPermission('salary_management.add_salaryrecordmodel');
 
   // ── Toast helpers ──
   const showToast = (type: 'success' | 'error', message: string) => {
