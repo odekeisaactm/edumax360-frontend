@@ -238,8 +238,8 @@ export default function SalesIndexPage() {
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canSell = user?.is_superuser || hasPermission('inventory.add_salemodel');
-  const canRefund = user?.is_superuser || hasPermission('inventory.add_salemodel');
+  const canSell = user?.is_superuser || hasPermission('inventory.add_inventorysalemodel');
+  const canRefund = user?.is_superuser || hasPermission('inventory.add_inventorysalemodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;
