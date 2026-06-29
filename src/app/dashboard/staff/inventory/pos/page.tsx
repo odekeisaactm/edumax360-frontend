@@ -3,13 +3,18 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Script from 'next/script';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
-import { studentsAPI, staffAPI, inventoryItemAPI, inventoryLocationAPI, inventoryReportAPI, saleAPI } from '@/lib/api';
-import { InventoryLocation, InventoryItemList, SalePayload } from '@/lib/types';
+import {
+  studentsAPI, staffAPI, inventoryItemAPI, inventoryLocationAPI,
+  inventoryReportAPI, saleAPI, inventorySettingAPI, shopAccessAPI,
+} from '@/lib/api';
+import { InventoryLocation, InventoryItemList, SalePayload, InventorySetting, SalePaymentMethod } from '@/lib/types';
 import {
   CreditCard, Search, X, Trash2, ScanLine, User, Wallet,
   Loader2, AlertCircle, Check, Store, ShoppingCart, Fingerprint, Star,
+  Banknote, ShieldOff, Lock, Printer,
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -22,12 +27,22 @@ function extractError(err: any): string {
     if (typeof d === 'string') return d;
     if (d.error) return String(d.error);
     if (d.detail) return String(d.detail);
+    if (d.message) return String(d.message);
   }
   return err?.message || 'An unexpected error occurred.';
 }
 
 function titleCase(str: string): string {
   return str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
+function genIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  // Fallback for environments without crypto.randomUUID
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }
 
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
@@ -74,6 +89,14 @@ interface Customer {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function POSPage() {
   const { hasPermission, user } = useAuth();
+  const router = useRouter();
+
+  // ── Settings (fetched once on mount — see notes below) ──
+  const [settings, setSettings] = useState<InventorySetting | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [assignedShop, setAssignedShop] = useState<InventoryLocation | null>(null);
+  const [shopAccessLoading, setShopAccessLoading] = useState(true);
+  const [shopAccessDenied, setShopAccessDenied] = useState(false);
 
   const [shops, setShops] = useState<InventoryLocation[]>([]);
   const [activeShop, setActiveShop] = useState<InventoryLocation | null>(null);
@@ -85,6 +108,7 @@ export default function POSPage() {
   const [custSearch, setCustSearch] = useState('');
   const [custResults, setCustResults] = useState<Customer[]>([]);
   const [isSearchingCust, setIsSearchingCust] = useState(false);
+  const skipCustSearchRef = useRef(false);
 
   const [itemSearch, setItemSearch] = useState('');
   const [itemResults, setItemResults] = useState<InventoryItemList[]>([]);
@@ -93,9 +117,12 @@ export default function POSPage() {
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discount, setDiscount] = useState('0');
-  const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [paymentMethod, setPaymentMethod] = useState<SalePaymentMethod>('cash');
   const [isSaving, setIsSaving] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  // Idempotency key — regenerated each time the cart is cleared / a new sale begins.
+  const idempotencyKeyRef = useRef<string>(genIdempotencyKey());
 
   // Fingerprint state
   const fpApiRef = useRef<any>(null);
@@ -109,6 +136,7 @@ export default function POSPage() {
   const [showFpOverlay, setShowFpOverlay] = useState(false);
 
   const canSell = user?.is_superuser || hasPermission('inventory.add_salemodel');
+  const isSuperuser = !!user?.is_superuser;
 
   const showToast = useCallback((type: 'success' | 'error' | 'info', message: string) => {
     const id = ++_toastId;
@@ -118,38 +146,81 @@ export default function POSPage() {
 
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  // 1. Load Shops & Top Items
+  // 1. Load Settings — once per session, not per sale.
+  useEffect(() => {
+    inventorySettingAPI.get()
+      .then(data => setSettings(data))
+      .catch(() => showToast('error', 'Could not load POS settings. Some restrictions may not be enforced client-side.'))
+      .finally(() => setSettingsLoading(false));
+  }, [showToast]);
+
+  // 2. Load this staff member's shop assignment (superusers skip this entirely).
+  useEffect(() => {
+    if (isSuperuser) { setShopAccessLoading(false); return; }
+    shopAccessAPI.myAccess()
+      .then(data => {
+        if (data?.shop) {
+          setAssignedShop({
+            id: data.shop, name: data.shop_name || '', code: data.shop_code || '',
+            location_type: 'shop', is_active: true, created_at: '', updated_at: '',
+          });
+        } else {
+          setShopAccessDenied(true);
+        }
+      })
+      .catch(() => setShopAccessDenied(true))
+      .finally(() => setShopAccessLoading(false));
+  }, [isSuperuser]);
+
+  // 3. Load Shops
   useEffect(() => {
     inventoryLocationAPI.list().then(data => {
       const shopLocs = (Array.isArray(data) ? data : []).filter((l: InventoryLocation) => l.location_type === 'shop');
       setShops(shopLocs);
-      const savedShopId = localStorage.getItem('pos_shop_id');
-      if (savedShopId) {
-        const found = shopLocs.find((s: InventoryLocation) => s.id === Number(savedShopId));
-        if (found) { setActiveShop(found); return; }
+
+      // Non-superusers are locked to their assigned shop — no picker, no localStorage override.
+      if (!isSuperuser && assignedShop) {
+        const matched = shopLocs.find((s: InventoryLocation) => s.id === assignedShop.id);
+        if (matched) setActiveShop(matched);
+        return;
       }
-      if (shopLocs.length === 1) {
-        setActiveShop(shopLocs[0]);
-        localStorage.setItem('pos_shop_id', String(shopLocs[0].id));
-      } else if (shopLocs.length > 1) {
-        setShowShopModal(true);
+      if (isSuperuser) {
+        const savedShopId = localStorage.getItem('pos_shop_id');
+        if (savedShopId) {
+          const found = shopLocs.find((s: InventoryLocation) => s.id === Number(savedShopId));
+          if (found) { setActiveShop(found); return; }
+        }
+        if (shopLocs.length === 1) {
+          setActiveShop(shopLocs[0]);
+          localStorage.setItem('pos_shop_id', String(shopLocs[0].id));
+        } else if (shopLocs.length > 1) {
+          setShowShopModal(true);
+        }
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuperuser, assignedShop]);
 
-    inventoryReportAPI.get({ type: 'top_selling' }).then(res => {
+  // 3b. Load Top Items — only once activeShop is actually known, so location_quantity
+  // is computed against the right shop instead of coming back null/0 (which made
+  // every top-item look "out of stock" regardless of real stock).
+  useEffect(() => {
+    if (!activeShop) return;
+    inventoryReportAPI.get({ type: 'top_selling', location: activeShop.id } as any).then(res => {
       const data = (res as any)?.data || res;
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data) && data.length > 0 && data.some((d: any) => d.location_quantity != null)) {
         setTopItems(data);
       } else {
-        inventoryItemAPI.list({ page_size: 10, is_active: true, location: activeShop?.id }).then(r => setTopItems(r?.results || []));
+        inventoryItemAPI.list({ page_size: 10, is_active: true, location: activeShop.id }).then(r => setTopItems(r?.results || []));
       }
     }).catch(() => {
-      inventoryItemAPI.list({ page_size: 10, is_active: true, location: activeShop?.id }).then(r => setTopItems(r?.results || []));
+      inventoryItemAPI.list({ page_size: 10, is_active: true, location: activeShop.id }).then(r => setTopItems(r?.results || []));
     });
-  }, []);
+  }, [activeShop]);
 
-  // 2. Customer Search — fixed: data is at results.data, fields are full_name, canteen_balance, wallet_balance
+  // 4. Customer Search
   useEffect(() => {
+    if (skipCustSearchRef.current) { skipCustSearchRef.current = false; return; }
     if (custSearch.trim().length < 2) { setCustResults([]); return; }
     setIsSearchingCust(true);
     const timer = setTimeout(async () => {
@@ -159,9 +230,8 @@ export default function POSPage() {
           staffAPI.list({ search: custSearch, status: 'active', page_size: 5 })
         ]);
 
-        // Data is nested at results.data
-        const stdData: any[] = (stdRes as any)?.results?.data || (stdRes as any)?.data || [];
-        const staffData: any[] = (staffRes as any)?.results?.data || (staffRes as any)?.data || [];
+        const stdData: any[] = (stdRes as any)?.results?.data || (stdRes as any)?.data || (Array.isArray(stdRes) ? stdRes : []);
+        const staffData: any[] = (staffRes as any)?.results?.data || (staffRes as any)?.data || (Array.isArray(staffRes) ? staffRes : []);
 
         const formatted: Customer[] = [
           ...stdData.map((s: any) => ({
@@ -192,7 +262,7 @@ export default function POSPage() {
     return () => clearTimeout(timer);
   }, [custSearch]);
 
-  // 3. Item Search
+  // 5. Item Search
   useEffect(() => {
     if (itemSearch.trim().length < 2) { setItemResults([]); setShowItemResults(false); return; }
     setIsSearchingItems(true);
@@ -206,7 +276,7 @@ export default function POSPage() {
     return () => clearTimeout(timer);
   }, [itemSearch]);
 
-  // 4. Global Barcode Scanner — mirrors HTML version logic
+  // 6. Global Barcode Scanner
   useEffect(() => {
     let buffer = '';
     let barcodeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -249,6 +319,7 @@ export default function POSPage() {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleBarcodeScan = async (barcode: string) => {
@@ -270,7 +341,33 @@ export default function POSPage() {
   const getShopStock = (item: InventoryItemList) =>
   item.location_quantity != null ? Number(item.location_quantity) : 0;
 
+  // ── Spending power: balance + allowed debt (0 if debt isn't enabled). ──
+  // This is the number that determines whether the cashier should even bother
+  // adding items — not just the raw wallet balance.
+  const getSpendingPower = useCallback((cust: Customer | null): number | null => {
+    if (!cust || !settings) return null; // walk-in or settings not loaded — no wallet cap applies
+    if (cust.type === 'student') {
+      const maxDebt = settings.allow_student_debt ? Number(settings.max_student_debt || 0) : 0;
+      return cust.wallet_balance + maxDebt;
+    }
+    const maxDebt = settings.allow_staff_debt ? Number(settings.max_staff_debt || 0) : 0;
+    return cust.wallet_balance + maxDebt;
+  }, [settings]);
+
+  // ── Can this customer pay at all, by ANY available method? ──
+  // Wallet customers can only pay by their own wallet type, so if their spending
+  // power is <= 0, they have nothing — unless cash/pos is also viable for them,
+  // which it normally isn't once a registered customer is attached (by design,
+  // wallet is the expected path for registered users; cash/pos remain selectable
+  // regardless, so this only blocks when spending power is the sole option in play).
+  const customerSpendingPower = getSpendingPower(customer);
+  const customerHasNoSpendingPower = customer !== null && customerSpendingPower !== null && customerSpendingPower <= 0;
+
   const addToCart = (item: InventoryItemList) => {
+    if (customerHasNoSpendingPower && (paymentMethod === 'student_wallet' || paymentMethod === 'staff_wallet')) {
+      showToast('error', `${customer?.name} has no spending power left (₦0 balance, no debt allowed). Switch customer or payment method first.`);
+      return;
+    }
     if (cart.some(c => c.id === item.id)) { showToast('error', `'${titleCase(item.name)}' is already in the cart.`); return; }
     const stock = getShopStock(item);
     if (stock <= 0) { showToast('error', `'${titleCase(item.name)}' is out of stock.`); return; }
@@ -280,22 +377,20 @@ export default function POSPage() {
 
   const handleQtyChange = (id: number, value: string) => {
     const numVal = Number(value);
-    setCart(prev => prev.map(item => {
-      if (item.id === id) {
-        if (numVal > item.max_qty) {
-          showToast('error', `Only ${item.max_qty} units available.`);
-          return { ...item, quantity: String(item.max_qty) };
-        }
-        return { ...item, quantity: value };
-      }
-      return item;
-    }));
+    const item = cart.find(c => c.id === id);
+    if (item && numVal > item.max_qty) {
+      showToast('error', `Only ${item.max_qty} units available.`);
+      setCart(prev => prev.map(c => c.id === id ? { ...c, quantity: String(c.max_qty) } : c));
+      return;
+    }
+    setCart(prev => prev.map(c => c.id === id ? { ...c, quantity: value } : c));
   };
 
   const handleRemoveItem = (id: number) => setCart(prev => prev.filter(item => item.id !== id));
 
   const selectCustomer = (c: Customer) => {
     setCustomer(c);
+    skipCustSearchRef.current = true;
     setCustSearch(c.name);
     setCustResults([]);
     if (c.type === 'student') setPaymentMethod('student_wallet');
@@ -305,36 +400,72 @@ export default function POSPage() {
   const clearCustomer = () => {
     setCustomer(null);
     setCustSearch('');
-    setPaymentMethod('cash');
+    setPaymentMethod(settings?.allow_cash ? 'cash' : (settings?.allow_pos ? 'pos' : 'cash'));
   };
 
   const subtotal = cart.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.unit_price)), 0);
-  const grandTotal = Math.max(0, subtotal - Number(discount || 0));
+  const effectiveDiscount = settings?.allow_discount ? Number(discount || 0) : 0;
+  const grandTotal = Math.max(0, subtotal - effectiveDiscount);
 
-  // ─── Fingerprint Logic — mirrors HTML version exactly ──────────────────────
+  // ── Available payment methods, derived from settings + customer state ──
+  const isWalkin = !customer;
+  const paymentOptions: Array<{ value: SalePaymentMethod; label: string; disabled: boolean; reason?: string }> = [
+    {
+      value: 'cash', label: 'Cash',
+      disabled: !settings?.allow_cash,
+      reason: !settings?.allow_cash ? 'Cash payments are disabled' : undefined,
+    },
+    {
+      value: 'pos', label: 'POS / Card',
+      disabled: !settings?.allow_pos,
+      reason: !settings?.allow_pos ? 'POS payments are disabled' : undefined,
+    },
+    {
+      value: 'student_wallet',
+      label: `Student Wallet${customer?.type === 'student' ? ` (₦${customer.wallet_balance.toFixed(2)})` : ''}`,
+      disabled: !customer || customer.type !== 'student',
+      reason: !customer || customer.type !== 'student' ? 'Select a student first' : undefined,
+    },
+    {
+      value: 'staff_wallet',
+      label: `Staff Wallet${customer?.type === 'staff' ? ` (₦${customer.wallet_balance.toFixed(2)})` : ''}`,
+      disabled: !customer || customer.type !== 'staff',
+      reason: !customer || customer.type !== 'staff' ? 'Select a staff member first' : undefined,
+    },
+  ];
 
-  // Called by Next.js Script onReady — both SDK scripts are loaded at this point
-  const handleFpSdkReady = () => {
-    setFpSdkReady(true);
-  };
+  // Auto-correct payment method if the current selection becomes invalid
+  // (e.g. settings disabled cash while "cash" was selected).
+  useEffect(() => {
+    if (!settings) return;
+    const current = paymentOptions.find(p => p.value === paymentMethod);
+    if (current?.disabled) {
+      const firstValid = paymentOptions.find(p => !p.disabled);
+      if (firstValid) setPaymentMethod(firstValid.value);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings, customer]);
+
+  // ── Fingerprint Logic — unchanged from before ──────────────────────────────
+  const handleFpSdkReady = () => setFpSdkReady(true);
 
   const initFingerprintAPI = useCallback(() => {
     try {
       const FP = (window as any).Fingerprint;
       if (!FP || !FP.WebApi) throw new Error('DigitalPersona SDK not loaded');
 
-      const api = new FP.WebApi();
+      const fpApi = new FP.WebApi();
 
-      api.onCommunicationFailed = () =>
+      fpApi.onCommunicationFailed = () =>
         setFpStatus({ text: 'Connection Failed', detail: 'Check if DP agent is running', color: 'text-red-500' });
 
-      api.onDeviceConnected = () =>
+      fpApi.onDeviceConnected = () =>
         setFpStatus({ text: 'Scanner Ready', detail: 'Ready to identify', color: 'text-green-500' });
 
-      api.onDeviceDisconnected = () =>
+      fpApi.onDeviceDisconnected = () =>
         setFpStatus({ text: 'Scanner Disconnected', detail: 'Reconnect the device', color: 'text-red-500' });
 
-      api.onAcquisitionStarted = () => {
+      fpApi.onAcquisitionStarted = () => {
         if (justIdentifiedRef.current) {
           justIdentifiedRef.current = false;
           return;
@@ -343,7 +474,7 @@ export default function POSPage() {
         setFpStatus({ text: 'Scanning...', detail: 'Hold finger steady', color: 'text-blue-500' });
       };
 
-      api.onAcquisitionStopped = () => {
+      fpApi.onAcquisitionStopped = () => {
         setShowFpOverlay(false);
         if (fpActiveRef.current && !isCapturingRef.current && !isCancellingRef.current) {
           setFpStatus({ text: 'Scanner Active', detail: 'Place finger to identify', color: 'text-blue-500' });
@@ -351,7 +482,7 @@ export default function POSPage() {
         isCancellingRef.current = false;
       };
 
-      api.onSamplesAcquired = async (event: any) => {
+      fpApi.onSamplesAcquired = async (event: any) => {
         try {
           const samples = JSON.parse(event.samples);
           if (!samples || samples.length === 0) throw new Error('No samples captured');
@@ -397,22 +528,23 @@ export default function POSPage() {
         }
       };
 
-      api.onQualityReported = (event: any) => {
+      fpApi.onQualityReported = (event: any) => {
         console.log('Fingerprint quality:', event.quality);
       };
 
-      api.onErrorOccurred = (event: any) => {
+      fpApi.onErrorOccurred = (event: any) => {
         setFpStatus({ text: 'Scanner Error', detail: event.error?.message || 'Unknown error', color: 'text-red-500' });
         setShowFpOverlay(false);
         isCapturingRef.current = false;
       };
 
-      fpApiRef.current = api;
+      fpApiRef.current = fpApi;
       return true;
     } catch (e: any) {
       setFpStatus({ text: 'Init Failed', detail: e.message, color: 'text-red-500' });
       return false;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showToast]);
 
   const startFingerprintCapture = async (apiInstance: any) => {
@@ -468,38 +600,102 @@ export default function POSPage() {
     setFpStatus({ text: 'Scan Cancelled', detail: 'Click to scan again', color: 'text-slate-500' });
   };
 
+  // ── Receipt printing — simple browser print of a hidden receipt node. ──────
+  const printReceipt = (sale: any) => {
+    const receiptHtml = `
+      <html><head><title>Receipt</title>
+      <style>
+        body { font-family: monospace; font-size: 12px; width: 280px; margin: 0 auto; padding: 12px; }
+        h2 { text-align: center; margin: 0 0 8px; }
+        .row { display: flex; justify-content: space-between; margin: 2px 0; }
+        hr { border: none; border-top: 1px dashed #000; margin: 8px 0; }
+        .total { font-weight: bold; font-size: 14px; }
+      </style></head>
+      <body>
+        <h2>Receipt</h2>
+        <div class="row"><span>Txn:</span><span>${sale.transaction_id || ''}</span></div>
+        <div class="row"><span>Date:</span><span>${new Date(sale.sale_date || Date.now()).toLocaleString()}</span></div>
+        <hr/>
+        ${(sale.items || []).map((it: any) => `
+          <div class="row"><span>${it.item_name || ''} x${it.quantity}</span><span>₦${Number(it.line_total || 0).toLocaleString()}</span></div>
+        `).join('')}
+        <hr/>
+        <div class="row"><span>Subtotal</span><span>₦${Number(sale.subtotal || 0).toLocaleString()}</span></div>
+        <div class="row"><span>Discount</span><span>₦${Number(sale.discount || 0).toLocaleString()}</span></div>
+        <div class="row total"><span>Total</span><span>₦${Number(sale.total_amount || 0).toLocaleString()}</span></div>
+        <hr/>
+        <p style="text-align:center;">Thank you!</p>
+      </body></html>
+    `;
+    const printWin = window.open('', '_blank', 'width=320,height=600');
+    if (printWin) {
+      printWin.document.write(receiptHtml);
+      printWin.document.close();
+      printWin.focus();
+      setTimeout(() => { printWin.print(); }, 250);
+    }
+  };
+
+  // ── Post-sale redirect, driven by settings ──────────────────────────────────
+  const handlePostSaleRedirect = (sale: any) => {
+    const target = settings?.default_sale_redirect || 'new_sale';
+    if (target === 'index') {
+      router.push('/dashboard/staff/inventory/sales');
+    } else if (target === 'detail') {
+      router.push(`/dashboard/staff/inventory/sales/${sale.id}`);
+    }
+    // 'new_sale' = stay on this page; cart/customer already cleared by caller.
+  };
+
   // ─── Sale Submission ───────────────────────────────────────────────────────
   const handleSale = async () => {
     if (!activeShop) { showToast('error', 'Please select a shop first.'); return; }
     if (cart.length === 0) { showToast('error', 'Cart is empty.'); return; }
+
+    if (isWalkin && settings && !settings.allow_walkin_sale) {
+      showToast('error', 'Walk-in sales are not enabled for this school. Please attach a student or staff customer.');
+      return;
+    }
+
     if (paymentMethod === 'student_wallet') {
       if (!customer || customer.type !== 'student') { showToast('error', 'Select a student for wallet payment.'); return; }
-      if (grandTotal > customer.wallet_balance) {
-        showToast('error', `Insufficient funds. Available: ₦${customer.wallet_balance.toFixed(2)}, Required: ₦${grandTotal.toFixed(2)}`);
+      const power = getSpendingPower(customer);
+      if (power !== null && grandTotal > power) {
+        showToast('error', `Insufficient funds. Available (incl. debt allowance): ₦${power.toFixed(2)}, Required: ₦${grandTotal.toFixed(2)}`);
         return;
       }
     }
     if (paymentMethod === 'staff_wallet') {
       if (!customer || customer.type !== 'staff') { showToast('error', 'Select a staff for wallet payment.'); return; }
-      if (grandTotal > customer.wallet_balance) {
-        showToast('error', `Insufficient funds. Available: ₦${customer.wallet_balance.toFixed(2)}, Required: ₦${grandTotal.toFixed(2)}`);
+      const power = getSpendingPower(customer);
+      if (power !== null && grandTotal > power) {
+        showToast('error', `Insufficient funds. Available (incl. debt allowance): ₦${power.toFixed(2)}, Required: ₦${grandTotal.toFixed(2)}`);
         return;
       }
     }
 
     setIsSaving(true);
     try {
-      const payload: SalePayload = {
+      const payload: SalePayload & { idempotency_key?: string } = {
         location: activeShop.id,
         customer: customer?.type === 'student' ? customer.id : null,
         staff_customer: customer?.type === 'staff' ? customer.id : null,
-        discount: discount || '0',
-        payment_method: paymentMethod as any,
-        items: cart.map(c => ({ item: c.id, quantity: c.quantity, unit_price: c.unit_price }))
+        discount: String(effectiveDiscount || '0'),
+        payment_method: paymentMethod,
+        items: cart.map(c => ({ item: c.id, quantity: c.quantity, unit_price: c.unit_price })),
+        idempotency_key: idempotencyKeyRef.current,
       };
-      await saleAPI.create(payload);
+      const sale = await saleAPI.create(payload);
       showToast('success', 'Sale processed successfully!');
+
+      if (settings?.auto_print_receipt) {
+        printReceipt(sale);
+      }
+
       setCart([]); setDiscount('0'); clearCustomer();
+      idempotencyKeyRef.current = genIdempotencyKey(); // fresh key for the next sale
+
+      handlePostSaleRedirect(sale);
     } catch (err) {
       showToast('error', extractError(err));
     } finally {
@@ -507,6 +703,7 @@ export default function POSPage() {
     }
   };
 
+  // ── Access gates ─────────────────────────────────────────────────────────────
   if (!canSell) {
     return (
       <div className="min-h-[500px] flex items-center justify-center">
@@ -519,24 +716,43 @@ export default function POSPage() {
     );
   }
 
+  if (settingsLoading || shopAccessLoading) {
+    return (
+      <div className="min-h-[500px] flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto" />
+          <p className="text-sm text-slate-400">Loading POS...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isSuperuser && shopAccessDenied) {
+    return (
+      <div className="min-h-[500px] flex items-center justify-center">
+        <div className="max-w-sm text-center bg-white rounded-2xl shadow-xl border border-amber-100 p-8 space-y-3">
+          <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center mx-auto">
+            <Lock className="h-7 w-7 text-amber-500" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-900">No Shop Assigned</h3>
+          <p className="text-sm text-slate-500">
+            You haven't been assigned a shop yet, so you can't process sales. Contact an administrator to get assigned.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto space-y-4 pb-10">
 
-      {/* DigitalPersona SDK — loaded once, passively. onReady gates initialization. */}
-      <Script
-        src="https://unpkg.com/@digitalpersona/websdk@v1"
-        strategy="afterInteractive"
-      />
-      <Script
-        src="https://unpkg.com/@digitalpersona/fingerprint@v1"
-        strategy="afterInteractive"
-        onReady={handleFpSdkReady}
-      />
+      <Script src="https://unpkg.com/@digitalpersona/websdk@v1" strategy="afterInteractive" />
+      <Script src="https://unpkg.com/@digitalpersona/fingerprint@v1" strategy="afterInteractive" onReady={handleFpSdkReady} />
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
-      {/* Shop Selection Modal */}
-      {showShopModal && (
+      {/* Shop Selection Modal — superusers only; non-superusers are locked to their assigned shop */}
+      {isSuperuser && showShopModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
             <h3 className="text-lg font-bold text-slate-900 mb-1">Select Shop Location</h3>
@@ -587,14 +803,16 @@ export default function POSPage() {
             <div className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg">
               <Store className="h-3.5 w-3.5 text-slate-500" />
               <span className="text-xs font-bold text-slate-700">{activeShop.name}</span>
-              {shops.length > 1 && (
+              {isSuperuser && shops.length > 1 && (
                 <button onClick={() => setShowShopModal(true)} className="text-xs text-blue-600 hover:underline ml-1">Change</button>
+              )}
+              {!isSuperuser && (
+                <span title="Locked to your assigned shop"><Lock className="h-3 w-3 text-slate-400" /></span>
               )}
             </div>
           )}
         </div>
 
-        {/* Fingerprint Toggle Button */}
         <button
           onClick={fpActive ? handleStopFingerprint : handleEnableFingerprint}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors border
@@ -604,15 +822,10 @@ export default function POSPage() {
             }`}
         >
           <Fingerprint className={`h-3.5 w-3.5 ${fpActive ? 'animate-pulse' : ''}`} />
-          {fpActive ? (
-            <span className={fpStatus.color}>{fpStatus.text}</span>
-          ) : (
-            'Enable Scanner'
-          )}
+          {fpActive ? <span className={fpStatus.color}>{fpStatus.text}</span> : 'Enable Scanner'}
         </button>
       </div>
 
-      {/* Fingerprint Status Bar — visible when active */}
       {fpActive && (
         <div className="flex items-center gap-3 px-4 py-2.5 bg-white border border-slate-100 rounded-xl shadow-sm">
           <Fingerprint className={`h-4 w-4 flex-shrink-0 ${fpStatus.color}`} />
@@ -640,7 +853,7 @@ export default function POSPage() {
                   type="text"
                   value={custSearch}
                   onChange={e => setCustSearch(e.target.value)}
-                  placeholder="Search Customer (Optional)"
+                  placeholder={settings?.allow_walkin_sale ? "Search Customer (Optional)" : "Search Customer (Required)"}
                   className={`${inputCls} pl-9 pr-8`}
                 />
                 {isSearchingCust && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-blue-500" />}
@@ -650,7 +863,7 @@ export default function POSPage() {
                       <button
                         key={`${c.type}-${c.id}`}
                         type="button"
-                        onClick={() => selectCustomer(c)}
+                        onMouseDown={() => selectCustomer(c)}
                         className="w-full flex items-center justify-between gap-2 p-2.5 hover:bg-slate-50 transition-colors text-left border-b border-slate-50 last:border-0"
                       >
                         <div className="min-w-0">
@@ -663,7 +876,9 @@ export default function POSPage() {
                           <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded ${c.type === 'student' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
                             {c.type}
                           </span>
-                          <span className="text-[9px] text-emerald-600 font-semibold">₦{c.wallet_balance.toFixed(2)}</span>
+                          <span className={`text-[9px] font-semibold ${c.wallet_balance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                            ₦{c.wallet_balance.toFixed(2)}
+                          </span>
                         </div>
                       </button>
                     ))}
@@ -676,6 +891,13 @@ export default function POSPage() {
                 </button>
               )}
             </div>
+
+            {!settings?.allow_walkin_sale && !customer && (
+              <div className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-100 rounded-lg">
+                <ShieldOff className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+                <p className="text-[11px] text-amber-700 font-medium">Walk-in sales are disabled — a customer must be attached to proceed.</p>
+              </div>
+            )}
 
             {customer && (
               <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 flex items-center gap-3">
@@ -693,7 +915,30 @@ export default function POSPage() {
                 </div>
                 <div className="text-right">
                   <p className="text-[9px] text-slate-400 uppercase">{customer.type === 'student' ? 'Canteen Wallet' : 'Wallet'}</p>
-                  <p className="text-xs font-bold text-emerald-600">₦{customer.wallet_balance.toFixed(2)}</p>
+                  <p className={`text-xs font-bold ${customer.wallet_balance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                    ₦{customer.wallet_balance.toFixed(2)}
+                  </p>
+                  {customerSpendingPower !== null && customerSpendingPower !== customer.wallet_balance && (
+                    <p className="text-[9px] text-slate-400">Spending power: ₦{customerSpendingPower.toFixed(2)}</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Zero spending power warning — the core ask: don't let the cashier
+                waste time adding items a customer literally cannot pay for. */}
+            {customerHasNoSpendingPower && (
+              <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <ShieldOff className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-red-700">No spending power available</p>
+                  <p className="text-[11px] text-red-600 mt-0.5">
+                    {customer?.name} has ₦{customer?.wallet_balance.toFixed(2)} and debt purchases are
+                    {' '}{customer?.type === 'student'
+                      ? (settings?.allow_student_debt ? ' allowed but the debt limit is already used up.' : ' not allowed.')
+                      : (settings?.allow_staff_debt ? ' allowed but the debt limit is already used up.' : ' not allowed.')}
+                    {' '}Switch the customer, or use Cash/POS if enabled, before adding items.
+                  </p>
                 </div>
               </div>
             )}
@@ -747,7 +992,7 @@ export default function POSPage() {
                         </div>
                         <div className="text-right flex-shrink-0">
                           <p className="text-xs font-bold text-slate-700">₦{Number(item.current_selling_price).toLocaleString()}</p>
-                          <p className="text-[9px] text-slate-400">Stock: {Number(item.total_quantity).toFixed(0)}</p>
+                          <p className="text-[9px] text-slate-400">Stock: {getShopStock(item)}</p>
                         </div>
                       </button>
                     )) : <div className="p-3 text-center text-xs text-slate-400">No items found.</div>}
@@ -819,40 +1064,44 @@ export default function POSPage() {
                 <span className="text-slate-500">Subtotal</span>
                 <span className="font-semibold text-slate-800">₦{subtotal.toLocaleString()}</span>
               </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Discount (₦)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={discount}
-                  onChange={e => setDiscount(e.target.value)}
-                  className={`${inputCls} py-1.5 text-xs`}
-                />
-              </div>
+
+              {/* Discount — hidden entirely when disabled, not just disabled-looking,
+                  so staff can't be tempted to fiddle with a greyed-out field. */}
+              {settings?.allow_discount && (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Discount (₦)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={discount}
+                    onChange={e => setDiscount(e.target.value)}
+                    className={`${inputCls} py-1.5 text-xs`}
+                  />
+                </div>
+              )}
+
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Payment Method</label>
                 <select
                   value={paymentMethod}
-                  onChange={e => setPaymentMethod(e.target.value)}
+                  onChange={e => setPaymentMethod(e.target.value as SalePaymentMethod)}
                   className={`${inputCls} py-1.5 text-xs`}
                 >
-                  <option value="cash">Cash</option>
-                  <option value="pos">POS</option>
-                  <option value="student_wallet" disabled={!customer || customer.type !== 'student'}>
-                    Student Wallet {customer?.type === 'student' ? `(₦${customer.wallet_balance.toFixed(2)})` : ''}
-                  </option>
-                  <option value="staff_wallet" disabled={!customer || customer.type !== 'staff'}>
-                    Staff Wallet {customer?.type === 'staff' ? `(₦${customer.wallet_balance.toFixed(2)})` : ''}
-                  </option>
+                  {paymentOptions.map(opt => (
+                    <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+                      {opt.label}{opt.disabled && opt.reason ? ` — ${opt.reason}` : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
 
-              {/* Insufficient funds warning */}
-              {(paymentMethod === 'student_wallet' || paymentMethod === 'staff_wallet') && customer && grandTotal > customer.wallet_balance && (
+              {(paymentMethod === 'student_wallet' || paymentMethod === 'staff_wallet') && customer && customerSpendingPower !== null && grandTotal > customerSpendingPower && (
                 <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-100 rounded-lg">
                   <AlertCircle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
-                  <p className="text-[10px] text-red-600 font-medium">Insufficient balance</p>
+                  <p className="text-[10px] text-red-600 font-medium">
+                    Insufficient balance{(customer.type === 'student' ? settings?.allow_student_debt : settings?.allow_staff_debt) ? ' (incl. debt allowance)' : ''}
+                  </p>
                 </div>
               )}
 
@@ -860,6 +1109,12 @@ export default function POSPage() {
                 <span className="text-sm font-bold text-slate-800">Grand Total</span>
                 <span className="text-xl font-extrabold text-blue-600">₦{grandTotal.toLocaleString()}</span>
               </div>
+
+              {settings?.auto_print_receipt && (
+                <p className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                  <Printer className="h-3 w-3" /> Receipt will print automatically after this sale
+                </p>
+              )}
 
               <button
                 onClick={handleSale}

@@ -190,7 +190,7 @@ export default function SalaryStructureListPage() {
         const data = await salaryStructuresAPI.list(params) as any;
 
         // Handle paginated response from backend
-        const results = data?.results ?? data?.data ?? data ?? [];
+        const results = data?.results?.data ?? data?.data ?? [];
         setStructures(Array.isArray(results) ? results : []);
         setTotal(data?.count ?? results.length);
         setPage(pg);

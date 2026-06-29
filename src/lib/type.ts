@@ -829,6 +829,7 @@ export interface StaffListFilters {
   ordering?: string;
   page?: number;
   page_size?: number;
+  is_active?: boolean;
 }
 
 // Leave List Filters

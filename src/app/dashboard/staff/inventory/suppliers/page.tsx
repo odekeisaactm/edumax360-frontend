@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { inventorySupplierAPI } from '@/lib/api';
 import { InventorySupplier } from '@/lib/types';
+import * as XLSX from 'xlsx';
 import {
   Building, Plus, Edit3, Trash2, Search, X, Check,
   AlertCircle, AlertTriangle, Loader2, RefreshCw, Eye,
@@ -23,7 +24,6 @@ function extractError(err: any): string {
   if (d) {
     if (typeof d === 'string') return d;
     if (d.detail) return String(d.detail);
-    // Handle DRF validation errors nested in 'details'
     if (d.details) {
       const details = d.details;
       if (details.non_field_errors?.length) return details.non_field_errors[0];
@@ -145,8 +145,6 @@ function FilterModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
@@ -159,16 +157,12 @@ function FilterModal({
           </button>
         </div>
 
-        {/* Scrollable body */}
         <div className="overflow-y-auto p-6 space-y-6 flex-1">
-
-          {/* ── FILTERS SECTION ── */}
           <div>
             <div className="flex items-center gap-2 mb-4">
               <Filter className="h-3.5 w-3.5 text-slate-500" />
               <p className="text-xs font-bold text-slate-700 uppercase tracking-widest">Filters</p>
             </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
               <div>
                 <label className={labelCls}>Status</label>
@@ -181,7 +175,6 @@ function FilterModal({
             </div>
           </div>
 
-          {/* ── EXPORT FIELDS SECTION ── */}
           <div className="border-t border-slate-100 pt-5">
             <div className="flex items-center gap-2 mb-2">
               <Download className="h-3.5 w-3.5 text-slate-500" />
@@ -190,7 +183,6 @@ function FilterModal({
             <p className="text-xs text-slate-400 mb-4 leading-relaxed">
               Choose which columns appear in Excel / PDF downloads. Checked fields are included.
             </p>
-
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-4">
               {ALL_EXPORT_FIELDS.map(f => (
                 <FieldCheckbox
@@ -204,7 +196,6 @@ function FilterModal({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-3 flex-shrink-0">
           <button onClick={() => {
             setLocal(EMPTY_FILTERS);
@@ -380,8 +371,6 @@ function SupplierModal({ editing, isSaving, onSave, onClose }: {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
-
-        {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
             <Building className="h-4 w-4" />
@@ -393,7 +382,6 @@ function SupplierModal({ editing, isSaving, onSave, onClose }: {
           </button>
         </div>
 
-        {/* Error */}
         {formError && (
           <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 flex items-start gap-2 flex-shrink-0">
             <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
@@ -404,45 +392,33 @@ function SupplierModal({ editing, isSaving, onSave, onClose }: {
           </div>
         )}
 
-        {/* Form */}
         <form id="supplier-form" onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Name */}
             <div className="sm:col-span-2">
               <label className={labelCls}>Supplier Name <span className="text-red-400 normal-case">*</span></label>
               <input required type="text" value={form.name} onChange={e => set('name', e.target.value)}
                 placeholder="e.g. Zenith Books Ltd" className={inputCls} />
             </div>
-
-            {/* Contact Person */}
             <div>
               <label className={labelCls}>Contact Person</label>
               <input type="text" value={form.contact_person} onChange={e => set('contact_person', e.target.value)}
                 placeholder="e.g. John Doe" className={inputCls} />
             </div>
-
-            {/* Phone */}
             <div>
               <label className={labelCls}>Phone Number</label>
               <input type="tel" value={form.phone_number} onChange={e => set('phone_number', e.target.value)}
                 placeholder="e.g. 08012345678" className={inputCls} />
             </div>
-
-            {/* Email */}
             <div className="sm:col-span-2">
               <label className={labelCls}>Email</label>
               <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
                 placeholder="e.g. contact@zenithbooks.com" className={inputCls} />
             </div>
-
-            {/* Address */}
             <div className="sm:col-span-2">
               <label className={labelCls}>Address</label>
               <textarea value={form.address} onChange={e => set('address', e.target.value)}
                 rows={3} placeholder="Optional address..." className={inputCls} />
             </div>
-
-            {/* Active toggle */}
             <div className="sm:col-span-2">
               <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-100">
                 <div>
@@ -459,7 +435,6 @@ function SupplierModal({ editing, isSaving, onSave, onClose }: {
           </div>
         </form>
 
-        {/* Footer */}
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex-shrink-0">
           <button type="button" onClick={onClose} disabled={isSaving}
             className="px-4 py-2 text-sm border border-slate-200 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
@@ -475,6 +450,177 @@ function SupplierModal({ editing, isSaving, onSave, onClose }: {
       </div>
     </div>
   );
+}
+
+// ─── Export: fetch ALL records matching current filters (bypasses pagination) ──
+async function fetchAllForExport(
+  apiList: (params: Record<string, any>) => Promise<any>,
+  f: FilterState,
+): Promise<InventorySupplier[]> {
+  const params: Record<string, any> = { page: 1, page_size: 10000 };
+  if (f.search) params.search = f.search;
+  if (f.status) params.status = f.status;
+
+  const data = await apiList(params);
+
+  // Same normalisation as fetchSuppliers
+  if (Array.isArray(data)) return data;
+  if (data?.results?.data && Array.isArray(data.results.data)) return data.results.data;
+  if (data?.results && Array.isArray(data.results)) return data.results;
+  if (data?.data && Array.isArray(data.data)) return data.data;
+  return [];
+}
+
+// ─── Export: resolve a single field value from a supplier row ─────────────────
+function getSupplierFieldValue(s: InventorySupplier, key: string): string {
+  switch (key) {
+    case 'name':           return toTitleCase(s.name || '');
+    case 'contact_person': return toTitleCase(s.contact_person || '') || '—';
+    case 'phone_number':   return s.phone_number || '—';
+    case 'email':          return s.email || '—';
+    case 'address':        return s.address || '—';
+    case 'is_active':      return s.is_active ? 'Active' : 'Inactive';
+    case 'created_at': {
+      const raw = (s as any).created_at;
+      return raw ? new Date(raw).toLocaleDateString('en-NG') : '—';
+    }
+    default: return '—';
+  }
+}
+
+// ─── Export: build print-ready HTML (same print-window pattern as payslip) ────
+function buildSuppliersPDFHTML(
+  rows: InventorySupplier[],
+  fields: Set<string>,
+  filterInfo: string,
+): string {
+  const now = new Date().toLocaleString('en-NG', { dateStyle: 'long', timeStyle: 'short' });
+  const visibleFields = ALL_EXPORT_FIELDS.filter(f => fields.has(f.key));
+
+  const thead = visibleFields.map(f => `<th>${f.label}</th>`).join('');
+
+  const tbody = rows.map((s, i) => {
+    const cells = visibleFields.map(f => {
+      const val = getSupplierFieldValue(s, f.key);
+      if (f.key === 'is_active') {
+        const colour = s.is_active ? '#059669' : '#64748b';
+        const bg     = s.is_active ? '#ecfdf5'  : '#f1f5f9';
+        return `<td><span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;color:${colour};background:${bg};border:1px solid ${colour}40">${val}</span></td>`;
+      }
+      return `<td>${val}</td>`;
+    }).join('');
+    const rowBg = i % 2 === 0 ? '#ffffff' : '#f8fafc';
+    return `<tr style="background:${rowBg}">${cells}</tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Inventory Suppliers Export</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1e293b; background: #fff; padding: 28px 32px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 2.5px solid #4f46e5; padding-bottom: 14px; margin-bottom: 20px; }
+    .header h1 { font-size: 18px; font-weight: 800; color: #4f46e5; letter-spacing: -0.5px; }
+    .header p  { font-size: 11px; color: #94a3b8; margin-top: 3px; }
+    .header-right { text-align: right; font-size: 10px; color: #64748b; line-height: 1.8; }
+    .header-right strong { color: #1e293b; }
+    .filter-bar { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:7px 14px; font-size:11px; color:#475569; margin-bottom:16px; }
+    .filter-bar strong { color:#1e293b; }
+    table { width:100%; border-collapse:collapse; }
+    thead tr { background: linear-gradient(135deg, #4f46e5, #7c3aed); }
+    thead th { padding:9px 12px; text-align:left; color:#fff; font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; white-space:nowrap; }
+    td { padding:8px 12px; color:#334155; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+    tfoot td { padding:10px 12px; font-size:10px; color:#94a3b8; border-top:2px solid #e2e8f0; }
+    .summary { margin-top:18px; display:flex; gap:10px; }
+    .chip { padding:4px 12px; border-radius:999px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; }
+    .chip-total    { background:#eff6ff; color:#3b82f6; border:1px solid #bfdbfe; }
+    .chip-active   { background:#ecfdf5; color:#059669; border:1px solid #6ee7b7; }
+    .chip-inactive { background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1; }
+    @media print { body { padding:10px 15px; } @page { margin:12mm; size: A4 landscape; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Inventory Suppliers</h1>
+      <p>Generated: ${now}</p>
+    </div>
+    <div class="header-right">
+      <div>Total records: <strong>${rows.length}</strong></div>
+      <div>Active: <strong>${rows.filter(s => s.is_active).length}</strong></div>
+      <div>Inactive: <strong>${rows.filter(s => !s.is_active).length}</strong></div>
+    </div>
+  </div>
+
+  ${filterInfo ? `<div class="filter-bar">Applied filters: <strong>${filterInfo}</strong></div>` : ''}
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:28px">#</th>
+        ${thead}
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map((s, i) => {
+        const cells = visibleFields.map(f => {
+          const val = getSupplierFieldValue(s, f.key);
+          if (f.key === 'is_active') {
+            const colour = s.is_active ? '#059669' : '#64748b';
+            const bg     = s.is_active ? '#ecfdf5'  : '#f1f5f9';
+            return `<td><span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;color:${colour};background:${bg};border:1px solid ${colour}40">${val}</span></td>`;
+          }
+          return `<td>${val}</td>`;
+        }).join('');
+        return `<tr style="background:${i % 2 === 0 ? '#ffffff' : '#f8fafc'}">
+          <td style="color:#94a3b8;font-size:10px">${i + 1}</td>
+          ${cells}
+        </tr>`;
+      }).join('')}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="${visibleFields.length + 1}">System-generated export · Total rows: ${rows.length}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="summary">
+    <span class="chip chip-total">Total: ${rows.length}</span>
+    <span class="chip chip-active">Active: ${rows.filter(s => s.is_active).length}</span>
+    <span class="chip chip-inactive">Inactive: ${rows.filter(s => !s.is_active).length}</span>
+  </div>
+
+  <script>window.onload = function () { window.print(); };<\/script>
+</body>
+</html>`;
+}
+
+// ─── Export: download as real .xlsx via SheetJS (same as bank payment page) ───
+function downloadSuppliersExcel(
+  rows: InventorySupplier[],
+  fields: Set<string>,
+  filterInfo: string,
+): void {
+  const visibleFields = ALL_EXPORT_FIELDS.filter(f => fields.has(f.key));
+
+  const exportData = rows.map((s, i) => {
+    const obj: Record<string, any> = { '#': i + 1 };
+    visibleFields.forEach(f => { obj[f.label] = getSupplierFieldValue(s, f.key); });
+    return obj;
+  });
+
+  const ws = XLSX.utils.json_to_sheet(exportData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Suppliers');
+
+  // Auto column widths
+  const colWidths = [{ wch: 5 }, ...visibleFields.map(f => ({ wch: Math.max(f.label.length + 4, 18) }))];
+  ws['!cols'] = colWidths;
+
+  XLSX.writeFile(wb, `suppliers_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
@@ -523,23 +669,20 @@ export default function SuppliersPage() {
     return p;
   }, []);
 
-    const fetchSuppliers = useCallback(async (f: FilterState, pg = 1) => {
+  const fetchSuppliers = useCallback(async (f: FilterState, pg = 1) => {
     setLoading(true); setPageError(null);
     try {
       const data = await inventorySupplierAPI.list(buildParams(f, pg));
-
-      // Safely extract array from deeply nested response
       let results: any[] = [];
       if (Array.isArray(data)) {
         results = data;
       } else if (data?.results?.data && Array.isArray(data.results.data)) {
-        results = data.results.data; // Handles the { count, results: { success, data: [...] } } structure
+        results = data.results.data;
       } else if (data?.results && Array.isArray(data.results)) {
-        results = data.results; // Standard DRF pagination
+        results = data.results;
       } else if (data?.data && Array.isArray(data.data)) {
-        results = data.data; // Standard APIResponse wrapper
+        results = data.data;
       }
-
       setSuppliers(results);
       setTotal((data as any)?.count ?? results.length);
       setPage(pg);
@@ -616,20 +759,50 @@ export default function SuppliersPage() {
     } finally { setIsDeleting(false); }
   };
 
-  const handleDownloadExcel = () => {
+  // ─── Real PDF export (print-window, same as payslip) ───────────────────────
+  const handleDownloadPDF = async () => {
     setDownloading(true);
-    setTimeout(() => {
-      showToast('success', 'Excel export started (mock)');
+    try {
+      const all = await fetchAllForExport(inventorySupplierAPI.list, filters);
+
+      const parts: string[] = [];
+      if (filters.search) parts.push(`Search: "${filters.search}"`);
+      if (filters.status) parts.push(`Status: ${filters.status}`);
+      const filterInfo = parts.join(' · ');
+
+      const html = buildSuppliersPDFHTML(all, selectedFields, filterInfo);
+      const win = window.open('', '_blank');
+      if (!win) {
+        showToast('error', 'Pop-up blocked. Please allow pop-ups for this site.');
+        return;
+      }
+      win.document.write(html);
+      win.document.close();
+    } catch (err) {
+      showToast('error', extractError(err));
+    } finally {
       setDownloading(false);
-    }, 1000);
+    }
   };
 
-  const handleDownloadPDF = () => {
+  // ─── Real Excel export (CSV, opens in Excel natively) ─────────────────────────
+  const handleDownloadExcel = async () => {
     setDownloading(true);
-    setTimeout(() => {
-      showToast('success', 'PDF export started (mock)');
+    try {
+      const all = await fetchAllForExport(inventorySupplierAPI.list, filters);
+
+      const parts: string[] = [];
+      if (filters.search) parts.push(`Search: "${filters.search}"`);
+      if (filters.status) parts.push(`Status: ${filters.status}`);
+      const filterInfo = parts.join(' · ');
+
+      downloadSuppliersExcel(all, selectedFields, filterInfo);
+      showToast('success', `Exported ${all.length} supplier${all.length !== 1 ? 's' : ''} to Excel`);
+    } catch (err) {
+      showToast('error', extractError(err));
+    } finally {
       setDownloading(false);
-    }, 1000);
+    }
   };
 
   const activeFilterChips: { key: keyof FilterState; label: string }[] = [
@@ -825,14 +998,12 @@ export default function SuppliersPage() {
                     className="flex sm:grid items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 transition-colors"
                     style={{ gridTemplateColumns: '2.5rem 1fr 160px 90px 80px 108px' }}>
 
-                    {/* Icon */}
                     <div className="flex-shrink-0">
                       <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center">
                         <Building className="h-4 w-4 text-indigo-400" />
                       </div>
                     </div>
 
-                    {/* Name */}
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-slate-900 text-sm truncate">{name}</p>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -844,7 +1015,6 @@ export default function SuppliersPage() {
                       </div>
                     </div>
 
-                    {/* Email */}
                     <div className="hidden sm:block min-w-0 space-y-0.5">
                       {s.email && (
                         <div className="flex items-center gap-1 text-xs text-slate-500 truncate">
@@ -855,7 +1025,6 @@ export default function SuppliersPage() {
                       {!s.email && <span className="text-xs text-slate-300">No email</span>}
                     </div>
 
-                    {/* Phone */}
                     <div className="hidden sm:flex items-center gap-1.5 text-sm text-slate-600">
                       {s.phone_number && (
                         <>
@@ -865,7 +1034,6 @@ export default function SuppliersPage() {
                       )}
                     </div>
 
-                    {/* Status */}
                     <div className="hidden sm:block">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold border ${status.bg} ${status.text} ${status.border}`}>
                         <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status.dot}`} />
@@ -873,7 +1041,6 @@ export default function SuppliersPage() {
                       </span>
                     </div>
 
-                    {/* Actions */}
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button onClick={() => router.push(`/dashboard/staff/inventory/suppliers/${s.id}`)}
                         title="View" className="p-1.5 rounded-lg text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100 transition-all">

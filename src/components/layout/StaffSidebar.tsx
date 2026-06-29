@@ -10,9 +10,9 @@ import {
   ChevronDown, ChevronRight, UserCheck, Eye, GraduationCap, ClipboardList,
   CreditCard, PieChart, Bot, Star, Layout, FileSpreadsheet, UserPlus,
   KeyRound, Clock, ArrowUpCircle, MessageSquare, Crown, Building,
-  TrendingUp, FolderOpen, Tag, Plus, Columns, Layers, RefreshCw,
-  HelpCircle, Tags, Database, List, CheckSquare, Video, BarChart,
-  BarChart2, Archive, Edit, Send, Info, Smartphone, Cpu, Sliders,
+  TrendingUp, FolderOpen, Tag, Plus, Columns, Layers, RefreshCw, Ban,
+  HelpCircle, Tags, Database, List, CheckSquare, Video, BarChart, Store,
+  BarChart2, Archive, Edit, Send, Info, Smartphone, Cpu, Sliders, SlidersHorizontal,
   ArrowRight, Award, Printer, Shield, Upload, Download, CalendarDays,
   FileSearch, Package, User, Zap, MapPin, Gift, TrendingDown
 } from 'lucide-react';
@@ -76,19 +76,19 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
       current: pathname === '/dashboard/staff',
     },
     {
-      // Top-level for Tuckshop Attendant
       name: 'Place Order',
       href: '/dashboard/staff/inventory/pos',
       icon: <CreditCard className="h-5 w-5" />,
       current: pathname === '/dashboard/staff/inventory/pos',
+      moduleCode: 'inventory',
       requiredPermissions: ['inventory.add_salemodel'],
     },
     {
-      // Top-level for Tuckshop Attendant
       name: 'View Orders',
       href: '/dashboard/staff/inventory/sales',
       icon: <ClipboardList className="h-5 w-5" />,
       current: isCurrentPath('/dashboard/staff/inventory/sales'),
+      moduleCode: 'inventory',
       requiredPermissions: ['inventory.view_salemodel'],
     },
     {
@@ -792,8 +792,14 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
             },
             {
+              "name": "Bonus Categories",
+              "href": "/dashboard/staff/salary/bonus-categories",
+              "icon": <Tags className="h-4 w-4" />,
+              "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
+            },
+            {
               "name": "My Special Bonus",
-              "href": "/dashboard/staff/salary/my-bonus",
+              "href": "/dashboard/staff/salary/bonuses/my-bonus",
               "icon": <Gift className="h-4 w-4" />,
               "requiredPermissions": []
             }
@@ -843,15 +849,10 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             }
           ]
         },
+
         {
           "name": "My Payslip",
           "href": "/dashboard/staff/salary/my-payslip",
-          "icon": <User className="h-4 w-4" />,
-          "requiredPermissions": []
-        },
-        {
-          "name": "My Annual Payslip",
-          "href": "/dashboard/staff/salary/my-annual-payslip",
           "icon": <CalendarDays className="h-4 w-4" />,
           "requiredPermissions": []
         }
@@ -913,20 +914,47 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           requiredPermissions: ['inventory.view_itemmodel'],
         },
         {
-          name: 'Categories',
-          href: '/dashboard/staff/inventory/categories',
-          icon: <FolderOpen className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/inventory/categories'),
-          requiredPermissions: ['inventory.view_itemmodel'],
+          name: 'Configuration',
+          href: '#',
+          icon: <Settings className="h-4 w-4" />,
+          children: [
+            {
+              name: 'Categories',
+              href: '/dashboard/staff/inventory/categories',
+              icon: <FolderOpen className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/categories'),
+              requiredPermissions: ['inventory.view_itemmodel'],
+            },
+            {
+              name: 'Locations',
+              href: '/dashboard/staff/inventory/locations',
+              icon: <MapPin className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/locations'),
+              requiredPermissions: ['inventory.view_itemmodel'],
+            },
+            {
+              name: 'POS Settings',
+              href: '/dashboard/staff/inventory/settings',
+              icon: <SlidersHorizontal className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/settings'),
+              requiredPermissions: ['inventory.add_inventorysettingmodel'],
+            },
+            {
+              name: 'Shop Access',
+              href: '/dashboard/staff/inventory/shop-access',
+              icon: <Store className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/shop-access'),
+              requiredPermissions: ['inventory.add_inventorysettingmodel'],
+            },
+            {
+              name: 'Banned Debt Users',
+              href: '/dashboard/staff/inventory/debt-bans',
+              icon: <Ban className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/debt-bans'),
+              requiredPermissions: ['inventory.add_inventorysettingmodel'],
+            },
+          ],
         },
-        {
-          name: 'Locations',
-          href: '/dashboard/staff/inventory/locations',
-          icon: <MapPin className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/inventory/locations'),
-          requiredPermissions: ['inventory.view_itemmodel'],
-        },
-
       ],
     },
     {

@@ -1,7 +1,8 @@
-import type { Metadata } from "next";  // Remove the = at the start
+import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import GlobalInputFixes from "@/components/GlobalInputFixes";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,6 +30,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
+          <GlobalInputFixes />
           {children}
         </AuthProvider>
       </body>

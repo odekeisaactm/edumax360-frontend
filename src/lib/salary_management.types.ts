@@ -17,12 +17,7 @@ export type SalaryRecordPaymentStatus =
   | 'partially_paid';
 
 export type BonusType = 'staff' | 'volunteer';
-export type BonusCategory =
-  | 'vol_corp'
-  | 'contractors'
-  | 'staff_monthly'
-  | 'transportation'
-  | 'others';
+
 export type BonusStatus = 'paid' | 'unpaid';
 
 export type AdvanceStatus =
@@ -285,29 +280,70 @@ export interface SalaryRecordWrite {
   // For creating, typically you use the process endpoint, not direct POST
 }
 
+// ---------- Bonus Category ----------
+export interface BonusCategory {
+  id: number;
+  name: string;
+  code: string;
+  description?: string | null;
+  is_active: boolean;
+  sort_order: number;
+  bonus_count: number;
+  created_by?: number | User | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BonusCategoryWrite {
+  name: string;
+  code?: string;
+  description?: string | null;
+  is_active?: boolean;
+  sort_order?: number;
+}
+
+
 // ---------- Bonus ----------
+export interface BonusListFilters {
+  month?: number;
+  year?: number;
+  from_month?: number;
+  from_year?: number;
+  to_month?: number;
+  to_year?: number;
+  status?: string;
+  search?: string;
+  academic_period?: number;
+  session?: number;
+  staff_id?: number;
+  category?: number;
+  page?: number;
+  page_size?: number;
+}
+
 export interface Bonus {
   id: number;
-  type: BonusType;
-  category: BonusCategory;
-  staff?: number | Staff | null;
-  staff_name?: string; // read-only
+  type: 'staff' | 'volunteer';
+  category: number | BonusCategory; // Can be ID or Object depending on context
+  staff?: number | any | null;
+  staff_name?: string;
+  staff_detail?: any;
   volunteer_name?: string | null;
   amount: string;
-  month: number; // auto-set from due_date
+  month: number;
   year: number;
   due_date: string;
-  status: BonusStatus;
-  academic_period?: number | AcademicSessionPeriod | null;
+  status: 'paid' | 'unpaid';
+  academic_period?: number | any | null;
   notes?: string | null;
-  created_by?: number | User | null;
+  created_by_name?: string;
   created_at: string;
   updated_at: string;
 }
 
 export interface BonusWrite {
   type?: BonusType;
-  category?: BonusCategory;
+  category: number;
   staff?: number | null;
   volunteer_name?: string | null;
   amount: string | number;
@@ -407,8 +443,13 @@ export interface SalaryRecordListFilters {
   staff?: number;
   month?: number;
   year?: number;
-  payment_status?: SalaryRecordPaymentStatus;
+  from_month?: number;
+  from_year?: number;
+  to_month?: number;
+  to_year?: number;
   academic_period?: number;
+  session?: number;
+  payment_status?: SalaryRecordPaymentStatus;
   search?: string;
   ordering?: string;
   page?: number;
@@ -419,19 +460,6 @@ export interface SalaryStructureListFilters {
   staff?: number;
   is_active?: boolean;
   salary_setting?: number;
-  search?: string;
-  page?: number;
-  page_size?: number;
-}
-
-export interface BonusListFilters {
-  staff?: number;
-  type?: BonusType;
-  category?: BonusCategory;
-  status?: BonusStatus;
-  month?: number;
-  year?: number;
-  academic_period?: number;
   search?: string;
   page?: number;
   page_size?: number;

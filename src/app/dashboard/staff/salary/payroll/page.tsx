@@ -175,7 +175,7 @@ export default function PayslipListPage() {
         if (search) params.search = search;
 
         const structuresResponse = await salaryStructuresAPI.list(params) as any;
-        const structuresData = structuresResponse?.results ?? structuresResponse?.data ?? structuresResponse ?? [];
+        const structuresData = structuresResponse?.results?.data ?? structuresResponse?.data ?? [];
         setStructures(Array.isArray(structuresData) ? structuresData : []);
         setTotal(structuresResponse?.count ?? structuresData.length);
         setPage(pg);
@@ -247,8 +247,8 @@ export default function PayslipListPage() {
   };
 
   const goToBulkProcess = () => {
-    router.push(`/dashboard/staff/salary/payroll/bulk-process?month=${month}&year=${year}`);
-  };
+      router.push(`/dashboard/staff/salary/bulk-payslips?month=${month}&year=${year}`);
+    };
 
   const goToView = (recordId: number) => {
     router.push(`/dashboard/staff/salary/payslips/${recordId}`);
@@ -346,19 +346,23 @@ export default function PayslipListPage() {
               onChange={(e) => setMonth(parseInt(e.target.value))}
               className="px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-600"
             >
-              {MONTHS.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
+              {MONTHS.filter(m => year < currentYear || m.value <= currentMonth).map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
             </select>
 
             <select
               value={year}
-              onChange={(e) => setYear(parseInt(e.target.value))}
+              onChange={(e) => {
+                  const y = parseInt(e.target.value);
+                  setYear(y);
+                  if (y === currentYear && month > currentMonth) setMonth(currentMonth);
+                }}
               className="px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-600"
             >
-              {Array.from({ length: 5 }, (_, i) => currentYear - 2 + i).map((y) => (
+              {Array.from({ length: currentYear - 2019 }, (_, i) => 2020 + i).map((y) => (
                 <option key={y} value={y}>
                   {y}
                 </option>

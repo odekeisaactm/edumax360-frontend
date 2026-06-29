@@ -18,6 +18,13 @@ import type {
   SaleFilters,
   InventoryItemFormValues,
   InventoryItemFilters,
+  InventorySetting,
+  InventorySettingPayload,
+StaffShopAccessPayload,
+StaffShopAccess,
+BannedDebtUserPayload,
+BannedDebtUser,
+PaginatedResponse
 } from '@/lib/types';
 
 // Helper to safely extract data from APIResponse wrapper
@@ -77,7 +84,7 @@ export const inventoryCategoryAPI = {
 // ── Locations ────────────────────────────────────────────────
 
 export const inventoryLocationAPI = {
-  list: async (): Promise<InventoryLocation[]> => {
+  list: async (): Promise<PaginatedResponse<InventoryLocation> | InventoryLocation[]> => {
     const r = await api.get('/api/inventory/locations/');
     const data = unwrap(r);
     return Array.isArray(data) ? data : data?.results || [];
@@ -221,6 +228,61 @@ export const saleAPI = {
 export const inventoryReportAPI = {
   get: async (params: { type: 'low_stock' | 'sales_summary' | 'top_selling' }): Promise<any> => {
     const r = await api.get('/api/inventory/reports/', { params });
+    return unwrap(r);
+  },
+};
+
+// ── POS Settings (Singleton) ────────────────────────────────
+
+export const inventorySettingAPI = {
+  get: async (): Promise<InventorySetting> => {
+    const r = await api.get('/api/inventory/settings/');
+    return unwrap(r);
+  },
+  update: async (data: InventorySettingPayload): Promise<InventorySetting> => {
+    const r = await api.patch('/api/inventory/settings/', data);
+    return unwrap(r);
+  },
+};
+
+// ── Staff Shop Access ────────────────────────────────────────
+
+export const shopAccessAPI = {
+  list: async (params?: Record<string, any>): Promise<any> => {
+    const r = await api.get('/api/inventory/shop-access/', { params });
+    return unwrap(r);
+  },
+  myAccess: async (): Promise<{ is_superuser: boolean; shop: number | null; shop_name: string | null; shop_code?: string }> => {
+    const r = await api.get('/api/inventory/shop-access/me/');
+    return unwrap(r);
+  },
+  create: async (data: StaffShopAccessPayload): Promise<StaffShopAccess> => {
+    const r = await api.post('/api/inventory/shop-access/', data);
+    return unwrap(r);
+  },
+  update: async (id: number, data: Partial<StaffShopAccessPayload>): Promise<StaffShopAccess> => {
+    const r = await api.patch(`/api/inventory/shop-access/${id}/`, data);
+    return unwrap(r);
+  },
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/api/inventory/shop-access/${id}/`);
+  },
+};
+
+
+// ── Banned Debt Users ────────────────────────────────────────
+
+export const bannedDebtUserAPI = {
+  list: async (params?: Record<string, any>): Promise<any> => {
+    const r = await api.get('/api/inventory/debt-bans/', { params });
+    return unwrap(r);
+  },
+  create: async (data: BannedDebtUserPayload): Promise<BannedDebtUser> => {
+    const r = await api.post('/api/inventory/debt-bans/', data);
+    return unwrap(r);
+  },
+  update: async (id: number, data: Partial<BannedDebtUserPayload>): Promise<BannedDebtUser> => {
+    const r = await api.patch(`/api/inventory/debt-bans/${id}/`, data);
     return unwrap(r);
   },
 };

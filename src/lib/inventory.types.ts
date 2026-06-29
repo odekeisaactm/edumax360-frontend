@@ -207,6 +207,7 @@ export interface Sale {
   items: SaleItem[];
   subtotal?: string; // Read-only
   total_amount?: string; // Read-only
+  idempotency_key?: string | null;
 }
 
 // --- Form Payloads (Frontend -> Backend) ---
@@ -265,6 +266,7 @@ export interface SalePayload {
   staff_customer?: number | null;
   discount: string;
   payment_method: SalePaymentMethod;
+  idempotency_key?: string | null;
   items: Array<{
     item: number;
     quantity: string;
@@ -301,4 +303,61 @@ export interface SaleFilters {
   status?: SaleStatus;
   page?: number;
   page_size?: number;
+}
+
+export type SaleRedirectTarget = 'index' | 'new_sale' | 'detail';
+
+export interface InventorySetting {
+  id: number;
+  allow_discount: boolean;
+  allow_student_debt: boolean;
+  allow_staff_debt: boolean;
+  max_student_debt: string;
+  max_staff_debt: string;
+  allow_walkin_sale: boolean;
+  allow_cash: boolean;
+  allow_pos: boolean;
+  max_individual_sale_amount: string | null;
+  max_daily_sale_amount: string | null;
+  max_refund_grace_period_hours: number | null;
+  default_sale_redirect: SaleRedirectTarget;
+  auto_print_receipt: boolean;
+  updated_at: string;
+  updated_by?: number | null;
+}
+
+export type InventorySettingPayload = Partial<Omit<InventorySetting, 'id' | 'updated_at' | 'updated_by'>>;
+
+export interface StaffShopAccess {
+  id: number;
+  staff: number;
+  staff_name?: string;
+  shop: number;
+  shop_name?: string;
+  assigned_at: string;
+  assigned_by?: number | null;
+}
+
+export interface StaffShopAccessPayload {
+  staff: number;
+  shop: number;
+}
+
+export interface BannedDebtUser {
+  id: number;
+  student?: number | null;
+  student_name?: string | null;
+  staff?: number | null;
+  staff_name?: string | null;
+  reason: string;
+  is_active: boolean;
+  banned_at: string;
+  banned_by?: number | null;
+}
+
+export interface BannedDebtUserPayload {
+  student?: number | null;
+  staff?: number | null;
+  reason: string;
+  is_active?: boolean;
 }

@@ -12,6 +12,8 @@ import type {
   SalaryStructureWrite,
   SalaryRecord,
   SalaryRecordWrite,
+  BonusCategory,
+  BonusCategoryWrite,
   Bonus,
   BonusWrite,
   SalaryAdvance,
@@ -174,64 +176,107 @@ export const payrollAPI = {
   },
 };
 
+
+
 // ====================================================================
 // 4. BONUSES
 // ====================================================================
+export const bonusCategoriesAPI = {
+  /**
+   * List bonus categories with optional filters
+   */
+  list: async (filters?: { is_active?: boolean }): Promise<BonusCategory[]> => {
+    const response = await api.get('/api/salary-management/bonus-categories/', { params: filters });
+    const res = response.data;
+
+    // Unwrap: { count, next, previous, results: { success, data: [...] } }
+    if (res.results) {
+      return res.results.data || (Array.isArray(res.results) ? res.results : []);
+    }
+    // Unwrap: { success, data: [...] }
+    return res.data || (Array.isArray(res) ? res : []);
+  },
+
+  /**
+   * Create a new bonus category
+   */
+  create: async (data: BonusCategoryWrite): Promise<BonusCategory> => {
+    const response = await api.post('/api/salary-management/bonus-categories/', data);
+    return response.data.data || response.data;
+  },
+
+  /**
+   * Retrieve a bonus category by ID
+   */
+  get: async (id: number): Promise<BonusCategory> => {
+    const response = await api.get(`/api/salary-management/bonus-categories/${id}/`);
+    return response.data.data || response.data;
+  },
+
+  /**
+   * Update a bonus category (PUT)
+   */
+  update: async (id: number, data: BonusCategoryWrite): Promise<BonusCategory> => {
+    const response = await api.put(`/api/salary-management/bonus-categories/${id}/`, data);
+    return response.data.data || response.data;
+  },
+
+  /**
+   * Partial update a bonus category (PATCH)
+   */
+  patch: async (id: number, data: Partial<BonusCategoryWrite>): Promise<BonusCategory> => {
+    const response = await api.patch(`/api/salary-management/bonus-categories/${id}/`, data);
+    return response.data.data || response.data;
+  },
+
+  /**
+   * Delete a bonus category
+   */
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/api/salary-management/bonus-categories/${id}/`);
+  },
+};
+
 
 export const bonusesAPI = {
-  /**
-   * List bonuses with optional filters
-   */
-  list: async (filters?: BonusListFilters): Promise<Bonus[]> => {
+    list: async (filters?: BonusListFilters): Promise<any> => {
     const response = await api.get('/api/salary-management/bonuses/', { params: filters });
-    return response.data.results || response.data;
+    const d = response.data;
+    if (d.results) {
+      const data = d.results.data || d.results;
+      return { results: Array.isArray(data) ? data : [], count: d.count || 0, stats: d.results.stats || null }; // CHANGED d.stats to d.results.stats
+    }
+    const data = d.data || d;
+    return { results: Array.isArray(data) ? data : [], count: Array.isArray(data) ? data.length : 0, stats: d.stats || null };
   },
-
-  /**
-   * Create a new bonus
-   */
+   myList: async (filters?: Pick<BonusListFilters, 'month' | 'year' | 'status' | 'academic_period' | 'session' | 'page' | 'page_size'>): Promise<any> => {
+    const response = await api.get('/api/salary-management/bonuses/my/', { params: filters });
+    const d = response.data;
+    if (d.results) {
+      const data = d.results.data || d.results;
+      return { results: Array.isArray(data) ? data : [], count: d.count || 0, stats: d.results.stats || null };
+    }
+    const data = d.data || d;
+    return { results: Array.isArray(data) ? data : [], count: Array.isArray(data) ? data.length : 0, stats: d.stats || null };
+  },
   create: async (data: BonusWrite): Promise<Bonus> => {
     const response = await api.post('/api/salary-management/bonuses/', data);
-    return response.data;
+    return response.data.data || response.data;
   },
-
-  /**
-   * Retrieve a bonus by ID
-   */
   get: async (id: number): Promise<Bonus> => {
     const response = await api.get(`/api/salary-management/bonuses/${id}/`);
-    return response.data;
+    return response.data.data || response.data;
   },
-
-  /**
-   * Update a bonus (PUT)
-   */
   update: async (id: number, data: BonusWrite): Promise<Bonus> => {
     const response = await api.put(`/api/salary-management/bonuses/${id}/`, data);
-    return response.data;
+    return response.data.data || response.data;
   },
-
-  /**
-   * Partial update a bonus (PATCH)
-   */
-  patch: async (id: number, data: Partial<BonusWrite>): Promise<Bonus> => {
-    const response = await api.patch(`/api/salary-management/bonuses/${id}/`, data);
-    return response.data;
-  },
-
-  /**
-   * Delete a bonus
-   */
   delete: async (id: number): Promise<void> => {
     await api.delete(`/api/salary-management/bonuses/${id}/`);
   },
-
-  /**
-   * Mark a bonus as paid
-   */
   markPaid: async (id: number): Promise<Bonus> => {
     const response = await api.post(`/api/salary-management/bonuses/${id}/mark-paid/`);
-    return response.data;
+    return response.data.data || response.data;
   },
 };
 
