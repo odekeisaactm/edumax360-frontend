@@ -122,7 +122,7 @@ export default function SaleDetailPage() {
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [isRefunding, setIsRefunding] = useState(false);
 
-  const canRefund = user?.is_superuser || hasPermission('inventory.add_salemodel');
+  const canRefund = user?.is_superuser || hasPermission('inventory.add_inventorysalemodel');
 
   const fetchData = useCallback(async () => {
     setLoading(true); setPageError(null);
