@@ -369,9 +369,9 @@ export const MODULES: ModuleDef[] = [
         label: 'Catalog',
         description: 'Items, categories, locations, and suppliers',
         permissions: [
-          { codename: 'view_itemmodel',   label: 'View Catalog',   desc: 'Read items, categories, locations, and suppliers' },
-          { codename: 'add_itemmodel',    label: 'Manage Catalog', desc: 'Create and update items, categories, locations, and suppliers' },
-          { codename: 'delete_itemmodel', label: 'Delete Catalog', desc: 'Permanently remove items, categories, or suppliers' },
+          { codename: 'view_inventoryitemmodel',   label: 'View Catalog',   desc: 'Read items, categories, locations, and suppliers' },
+          { codename: 'add_inventoryitemmodel',    label: 'Manage Catalog', desc: 'Create and update items, categories, locations, and suppliers' },
+          { codename: 'delete_inventoryitemmodel', label: 'Delete Catalog', desc: 'Permanently remove items, categories, or suppliers' },
         ],
       },
       {
@@ -379,8 +379,8 @@ export const MODULES: ModuleDef[] = [
         label: 'Stock Movements',
         description: 'Stock in, stock out, and transfers between locations',
         permissions: [
-          { codename: 'view_stockinmodel', label: 'View Stock Movements',   desc: 'Read stock in, stock out, and transfer records' },
-          { codename: 'add_stockinmodel',  label: 'Manage Stock Movements', desc: 'Create stock in, stock out, and transfer entries' },
+          { codename: 'view_inventorystockinmodel', label: 'View Stock Movements',   desc: 'Read stock in, stock out, and transfer records' },
+          { codename: 'add_inventorystockinmodel',  label: 'Manage Stock Movements', desc: 'Create stock in, stock out, and transfer entries' },
         ],
       },
       {
@@ -388,7 +388,7 @@ export const MODULES: ModuleDef[] = [
         label: 'Point of Sale',
         description: 'Process sales and refunds at the till',
         permissions: [
-          { codename: 'add_salemodel', label: 'Process Sales & Refunds', desc: 'Place orders and refund completed sales' },
+          { codename: 'add_inventorysalemodel', label: 'Process Sales & Refunds', desc: 'Place orders and refund completed sales' },
         ],
       },
       {
