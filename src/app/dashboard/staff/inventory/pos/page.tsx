@@ -135,7 +135,7 @@ export default function POSPage() {
   const [fpStatus, setFpStatus] = useState({ text: 'Initializing...', detail: 'Checking scanner', color: 'text-orange-500' });
   const [showFpOverlay, setShowFpOverlay] = useState(false);
 
-  const canSell = user?.is_superuser || hasPermission('inventory.add_salemodel');
+  const canSell = user?.is_superuser || hasPermission('inventory.add_inventorysalemodel');
   const isSuperuser = !!user?.is_superuser;
 
   const showToast = useCallback((type: 'success' | 'error' | 'info', message: string) => {
