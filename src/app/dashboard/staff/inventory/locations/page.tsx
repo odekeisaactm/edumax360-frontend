@@ -240,9 +240,9 @@ export default function LocationsPage() {
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canCreate = user?.is_superuser || hasPermission('inventory.add_itemmodel');
-  const canEdit   = user?.is_superuser || hasPermission('inventory.add_itemmodel');
-  const canDelete = user?.is_superuser || hasPermission('inventory.delete_itemmodel');
+  const canCreate = user?.is_superuser || hasPermission('inventory.add_inventoryitemmodel');
+  const canEdit   = user?.is_superuser || hasPermission('inventory.add_inventoryitemmodel');
+  const canDelete = user?.is_superuser || hasPermission('inventory.delete_inventoryitemmodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

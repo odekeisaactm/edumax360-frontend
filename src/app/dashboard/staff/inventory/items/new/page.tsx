@@ -112,7 +112,7 @@ export default function NewItemPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canCreate = user?.is_superuser || hasPermission('inventory.add_itemmodel');
+  const canCreate = user?.is_superuser || hasPermission('inventory.add_inventoryitemmodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

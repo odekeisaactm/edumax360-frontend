@@ -74,7 +74,7 @@ export default function StockInListPage() {
   const [locations, setLocations] = useState<InventoryLocation[]>([]);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const canManage = user?.is_superuser || hasPermission('inventory.add_stockinmodel');
+  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorystockinmodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

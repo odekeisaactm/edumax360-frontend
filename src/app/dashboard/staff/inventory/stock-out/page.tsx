@@ -97,7 +97,7 @@ export default function StockOutListPage() {
   const [selectedReason, setSelectedReason] = useState('');
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const canManage = user?.is_superuser || hasPermission('inventory.add_stockoutmodel');
+  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorystockoutmodel');
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
   const fetchRecords = useCallback(async (search: string, reason: string, pg = 1) => {

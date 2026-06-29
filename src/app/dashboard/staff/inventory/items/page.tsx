@@ -421,9 +421,9 @@ export default function ItemsPage() {
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const PAGE_SIZE = 20;
 
-  const canCreate = user?.is_superuser || hasPermission('inventory.add_itemmodel');
-  const canEdit   = user?.is_superuser || hasPermission('inventory.add_itemmodel');
-  const canDelete = user?.is_superuser || hasPermission('inventory.delete_itemmodel');
+  const canCreate = user?.is_superuser || hasPermission('inventory.add_inventoryitemmodel');
+  const canEdit   = user?.is_superuser || hasPermission('inventory.add_inventoryitemmodel');
+  const canDelete = user?.is_superuser || hasPermission('inventory.delete_inventoryitemmodel');
 
   const showToast = (type: 'success' | 'error' | 'info', message: string) => {
     const id = ++_toastId;

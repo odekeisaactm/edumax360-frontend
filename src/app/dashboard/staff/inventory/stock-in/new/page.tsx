@@ -101,7 +101,7 @@ export default function NewStockInPage() {
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const canManage = user?.is_superuser || hasPermission('inventory.add_stockinmodel');
+  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorystockinmodel');
 
   const showToast = (type: 'success' | 'error' | 'info', message: string) => {
     const id = ++_toastId;

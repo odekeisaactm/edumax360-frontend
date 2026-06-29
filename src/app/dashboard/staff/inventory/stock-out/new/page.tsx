@@ -120,7 +120,7 @@ export default function NewStockOutPage() {
   const itemSearchInputRef = useRef<HTMLInputElement>(null);
   const locationRef = useRef('');
 
-  const canManage = user?.is_superuser || hasPermission('inventory.add_stockoutmodel');
+  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorystockoutmodel');
 
   const showToast = useCallback((type: 'success' | 'error' | 'info', message: string) => {
     const id = ++_toastId;

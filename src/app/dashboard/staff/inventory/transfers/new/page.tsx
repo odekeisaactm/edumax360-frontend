@@ -87,7 +87,7 @@ export default function NewStockTransferPage() {
   // Keep a ref so barcode handler always sees current from_location
   const fromLocationRef = useRef('');
 
-  const canManage = user?.is_superuser || hasPermission('inventory.add_stocktransfermodel');
+  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorystocktransfermodel');
 
   const showToast = useCallback((type: 'success' | 'error' | 'info', message: string) => {
     const id = ++_toastId;

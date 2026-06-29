@@ -59,7 +59,7 @@ export default function StockTransferListPage() {
   const [pendingSearch, setPendingSearch] = useState('');
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const canManage = user?.is_superuser || hasPermission('inventory.add_stocktransfermodel');
+  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorystocktransfermodel');
 
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
