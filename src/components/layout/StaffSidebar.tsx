@@ -81,7 +81,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
       icon: <CreditCard className="h-5 w-5" />,
       current: pathname === '/dashboard/staff/inventory/pos',
       moduleCode: 'inventory',
-      requiredPermissions: ['inventory.add_salemodel'],
+      requiredPermissions: ['inventory.add_inventorysalemodel'],
     },
     {
       name: 'View Orders',
@@ -89,7 +89,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
       icon: <ClipboardList className="h-5 w-5" />,
       current: isCurrentPath('/dashboard/staff/inventory/sales'),
       moduleCode: 'inventory',
-      requiredPermissions: ['inventory.view_salemodel'],
+      requiredPermissions: ['inventory.add_inventorysalemodel'],
     },
     {
       name: 'Student Management',
