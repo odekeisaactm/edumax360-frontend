@@ -44,19 +44,19 @@ export default function FeePaymentSearchPage() {
       .finally(() => setClassLoading(false));
   }, [selectedClass]);
 
-  const searchStudents = useCallback(async (params: object) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await studentsAPI.list({ status: 'active', ...params });
-      setResults(data);
-    } catch {
-      setError('Search failed. Please try again.');
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  useEffect(() => {
+      if (!query || query.length < 2) { setResults([]); return; }
+      const t = setTimeout(async () => {
+        setSearching(true);
+        try {
+          const data = await studentsAPI.list({ search: query, status: 'active' });
+          setResults(data.results);
+        }
+        catch { setResults([]); }
+        finally { setSearching(false); }
+      }, 350);
+      return () => clearTimeout(t);
+    }, [query]);
 
   // Class + section search
   useEffect(() => {

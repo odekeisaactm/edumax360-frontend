@@ -218,16 +218,19 @@ export function ApplyDiscountPage() {
     feeAPI.getDiscountApplications().then(setDiscounts).catch(() => setDiscounts([]));
   }, []);
 
-  useEffect(() => {
-    if (!query || query.length < 2) { setResults([]); return; }
-    const t = setTimeout(async () => {
-      setSearching(true);
-      try { setResults(await studentsAPI.list({ search: query, status: 'active' })); }
-      catch { setResults([]); }
-      finally { setSearching(false); }
-    }, 350);
-    return () => clearTimeout(t);
-  }, [query]);
+  const searchStudents = useCallback(async (params: object) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await studentsAPI.list({ status: 'active', ...params });
+        setResults(data.results);
+      } catch {
+        setError('Search failed. Please try again.');
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
+    }, []);
 
   const handleApply = async () => {
     if (!selected || !selectedDiscount) { setError('Select a student and discount'); return; }

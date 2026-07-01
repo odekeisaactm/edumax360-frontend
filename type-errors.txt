@@ -1,0 +1,2 @@
+src/app/dashboard/staff/fee/discount-applications/page.tsx(225,24): error TS2345: Argument of type 'PaginatedResponse<Student>' is not assignable to parameter of type 'SetStateAction<Student[]>'.
+src/app/dashboard/staff/fee/payments/search/page.tsx(52,18): error TS2345: Argument of type 'PaginatedResponse<Student>' is not assignable to parameter of type 'SetStateAction<Student[]>'.
