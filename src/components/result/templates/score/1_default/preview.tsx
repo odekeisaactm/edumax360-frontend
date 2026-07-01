@@ -176,8 +176,8 @@ export default function DefaultScoreTemplate({
   const position       = result.position        ?? dummyScoreResult.summary.position;
   const noInClass      = result.number_of_student ?? student.no_in_class ?? dummyScoreResult.summary.number_of_student;
   const attendance     = {
-    present: comments.present_attendance ?? student.attendance?.present ?? 95,
-    total:   comments.total_attendance   ?? student.attendance?.total   ?? 100
+    present: comments.present_attendance ?? student.attendance?.present ?? 0,
+    total:   comments.total_attendance   ?? student.attendance?.total   ?? 0
   };
   const sessionName    = result.session_name    ?? dummyPeriod.session;
   const periodName     = result.period_name     ?? dummyPeriod.term;
