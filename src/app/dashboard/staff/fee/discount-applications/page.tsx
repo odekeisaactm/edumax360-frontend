@@ -219,7 +219,7 @@ export function ApplyDiscountPage() {
   }, []);
 
   const searchStudents = useCallback(async (params: object) => {
-      setLoading(true);
+      setSearching(true);
       setError(null);
       try {
         const data = await studentsAPI.list({ status: 'active', ...params });
@@ -228,9 +228,15 @@ export function ApplyDiscountPage() {
         setError('Search failed. Please try again.');
         setResults([]);
       } finally {
-        setLoading(false);
+        setSearching(false);
       }
     }, []);
+
+useEffect(() => {
+  if (!query || query.length < 2) { setResults([]); return; }
+  const t = setTimeout(() => searchStudents({ search: query.trim() }), 350);
+  return () => clearTimeout(t);
+}, [query, searchStudents]);
 
   const handleApply = async () => {
     if (!selected || !selectedDiscount) { setError('Select a student and discount'); return; }
