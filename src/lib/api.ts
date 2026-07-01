@@ -1549,7 +1549,12 @@ export const studentCustomFieldsAPI = {
 export const parentsAPI = {
   list: async (filters?: ParentListFilters): Promise<PaginatedResponse<ParentListItem>> => {
     const response = await api.get<any>('/api/student/parents/', { params: filters });
-    return response.data.results || { count: 0, next: null, previous: null, results: [] };
+    return {
+      count: response.data?.count ?? 0,
+      next: response.data?.next ?? null,
+      previous: response.data?.previous ?? null,
+      results: response.data?.results?.data ?? [],
+    };
   },
 
   create: async (data: FormData): Promise<Parent> => {
@@ -1695,12 +1700,14 @@ downloadPasswordSheet: async (params?: { ward_class?: number; ward_class_section
 };
 
 export const studentsAPI = {
-  list: async (filters?: StudentListFilters): Promise<Student[]> => {
+  list: async (filters?: StudentListFilters): Promise<PaginatedResponse<Student>> => {
     const response = await api.get<any>('/api/student/students/', { params: filters });
-    if (response.data?.results?.data) {
-      return response.data.results.data;
-    }
-    return [];
+    return {
+      count: response.data?.count ?? 0,
+      next: response.data?.next ?? null,
+      previous: response.data?.previous ?? null,
+      results: response.data?.results?.data ?? [],
+    };
   },
 
   create: async (data: StudentFormValues | globalThis.FormData): Promise<Student> => {
