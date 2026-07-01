@@ -136,7 +136,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           href: '/dashboard/staff/students/guardians',
           icon: <Users className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/students/guardians'),
-          requiredPermissions: ['parent.view_parentmodel'],
+          requiredPermissions: ['student_management.view_parentmodel'],
         },
         {
           name: 'Login Credentials',
