@@ -117,7 +117,7 @@ export default function EditParentPage() {
   const params = useParams();
   const parentId = Number(params?.id);
 
-  const canEdit = user?.is_superuser || hasPermission('student_management.change_parentmodel') || false;
+  const canEdit = user?.is_superuser || hasPermission('student_management.add_parentmodel') || false;
 
   const [openSections, setOpenSections] = useState({
     basic: true,

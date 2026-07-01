@@ -216,9 +216,9 @@ export default function UtilitiesPage() {
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canCreate = user?.is_superuser || hasPermission('student_management.add_utilitymodel');
-  const canEdit   = user?.is_superuser || hasPermission('student_management.change_utilitymodel');
-  const canDelete = user?.is_superuser || hasPermission('student_management.delete_utilitymodel');
+  const canCreate = user?.is_superuser || hasPermission('student_management.add_studentsettingmodel');
+  const canEdit   = user?.is_superuser || hasPermission('student_management.add_studentsettingmodel');
+  const canDelete = user?.is_superuser || hasPermission('student_management.add_studentsettingmodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

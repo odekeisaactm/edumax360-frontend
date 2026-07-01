@@ -321,9 +321,9 @@ export default function StudentCustomFieldsPage() {
   const [draggedItem, setDraggedItem] = useState<CustomField | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canCreate = user?.is_superuser || hasPermission('student_management.add_customfieldmodel');
-  const canEdit   = user?.is_superuser || hasPermission('student_management.change_customfieldmodel');
-  const canDelete = user?.is_superuser || hasPermission('student_management.delete_customfieldmodel');
+  const canCreate = user?.is_superuser || hasPermission('student_management.add_studentsettingmodel');
+  const canEdit   = user?.is_superuser || hasPermission('student_management.add_studentsettingmodel');
+  const canDelete = user?.is_superuser || hasPermission('student_management.add_studentsettingmodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

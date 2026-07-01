@@ -416,9 +416,9 @@ export default function ParentDetailPage() {
   const [showDefaultPwd, setShowDefaultPwd] = useState(false);
 
   // Permissions
-  const canEdit   = user?.is_superuser || hasPermission('student_management.change_parentmodel');
-  const canDelete = user?.is_superuser || hasPermission('student_management.delete_parentmodel');
-  const canManage = user?.is_superuser || hasPermission('student_management.change_parentmodel');
+  const canEdit   = user?.is_superuser || hasPermission('student_management.add_parentmodel');
+  const canDelete = user?.is_superuser || hasPermission('student_management.add_parentmodel');
+  const canManage = user?.is_superuser || hasPermission('student_management.add_parentmodel');
 
   const [showUsername, setShowUsername] = useState(false);
 

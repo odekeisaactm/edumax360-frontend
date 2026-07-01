@@ -227,7 +227,7 @@ export default function StudentDashboardPage() {
   const [actionResults, setActionResults] = useState<Record<string, { affected: number; message: string }>>({});
   const [toast, setToast] = useState<{ type: 'success'|'error'; message: string } | null>(null);
 
-  const canAdmin = user?.is_superuser || hasPermission('student_management.change_studentmodel');
+  const canAdmin = user?.is_superuser || hasPermission('student_management.view_statistics');
 
   const showToast = (type: 'success'|'error', message: string) => {
     setToast({ type, message });

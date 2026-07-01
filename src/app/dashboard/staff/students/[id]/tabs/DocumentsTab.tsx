@@ -1,10 +1,10 @@
 // src/app/dashboard/staff/students/[id]/components/tabs/DocumentsTab.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { studentDocumentsAPI, studentsAPI } from '@/lib/api';
 import { Student, SchoolInfo, StudentSettings, StudentDocument } from '@/lib/types';
 import {
   FileText, Download, Upload, Trash2, CreditCard, Eye, X, Check,
-  Loader2, File, Heart, BarChart2, Plus
+  Loader2, File, Heart, BarChart2, Plus, CheckCircle2, AlertTriangle, XCircle, Barcode
 } from 'lucide-react';
 
 interface Props {
@@ -22,6 +22,128 @@ const DOC_TYPES = [
   { value: 'other', label: 'Other Document', icon: File },
 ];
 
+// ─── Toast System ──────────────────────────────────────────────────────────
+type ToastType = 'success' | 'error' | 'info';
+interface ToastItem { id: number; message: string; type: ToastType; }
+
+function useToasts() {
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const showToast = useCallback((message: string, type: ToastType = 'success') => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3500);
+  }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  return { toasts, showToast, dismissToast };
+}
+
+function ToastContainer({ toasts, dismissToast }: { toasts: ToastItem[]; dismissToast: (id: number) => void }) {
+  if (toasts.length === 0) return null;
+
+  const styles: Record<ToastType, { bg: string; border: string; text: string; icon: React.ReactNode }> = {
+    success: {
+      bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-800',
+      icon: <CheckCircle2 className="h-5 w-5 text-emerald-500 flex-shrink-0" />
+    },
+    error: {
+      bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800',
+      icon: <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+    },
+    info: {
+      bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800',
+      icon: <AlertTriangle className="h-5 w-5 text-blue-500 flex-shrink-0" />
+    },
+  };
+
+  return (
+    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 w-full max-w-sm pointer-events-none">
+      {toasts.map(t => {
+        const s = styles[t.type];
+        return (
+          <div
+            key={t.id}
+            className={`pointer-events-auto flex items-start gap-2.5 p-3.5 rounded-xl border shadow-lg ${s.bg} ${s.border} ${s.text} animate-toast-in`}
+          >
+            {s.icon}
+            <p className="text-sm font-medium flex-1">{t.message}</p>
+            <button
+              onClick={() => dismissToast(t.id)}
+              className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        );
+      })}
+      <style jsx global>{`
+        @keyframes toast-in {
+          from { opacity: 0; transform: translateX(16px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        .animate-toast-in {
+          animation: toast-in 0.2s ease-out;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ─── Confirm Dialog ────────────────────────────────────────────────────────
+interface ConfirmDialogProps {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  tone?: 'danger' | 'primary';
+  loading?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function ConfirmDialog({ title, message, confirmLabel = 'Confirm', tone = 'danger', loading, onConfirm, onCancel }: ConfirmDialogProps) {
+  const isDanger = tone === 'danger';
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+        <div className="flex items-start gap-3 mb-4">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isDanger ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
+            <AlertTriangle className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900">{title}</h3>
+            <p className="text-sm text-slate-500 mt-1">{message}</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 mt-5">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="px-4 py-2.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className={`px-4 py-2.5 text-sm font-semibold text-white rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2 ${isDanger ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : (isDanger ? <Trash2 className="h-4 w-4" /> : <Check className="h-4 w-4" />)}
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DocumentsTab({ student, schoolInfo, settings, refreshStudent }: Props) {
   const [documents, setDocuments] = useState<StudentDocument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +151,13 @@ export default function DocumentsTab({ student, schoolInfo, settings, refreshStu
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [filterType, setFilterType] = useState<string>('all');
+  const { toasts, showToast, dismissToast } = useToasts();
+
+  // Confirm dialog state
+  const [deleteTarget, setDeleteTarget] = useState<StudentDocument | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [showBarcodeConfirm, setShowBarcodeConfirm] = useState(false);
+  const [generatingBarcode, setGeneratingBarcode] = useState(false);
 
   // Upload Form State
   const [uploadForm, setUploadForm] = useState({
@@ -41,6 +170,7 @@ export default function DocumentsTab({ student, schoolInfo, settings, refreshStu
 
   useEffect(() => {
     loadDocuments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [student.id]);
 
   const loadDocuments = async () => {
@@ -50,29 +180,38 @@ export default function DocumentsTab({ student, schoolInfo, settings, refreshStu
       setDocuments(data);
     } catch (e) {
       console.error('Failed to load documents', e);
+      showToast('Failed to load documents', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   const handleGenerateBarcode = async () => {
-    if (!confirm('Generate barcode for this student?')) return;
+    setGeneratingBarcode(true);
     try {
       await (studentsAPI as any).generateBarcode(student.id);
       refreshStudent();
-      alert('Barcode generated successfully');
+      showToast('Barcode generated successfully', 'success');
+      setShowBarcodeConfirm(false);
     } catch (e) {
-      alert('Failed to generate barcode');
+      showToast('Failed to generate barcode', 'error');
+    } finally {
+      setGeneratingBarcode(false);
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this document?')) return;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await studentDocumentsAPI.delete(id);
-      setDocuments(prev => prev.filter(d => d.id !== id));
+      await studentDocumentsAPI.delete(deleteTarget.id);
+      setDocuments(prev => prev.filter(d => d.id !== deleteTarget.id));
+      showToast('Document deleted successfully', 'success');
+      setDeleteTarget(null);
     } catch (e) {
-      alert('Failed to delete document');
+      showToast('Failed to delete document', 'error');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -80,7 +219,7 @@ export default function DocumentsTab({ student, schoolInfo, settings, refreshStu
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
-      alert('File size must be under 10MB');
+      showToast('File size must be under 10MB', 'error');
       return;
     }
     setSelectedFile(file);
@@ -91,8 +230,8 @@ export default function DocumentsTab({ student, schoolInfo, settings, refreshStu
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedFile) return alert('Please select a file');
-    if (!uploadForm.title.trim()) return alert('Title is required');
+    if (!selectedFile) return showToast('Please select a file', 'error');
+    if (!uploadForm.title.trim()) return showToast('Title is required', 'error');
 
     setUploading(true);
     const formData = new FormData();
@@ -108,9 +247,10 @@ export default function DocumentsTab({ student, schoolInfo, settings, refreshStu
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       loadDocuments();
+      showToast('Document uploaded successfully', 'success');
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.message || 'Upload failed';
-      alert(msg);
+      showToast(msg, 'error');
     } finally {
       setUploading(false);
     }
@@ -127,6 +267,7 @@ export default function DocumentsTab({ student, schoolInfo, settings, refreshStu
 
   return (
     <div className="space-y-6">
+      <ToastContainer toasts={toasts} dismissToast={dismissToast} />
 
       {/* SECTION 1: ID CARD (FULL WIDTH TOP) */}
       <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 p-6">
@@ -142,7 +283,7 @@ export default function DocumentsTab({ student, schoolInfo, settings, refreshStu
           </div>
           <div className="flex items-center gap-2">
             {settings?.generate_barcode && !student.barcode_url && (
-              <button onClick={handleGenerateBarcode} className="text-xs bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50 flex items-center gap-1">
+              <button onClick={() => setShowBarcodeConfirm(true)} className="text-xs bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50 flex items-center gap-1">
                 <Upload className="h-3 w-3" /> Gen Barcode
               </button>
             )}
@@ -219,7 +360,11 @@ export default function DocumentsTab({ student, schoolInfo, settings, refreshStu
                         </button>
                       </div>
                     </div>
-                    <button onClick={() => handleDelete(doc.id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
+                    <button
+                      onClick={() => setDeleteTarget(doc)}
+                      className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors flex-shrink-0"
+                      title="Delete document"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -323,6 +468,32 @@ export default function DocumentsTab({ student, schoolInfo, settings, refreshStu
             </div>
           </div>
         </div>
+      )}
+
+      {/* Delete Document Confirmation */}
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Delete Document"
+          message={`Are you sure you want to delete "${deleteTarget.title}"? This action cannot be undone.`}
+          confirmLabel="Delete"
+          tone="danger"
+          loading={deleting}
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {/* Generate Barcode Confirmation */}
+      {showBarcodeConfirm && (
+        <ConfirmDialog
+          title="Generate Barcode"
+          message="Generate a barcode for this student? This will be used for ID card and attendance scanning."
+          confirmLabel="Generate"
+          tone="primary"
+          loading={generatingBarcode}
+          onConfirm={handleGenerateBarcode}
+          onCancel={() => setShowBarcodeConfirm(false)}
+        />
       )}
     </div>
   );

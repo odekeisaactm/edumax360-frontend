@@ -369,7 +369,7 @@ export default function StudentSettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  const canEdit = user?.is_superuser || hasPermission('student_management.change_studentsettingmodel');
+  const canEdit = user?.is_superuser || hasPermission('student_management.add_studentsettingmodel');
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);

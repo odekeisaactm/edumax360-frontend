@@ -438,7 +438,7 @@ export default function GuardiansPage() {
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const canCreate     = user?.is_superuser || hasPermission('student_management.add_parentmodel');
-  const canEdit       = user?.is_superuser || hasPermission('student_management.change_parentmodel');
+  const canEdit       = user?.is_superuser || hasPermission('student_management.add_parentmodel');
   const canAddStudent = user?.is_superuser || hasPermission('student_management.add_studentmodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {

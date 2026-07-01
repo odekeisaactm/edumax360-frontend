@@ -306,7 +306,7 @@ export default function BulkUploadPage() {
   // Toast
   const [toast, setToast] = useState<{ type: 'success'|'error'; message: string } | null>(null);
 
-  const canUpload = user?.is_superuser || hasPermission('student_management.add_studentmodel');
+  const canUpload = user?.is_superuser || hasPermission('student_management.add_bulkstudentuploadmodel');
 
   const showToast = (type: 'success'|'error', message: string) => {
     setToast({ type, message });

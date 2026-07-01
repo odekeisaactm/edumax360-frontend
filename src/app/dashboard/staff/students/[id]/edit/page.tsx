@@ -246,7 +246,7 @@ export default function StudentUpdatePage() {
     status: 'active',
   });
 
-  const canEdit = user?.is_superuser || hasPermission('student_management.change_studentmodel');
+  const canEdit = user?.is_superuser || hasPermission('student_management.add_studentmodel');
   const showUserForm = settings?.show_user_form === true;
   const useClassSections = academicSettings?.use_class_sections === true;
 

@@ -86,8 +86,8 @@ export default function StudentDetailsPage() {
   const [activeTab, setActiveTab] = useState('overview');
 
   const canView = user?.is_superuser || hasPermission('student_management.view_studentmodel');
-  const canEdit = user?.is_superuser || hasPermission('student_management.change_studentmodel');
-  const canDelete = user?.is_superuser || hasPermission('student_management.delete_studentmodel');
+  const canEdit = user?.is_superuser || hasPermission('student_management.add_studentmodel');
+  const canDelete = user?.is_superuser || hasPermission('student_management.add_studentmodel');
 
   useEffect(() => {
     if (canView && studentId) {

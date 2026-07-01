@@ -1,11 +1,12 @@
 // src/app/dashboard/staff/students/[id]/components/tabs/GuardiansTab.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { studentsAPI, otherGuardiansAPI, parentsAPI } from '@/lib/api';
 import { Student, Parent, OtherGuardian, Student as StudentType } from '@/lib/types';
 import {
   Users, Plus, Edit, Trash2, User as UserIcon, Phone, Mail,
-  ChevronRight, Loader2, X, Briefcase, MapPin, UserPlus
+  ChevronRight, Loader2, X, Briefcase, MapPin, UserPlus,
+  CheckCircle2, AlertTriangle, XCircle
 } from 'lucide-react';
 
 // Relationship choices matching StudentModel.RelationshipType.choices
@@ -23,6 +24,126 @@ const RELATIONSHIPS = [
 // Titles
 const TITLES = ['Mr.', 'Mrs.', 'Miss', 'Dr.', 'Prof.', 'Alhaji', 'Chief', 'Engr.', 'Hon.'];
 
+// ─── Toast System ──────────────────────────────────────────────────────────
+type ToastType = 'success' | 'error' | 'info';
+interface ToastItem { id: number; message: string; type: ToastType; }
+
+function useToasts() {
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const showToast = useCallback((message: string, type: ToastType = 'success') => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3500);
+  }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  return { toasts, showToast, dismissToast };
+}
+
+function ToastContainer({ toasts, dismissToast }: { toasts: ToastItem[]; dismissToast: (id: number) => void }) {
+  if (toasts.length === 0) return null;
+
+  const styles: Record<ToastType, { bg: string; border: string; text: string; icon: React.ReactNode }> = {
+    success: {
+      bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-800',
+      icon: <CheckCircle2 className="h-5 w-5 text-emerald-500 flex-shrink-0" />
+    },
+    error: {
+      bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800',
+      icon: <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+    },
+    info: {
+      bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800',
+      icon: <AlertTriangle className="h-5 w-5 text-blue-500 flex-shrink-0" />
+    },
+  };
+
+  return (
+    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 w-full max-w-sm pointer-events-none">
+      {toasts.map(t => {
+        const s = styles[t.type];
+        return (
+          <div
+            key={t.id}
+            className={`pointer-events-auto flex items-start gap-2.5 p-3.5 rounded-xl border shadow-lg ${s.bg} ${s.border} ${s.text} animate-toast-in`}
+          >
+            {s.icon}
+            <p className="text-sm font-medium flex-1">{t.message}</p>
+            <button
+              onClick={() => dismissToast(t.id)}
+              className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        );
+      })}
+      <style jsx global>{`
+        @keyframes toast-in {
+          from { opacity: 0; transform: translateX(16px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        .animate-toast-in {
+          animation: toast-in 0.2s ease-out;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ─── Confirm Dialog ────────────────────────────────────────────────────────
+interface ConfirmDialogProps {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  loading?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function ConfirmDialog({ title, message, confirmLabel = 'Delete', loading, onConfirm, onCancel }: ConfirmDialogProps) {
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-10 h-10 bg-red-100 text-red-600 rounded-xl flex items-center justify-center flex-shrink-0">
+            <AlertTriangle className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900">{title}</h3>
+            <p className="text-sm text-slate-500 mt-1">{message}</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 mt-5">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="px-4 py-2.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className="px-4 py-2.5 text-sm font-semibold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   student: Student;
   parent: Parent | null;
@@ -36,6 +157,9 @@ export default function GuardiansTab({ student, parent, refreshParent }: Props) 
   const [showGuardianModal, setShowGuardianModal] = useState(false);
   const [editingGuardian, setEditingGuardian] = useState<OtherGuardian | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<OtherGuardian | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const { toasts, showToast, dismissToast } = useToasts();
 
   useEffect(() => {
     const loadData = async () => {
@@ -49,20 +173,27 @@ export default function GuardiansTab({ student, parent, refreshParent }: Props) 
         setOtherGuardians(guards);
       } catch (e) {
         console.error(e);
+        showToast('Failed to load guardian information', 'error');
       } finally {
         setLoading(false);
       }
     };
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [student.id, parent]);
 
-  const handleDeleteGuardian = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this guardian?')) return;
+  const handleDeleteGuardian = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await otherGuardiansAPI.delete(id);
-      setOtherGuardians(prev => prev.filter(g => g.id !== id));
+      await otherGuardiansAPI.delete(deleteTarget.id);
+      setOtherGuardians(prev => prev.filter(g => g.id !== deleteTarget.id));
+      showToast('Guardian deleted successfully', 'success');
+      setDeleteTarget(null);
     } catch (e) {
-      alert('Failed to delete guardian');
+      showToast('Failed to delete guardian', 'error');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -75,6 +206,8 @@ export default function GuardiansTab({ student, parent, refreshParent }: Props) 
 
   return (
     <div className="space-y-6">
+      <ToastContainer toasts={toasts} dismissToast={dismissToast} />
+
       {/* Primary Parent Card */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
         <div className="flex justify-between items-center mb-4">
@@ -159,16 +292,18 @@ export default function GuardiansTab({ student, parent, refreshParent }: Props) 
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex gap-2">
                     <button
                       onClick={() => { setEditingGuardian(guardian); setShowGuardianModal(true); }}
-                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      className="p-2 text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
+                      title="Edit guardian"
                     >
                       <Edit className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => handleDeleteGuardian(guardian.id)}
-                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      onClick={() => setDeleteTarget(guardian)}
+                      className="p-2 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
+                      title="Delete guardian"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -219,10 +354,25 @@ export default function GuardiansTab({ student, parent, refreshParent }: Props) 
             setShowGuardianModal(false);
             if (editingGuardian) {
               setOtherGuardians(prev => prev.map(g => g.id === saved.id ? saved : g));
+              showToast('Guardian updated successfully', 'success');
             } else {
               setOtherGuardians(prev => [...prev, saved]);
+              showToast('Guardian added successfully', 'success');
             }
           }}
+          onError={(msg) => showToast(msg, 'error')}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Delete Guardian"
+          message={`Are you sure you want to delete ${deleteTarget.first_name} ${deleteTarget.last_name}? This action cannot be undone.`}
+          confirmLabel="Delete"
+          loading={deleting}
+          onConfirm={handleDeleteGuardian}
+          onCancel={() => setDeleteTarget(null)}
         />
       )}
     </div>
@@ -235,9 +385,10 @@ interface GuardianFormModalProps {
   guardian: OtherGuardian | null;
   onClose: () => void;
   onSave: (g: OtherGuardian) => void;
+  onError: (message: string) => void;
 }
 
-function GuardianFormModal({ studentId, guardian, onClose, onSave }: GuardianFormModalProps) {
+function GuardianFormModal({ studentId, guardian, onClose, onSave, onError }: GuardianFormModalProps) {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     title: '',
@@ -283,11 +434,11 @@ function GuardianFormModal({ studentId, guardian, onClose, onSave }: GuardianFor
     try {
       const data = guardian
         ? await otherGuardiansAPI.update(guardian.id, { ...form, relationship: form.relationship as OtherGuardian['relationship'] })
-: await otherGuardiansAPI.create(studentId, { ...form, relationship: form.relationship as OtherGuardian['relationship'] });
+        : await otherGuardiansAPI.create(studentId, { ...form, relationship: form.relationship as OtherGuardian['relationship'] });
       onSave(data);
     } catch (err: any) {
       const errorDetail = err?.response?.data?.detail || err?.message || 'Failed to save guardian';
-      alert(errorDetail);
+      onError(errorDetail);
     } finally {
       setLoading(false);
     }
