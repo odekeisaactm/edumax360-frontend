@@ -218,66 +218,64 @@ export const MODULES: ModuleDef[] = [
   },
 
   {
-    key: 'result',
-    label: 'Result Management',
-    description: 'Classes, subjects, timetable, and academic setup',
-    areas: [
-      {
-        key: 'academic_settings',
-        label: 'Academic Settings',
-        description: 'Global academic rules and grading configurations',
-        permissions: [
-          { codename: 'view_academicsettingmodel',  label: 'View Settings',   desc: 'Read academic settings' },
-          { codename: 'manage_academic_settings',   label: 'Manage Settings', desc: 'Update academic rules and configurations' },
-        ],
-      },
-      {
-        key: 'class_management',
-        label: 'Class Management',
-        description: 'Classes, sections, and their configurations',
-        permissions: [
-          { codename: 'view_classmodel', label: 'View Classes',   desc: 'Read classes, sections, and configurations' },
-          { codename: 'manage_classes',  label: 'Manage Classes', desc: 'Create, edit, and delete classes and sections' },
-        ],
-      },
-      {
-        key: 'subject_management',
-        label: 'Subject Management',
-        description: 'Subjects, subject groups, and class assignments',
-        permissions: [
-          { codename: 'view_subjectmodel', label: 'View Subjects',   desc: 'Read subjects and class assignments' },
-          { codename: 'manage_subjects',   label: 'Manage Subjects', desc: 'Create, edit, and delete subjects and assignments' },
-        ],
-      },
-      {
-        key: 'timetable_management',
-        label: 'Timetable',
-        description: 'Class schedules and break times',
-        permissions: [
-          { codename: 'view_timetablemodel', label: 'View Timetable',   desc: 'Read class schedules' },
-          { codename: 'manage_timetable',    label: 'Manage Timetable', desc: 'Create, edit, and delete timetable entries' },
-        ],
-      },
-      {
-        key: 'promotions_management',
-        label: 'Promotions',
-        description: 'Class promotion mappings and student academic history',
-        permissions: [
-          { codename: 'view_promotionmappingmodel', label: 'View Promotions',   desc: 'Read promotion rules and student history' },
-          { codename: 'manage_promotions',          label: 'Manage Promotions', desc: 'Create, edit, and delete promotion mappings' },
-        ],
-      },
-      {
-        key: 'leadership_roles',
-        label: 'Leadership Roles',
-        description: 'Academic leadership positions (e.g., Head Teacher, Principal)',
-        permissions: [
-          { codename: 'view_leadershiprolemodel',  label: 'View Leadership Roles',   desc: 'Read leadership assignments' },
-          { codename: 'manage_leadership_roles',   label: 'Manage Leadership Roles', desc: 'Assign, edit, and remove leadership roles' },
-        ],
-      },
-    ],
-  },
+  key: 'result',
+  label: 'Result Management',
+  description: 'Result upload, publishing, and grading configuration',
+  areas: [
+    {
+      key: 'result_records',
+      label: 'Result Records',
+      description: 'Score and text result entry',
+      permissions: [
+        { codename: 'view_resultmodel',   label: 'View Results',       desc: 'Read student score and text results' },
+        { codename: 'change_resultmodel', label: 'Enter/Edit Results', desc: 'Upload or update score and text results' },
+      ],
+    },
+    {
+      key: 'result_publishing',
+      label: 'Publishing',
+      description: 'Release results to students and parents',
+      permissions: [
+        { codename: 'can_publish_result', label: 'Publish/Unpublish Results', desc: 'Release or withhold results from students and parents' },
+      ],
+    },
+    {
+      key: 'result_archive',
+      label: 'Past Results',
+      description: 'Access to prior terms/sessions',
+      permissions: [
+        { codename: 'view_past_result', label: 'View Past Results', desc: 'Read archived results from previous terms/sessions' },
+        { codename: 'edit_past_result', label: 'Edit Past Results', desc: 'Modify archived results from previous terms/sessions' },
+      ],
+    },
+    {
+      key: 'result_statistics',
+      label: 'Statistics & Analytics',
+      description: 'Class and student performance analytics',
+      permissions: [
+        { codename: 'view_resultstatisticsmodel', label: 'View Analytics', desc: 'Read result statistics and performance analytics' },
+      ],
+    },
+    {
+      key: 'result_settings',
+      label: 'Result Settings',
+      description: 'Core toggles: who can upload, view windows, publishing rules',
+      permissions: [
+        { codename: 'view_resultsettingsmodel',   label: 'View Settings',   desc: 'Read result settings' },
+        { codename: 'change_resultsettingsmodel', label: 'Manage Settings', desc: 'Update result settings' },
+      ],
+    },
+    {
+      key: 'result_configuration',
+      label: 'Configuration',
+      description: 'Grade sets, field sets, groups, behavior categories, comment and text templates',
+      permissions: [
+        { codename: 'view_result_configuration',   label: 'View Configuration',   desc: 'Read grade sets, field sets, groups, behavior categories, and templates' },
+        { codename: 'manage_result_configuration', label: 'Manage Configuration', desc: 'Create, edit, and delete grade sets, field sets, groups, behavior categories, and templates' },
+      ],
+    },
+  ],
+},
     {
     key: 'finance',
     label: 'Finance',
@@ -329,30 +327,50 @@ export const MODULES: ModuleDef[] = [
   {
     key: 'fee_management',
     label: 'Fee Management',
-    description: 'Invoices, payments, fee waivers, and payment gateway webhooks',
+    description: 'Fee structures, student & family invoicing, payment verification, and concessions',
     areas: [
       {
-        key: 'fee_operations',
-        label: 'Fee Operations',
-        description: 'Manage invoices, payments, and fee records',
+        key: 'structures_settings',
+        label: 'Fee Structures & Settings',
+        description: 'Define fee items, termly price lists, and bursary rules',
         permissions: [
-          { codename: 'manage_fees', label: 'Manage Fees', desc: 'Create and update invoices, payments, and fee records' },
+          { codename: 'view_feemodel',          label: 'View Fee Catalog',          desc: 'Read fee items, groups, and pricing structures' },
+          { codename: 'manage_fees',            label: 'Manage Fee Structures',     desc: 'Create, edit, and delete fee items, price lists, and billing structures' },
+          { codename: 'view_feesettingmodel',   label: 'View Fee Settings',         desc: 'Read automated billing rules, reminder intervals, and WhatsApp bot configs' },
+          { codename: 'change_feesettingmodel', label: 'Manage Fee Settings',       desc: 'Update automated billing, proof upload controls, and reminder settings' },
         ],
       },
       {
-        key: 'fee_waivers',
-        label: 'Fee Waivers',
-        description: 'Approve or reject fee waiver requests',
+        key: 'invoicing_billing',
+        label: 'Invoicing & Ancillary Debts',
+        description: 'Student invoices, shared family bills, fines, and batch generation',
         permissions: [
-          { codename: 'approve_fee_waiver', label: 'Approve/Reject Fee Waivers', desc: 'Review and decide on submitted fee waiver requests' },
+          { codename: 'view_invoicemodel',        label: 'View Invoices & Bills',   desc: 'Read student invoices, shared family bills, and financial dashboards' },
+          { codename: 'add_invoicemodel',         label: 'Generate Invoices',       desc: 'Create single student/family invoices and trigger bulk termly billing runs' },
+          { codename: 'change_invoicemodel',      label: 'Edit & Void Invoices',    desc: 'Add/remove bill items, apply correction batches, and void erroneous invoices' },
+          { codename: 'view_otherpaymentmodel',   label: 'View Ancillary Debts',    desc: 'Read library fines, property damage charges, and historical carry-over debts' },
+          { codename: 'add_otherpaymentmodel',    label: 'Record Ancillary Debts',  desc: 'Issue fines, damage charges, and miscellaneous fees to students' },
         ],
       },
       {
-        key: 'payment_confirmation',
-        label: 'Payment Confirmation',
-        description: 'Confirm parent/staff-submitted payments',
+        key: 'collections_verification',
+        label: 'Payment Collections & Verification',
+        description: 'Record desk payments, verify bank transfers, and audit webhooks',
         permissions: [
-          { codename: 'confirm_payment', label: 'Confirm Payments', desc: 'Verify and confirm submitted fee payments' },
+          { codename: 'view_feepaymentmodel',     label: 'View Payments & Receipts',desc: 'Read student/family payment records, proofs of payment, and receipts' },
+          { codename: 'add_feepaymentmodel',      label: 'Record Desk Payments',    desc: 'Submit cash, POS, teller, and wallet fee payments at the bursary desk' },
+          { codename: 'confirm_payment',          label: 'Confirm & Revert Payments',desc: 'Verify bank transfers, confirm pending proof uploads, and reverse cleared payments' },
+        ],
+      },
+      {
+        key: 'concessions_waivers',
+        label: 'Discounts & Fee Waivers',
+        description: 'Staff child concessions, scholarship tiers, and debt waivers',
+        permissions: [
+          { codename: 'view_discountmodel',       label: 'View Concessions',        desc: 'Read master discounts, class promotion tiers, and student enrollments' },
+          { codename: 'add_discountmodel',        label: 'Manage Concessions',      desc: 'Create discounts, configure class tiers, and enroll students into concessions' },
+          { codename: 'view_feewaivermodel',      label: 'View Waiver Requests',    desc: 'Read submitted fee waiver requests and historical decisions' },
+          { codename: 'approve_fee_waiver',       label: 'Approve / Reject Waivers',desc: 'Review, approve, or reject pending fee reduction and waiver requests' },
         ],
       },
     ],

@@ -669,9 +669,9 @@ export default function ResultGradeSetsPage() {
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canCreate = user?.is_superuser || hasPermission('result.add_resultgradesetmodel');
-  const canEdit   = user?.is_superuser || hasPermission('result.change_resultgradesetmodel');
-  const canDelete = user?.is_superuser || hasPermission('result.delete_resultgradesetmodel');
+  const canCreate = user?.is_superuser || hasPermission('result.manage_result_configuration');
+  const canEdit   = user?.is_superuser || hasPermission('result.manage_result_configuration');
+  const canDelete = user?.is_superuser || hasPermission('result.manage_result_configuration');
 
   const useMidterm = settings?.use_midterm ?? false;
   const midtermMax = Number(settings?.midterm_max_score ?? 20);

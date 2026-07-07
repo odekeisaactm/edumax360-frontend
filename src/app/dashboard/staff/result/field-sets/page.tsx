@@ -584,9 +584,9 @@ export default function ResultFieldSetsPage() {
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canCreate = user?.is_superuser || hasPermission('result.add_resultfieldsetmodel');
-  const canEdit   = user?.is_superuser || hasPermission('result.change_resultfieldsetmodel');
-  const canDelete = user?.is_superuser || hasPermission('result.delete_resultfieldsetmodel');
+  const canCreate = user?.is_superuser || hasPermission('result.manage_result_configuration');
+  const canEdit   = user?.is_superuser || hasPermission('result.manage_result_configuration');
+  const canDelete = user?.is_superuser || hasPermission('result.manage_result_configuration');
 
   const useMidterm = settings?.use_midterm ?? false;
   const midtermMax = Number(settings?.midterm_max_score ?? 20);

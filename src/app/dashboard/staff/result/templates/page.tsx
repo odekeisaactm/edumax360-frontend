@@ -313,7 +313,7 @@ function TemplateCard({
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function ResultTemplatesPage() {
   const { hasPermission, user } = useAuth();
-  const canEdit = user?.is_superuser || hasPermission('result.change_resultsettingsmodel');
+  const canEdit = user?.is_superuser || hasPermission('result.manage_result_configuration');
 
   const [activeTab, setActiveTab]         = useState<TabType>('score');
   const [templates, setTemplates]         = useState<ResultTemplate[]>([]);

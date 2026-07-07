@@ -457,9 +457,9 @@ export default function ResultGroupsPage() {
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canCreate = user?.is_superuser || hasPermission('result.add_resultconfigurationgroupmodel');
-  const canEdit   = user?.is_superuser || hasPermission('result.change_resultconfigurationgroupmodel');
-  const canDelete = user?.is_superuser || hasPermission('result.delete_resultconfigurationgroupmodel');
+  const canCreate = user?.is_superuser || hasPermission('result.manage_result_configuration');
+  const canEdit   = user?.is_superuser || hasPermission('result.manage_result_configuration');
+  const canDelete = user?.is_superuser || hasPermission('result.manage_result_configuration');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

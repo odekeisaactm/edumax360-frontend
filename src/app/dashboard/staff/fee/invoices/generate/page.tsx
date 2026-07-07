@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { feeAPI, academicCalendarAPI, academicAPI } from '@/lib/api';
+import { academicCalendarAPI, academicAPI } from '@/lib/api';
+import { feeAPI } from '@/lib/fee.service';
 import {
   InvoiceGenerationJob,
   Session,
@@ -54,7 +55,7 @@ function ToastStack({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: numb
 export default function InvoiceGenerationPage() {
   const router = useRouter();
   const { user } = useAuth();
-  
+
   const [toasts, setToasts] = useState<Toast[]>([]);
   const counter = useRef(0);
   const showToast = (type: Toast['type'], message: string) => {
@@ -65,17 +66,18 @@ export default function InvoiceGenerationPage() {
 
   const [loading, setLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
-  
+
   const [sessions, setSessions] = useState<Session[]>([]);
   const [allPeriods, setAllPeriods] = useState<AcademicSessionPeriod[]>([]);
   const [classes, setClasses] = useState<ClassModel[]>([]);
   const [jobs, setJobs] = useState<InvoiceGenerationJob[]>([]);
-  
+
   const [selectedSession, setSelectedSession] = useState<string>('');
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
   const [selectedClasses, setSelectedClasses] = useState<number[]>([]);
-  
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+
+  // FIXED: activeJobId expects a number now, not a string
+  const [activeJobId, setActiveJobId] = useState<number | null>(null);
   const [activeJob, setActiveJob] = useState<InvoiceGenerationJob | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -86,9 +88,9 @@ export default function InvoiceGenerationPage() {
         academicCalendarAPI.listSessions(),
         academicCalendarAPI.listSessionPeriods(),
         academicAPI.listClasses({ is_active: true }),
-        feeAPI.getGenerationJobs({ limit: 5 }),
+        feeAPI.generationJobs.list(), // FIXED: No arguments to list()
       ]);
-      
+
       setSessions(sData);
       setAllPeriods(pData);
       setClasses(cData);
@@ -113,15 +115,16 @@ export default function InvoiceGenerationPage() {
   useEffect(() => { loadInitialData(); }, [loadInitialData]);
 
   // Polling logic
-  const pollJobStatus = useCallback(async (jobId: string) => {
+  // FIXED: jobId expects a number
+  const pollJobStatus = useCallback(async (jobId: number) => {
     try {
-      const status = await feeAPI.getJobStatus(jobId);
+      const status = await feeAPI.generationJobs.getStatus(jobId);
       setActiveJob(status);
-      
+
       if (status.is_complete) {
         if (pollingRef.current) clearInterval(pollingRef.current);
         setActiveJobId(null);
-        showToast(status.status === 'success' ? 'success' : 'error', 
+        showToast(status.status === 'success' ? 'success' : 'error',
           status.status === 'success' ? 'Invoice generation completed successfully!' : 'Generation failed.');
         loadInitialData(); // Refresh history
       }
@@ -148,13 +151,13 @@ export default function InvoiceGenerationPage() {
 
     setIsStarting(true);
     try {
-      const job = await feeAPI.startGenerationJob({
+      const job = await feeAPI.generationJobs.start({
         session_id: parseInt(selectedSession),
         period_id: parseInt(selectedPeriod),
         class_ids: selectedClasses,
       });
-      
-      setActiveJobId(job.id);
+
+      setActiveJobId(job.id); // FIXED: Passing the raw numeric ID
       setActiveJob(job);
       showToast('success', 'Generation job started in the background.');
     } catch (err: any) {
@@ -230,15 +233,15 @@ export default function InvoiceGenerationPage() {
                  </div>
               </div>
               <div className="text-right">
-                 <p className="text-2xl font-black text-emerald-600 tracking-tighter">{activeJob.progress_pct}%</p>
+                 <p className="text-2xl font-black text-emerald-600 tracking-tighter">{activeJob.progress_pct || 0}%</p>
                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Completed</p>
               </div>
            </div>
 
            <div className="w-full bg-slate-100 h-4 rounded-full overflow-hidden mb-6 shadow-inner">
-              <div 
+              <div
                 className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full transition-all duration-1000 ease-out shadow-lg"
-                style={{ width: `${activeJob.progress_pct}%` }}
+                style={{ width: `${activeJob.progress_pct || 0}%` }}
               />
            </div>
 
@@ -260,7 +263,7 @@ export default function InvoiceGenerationPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
+
         {/* Run Configuration */}
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
@@ -320,7 +323,7 @@ export default function InvoiceGenerationPage() {
                       className="text-[10px] font-black text-slate-400 hover:text-slate-600 transition-colors uppercase tracking-tighter">CLEAR</button>
                  </div>
               </div>
-              
+
               <div className="p-8 overflow-y-auto custom-scrollbar flex-1">
                  {classes.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4 opacity-50">
@@ -334,10 +337,10 @@ export default function InvoiceGenerationPage() {
                           return (
                              <button key={cls.id} onClick={() => toggleClass(cls.id)}
                                className={`group relative p-5 rounded-2xl border-2 transition-all duration-300 text-left overflow-hidden
-                                 ${isSelected 
-                                   ? 'bg-emerald-600 border-emerald-600 text-white shadow-xl shadow-emerald-500/20 translate-y-[-2px]' 
+                                 ${isSelected
+                                   ? 'bg-emerald-600 border-emerald-600 text-white shadow-xl shadow-emerald-500/20 translate-y-[-2px]'
                                    : 'bg-white border-slate-100 text-slate-600 hover:border-emerald-300 hover:bg-emerald-50/30'}`}>
-                                
+
                                 <div className="flex items-center justify-between relative z-10">
                                    <p className="text-xs font-black uppercase tracking-tight truncate pr-4">{cls.name}</p>
                                    {isSelected ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <Plus className="h-4 w-4 shrink-0 opacity-0 group-hover:opacity-100 text-emerald-400 transition-opacity" />}
@@ -394,7 +397,8 @@ export default function InvoiceGenerationPage() {
                      jobs.map(job => (
                         <tr key={job.id} className="hover:bg-slate-50/50 transition-colors">
                            <td className="px-8 py-5">
-                              <p className="text-xs font-mono font-bold text-slate-600">#{job.id?.toString().substring(0, 8).toUpperCase()}</p>
+                              {/* FIXED: job.job_id is the string UUID */}
+                              <p className="text-xs font-mono font-bold text-slate-600">#{job.job_id ? job.job_id.substring(0, 8).toUpperCase() : job.id}</p>
                            </td>
                            <td className="px-8 py-5">
                               <div className="flex items-center gap-2">
@@ -409,13 +413,13 @@ export default function InvoiceGenerationPage() {
                            <td className="px-8 py-5">
                               <div className="flex items-center gap-2">
                                  <div className={`w-2 h-2 rounded-full ${
-                                   job.status === 'success' ? 'bg-emerald-500' : 
-                                   job.status === 'failure' ? 'bg-red-500' : 
+                                   job.status === 'success' ? 'bg-emerald-500' :
+                                   job.status === 'failure' ? 'bg-red-500' :
                                    'bg-amber-500 animate-pulse'
                                  }`} />
                                  <span className={`text-[10px] font-black uppercase tracking-tighter ${
-                                   job.status === 'success' ? 'text-emerald-600' : 
-                                   job.status === 'failure' ? 'text-red-600' : 
+                                   job.status === 'success' ? 'text-emerald-600' :
+                                   job.status === 'failure' ? 'text-red-600' :
                                    'text-amber-600'
                                  }`}>
                                     {job.status_display || job.status}
@@ -425,7 +429,7 @@ export default function InvoiceGenerationPage() {
                            <td className="px-8 py-5">
                               <div className="flex items-center gap-4">
                                  <div className="w-24 bg-slate-100 h-1.5 rounded-full overflow-hidden shadow-inner">
-                                    <div className={`h-full ${job.status === 'failure' ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${job.progress_pct}%` }} />
+                                    <div className={`h-full ${job.status === 'failure' ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${job.progress_pct || 0}%` }} />
                                  </div>
                                  <span className="text-[10px] font-black text-slate-400 whitespace-nowrap">{job.processed_students} / {job.total_students}</span>
                               </div>

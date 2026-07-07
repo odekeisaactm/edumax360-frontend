@@ -1,0 +1,673 @@
+// src/lib/api/fee.service.ts
+
+import api from './api';
+import type {
+  FeeGroup,
+  Fee,
+  FeeStructure,
+  PeriodFeeAmount,
+  FeeSetting,
+  Discount,
+  ClassDiscountTier,
+  StudentDiscountEnrollment,
+  DiscountApplication,
+  StudentDiscount,
+  FeeWaiver,
+  InvoiceCorrectionBatch,
+  Invoice,
+  InvoiceItem,
+  FamilyInvoice,
+  FeePayment,
+  FamilyFeePayment,
+  OtherPayment,
+  OtherPaymentClearance,
+  InvoiceGenerationJob,
+  StudentFinancialDashboard,
+} from '@/lib/fee.types';
+
+// ============================================================
+// BASE PATH VARIABLE
+// ============================================================
+
+const FEE_API_BASE = '/api/fee';
+
+/**
+ * Cleanly format backend Django REST Framework error structures
+ */
+const getDrfError = (error: any): string => {
+  const data = error?.response?.data;
+  if (data && typeof data === 'object') {
+    if (data.detail) return String(data.detail);
+    if (data.message) return String(data.message);
+    if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
+      return String(data.non_field_errors[0]);
+    }
+
+    // Format field-specific errors cleanly
+    for (const [key, val] of Object.entries(data)) {
+      if (Array.isArray(val) && val.length > 0) {
+        const fieldName = key.charAt(0).toUpperCase() + key.slice(1);
+        return `${fieldName}: ${val[0]}`;
+      }
+      if (typeof val === 'string') return val;
+    }
+  }
+  return error?.message || 'An error occurred';
+};
+
+// ============================================================
+// COMMON LIST FILTER INTERFACES
+// ============================================================
+
+export interface FeeListFilters {
+  search?: string;
+  occurrence?: string;
+  parent_bound?: boolean;
+}
+
+export interface InvoiceListFilters {
+  student?: number;
+  parent?: number;
+  session?: number;
+  period?: number;
+  status?: string;
+  search?: string;
+  page?: number;
+}
+
+export interface PaymentListFilters {
+  invoice?: number;
+  status?: string;
+  payment_mode?: string;
+  date?: string;
+  start_date?: string;
+  end_date?: string;
+  search?: string;
+  page?: number;
+}
+
+export interface OtherPaymentListFilters {
+  student?: number;
+  session?: number;
+  period?: number;
+  status?: string;
+  category?: string;
+  search?: string;
+}
+
+// ============================================================
+// 1. FEE GROUPS
+// ============================================================
+
+export const feeGroupsAPI = {
+  list: async (search?: string): Promise<FeeGroup[]> => {
+    const response = await api.get(`${FEE_API_BASE}/groups/`, { params: { search } });
+    return response.data?.results || response.data || [];
+  },
+
+  create: async (data: { name: string; description?: string }): Promise<FeeGroup> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/groups/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  get: async (id: number): Promise<FeeGroup> => {
+    const response = await api.get(`${FEE_API_BASE}/groups/${id}/`);
+    return response.data;
+  },
+
+  update: async (id: number, data: Partial<FeeGroup>): Promise<FeeGroup> => {
+    try {
+      const response = await api.put(`${FEE_API_BASE}/groups/${id}/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`${FEE_API_BASE}/groups/${id}/`);
+  },
+};
+
+// ============================================================
+// 2. FEES (PRICE LIST DEFINITIONS)
+// ============================================================
+
+export const feesAPI = {
+  list: async (filters?: FeeListFilters): Promise<Fee[]> => {
+    const response = await api.get(`${FEE_API_BASE}/fees/`, { params: filters });
+    return response.data?.results || response.data || [];
+  },
+
+  create: async (data: Partial<Fee>): Promise<Fee> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/fees/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  get: async (id: number): Promise<Fee> => {
+    const response = await api.get(`${FEE_API_BASE}/fees/${id}/`);
+    return response.data;
+  },
+
+  update: async (id: number, data: Partial<Fee>): Promise<Fee> => {
+    try {
+      const response = await api.put(`${FEE_API_BASE}/fees/${id}/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`${FEE_API_BASE}/fees/${id}/`);
+  },
+};
+
+// ============================================================
+// 3. FEE STRUCTURES (FEE MASTERS)
+// ============================================================
+
+export const feeStructuresAPI = {
+  list: async (params?: { fee?: number; group?: number; search?: string }): Promise<FeeStructure[]> => {
+    const response = await api.get(`${FEE_API_BASE}/structures/`, { params });
+    return response.data?.results || response.data || [];
+  },
+
+  create: async (data: Partial<FeeStructure>): Promise<FeeStructure> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/structures/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  get: async (id: number): Promise<FeeStructure> => {
+    const response = await api.get(`${FEE_API_BASE}/structures/${id}/`);
+    return response.data;
+  },
+
+  update: async (id: number, data: Partial<FeeStructure>): Promise<FeeStructure> => {
+    try {
+      const response = await api.put(`${FEE_API_BASE}/structures/${id}/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`${FEE_API_BASE}/structures/${id}/`);
+  },
+
+  setPeriodAmounts: async (id: number, amounts: { period: number; amount: string | number }[]): Promise<PeriodFeeAmount[]> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/structures/${id}/set-period-amounts/`, amounts);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+};
+
+// ============================================================
+// 4. FEE SETTINGS (SINGLETON)
+// ============================================================
+
+export const feeSettingsAPI = {
+  get: async (): Promise<FeeSetting | null> => {
+    try {
+      const response = await api.get(`${FEE_API_BASE}/settings/retrieve_settings/`);
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) return null;
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  update: async (data: Partial<FeeSetting>): Promise<FeeSetting> => {
+    try {
+      const response = await api.patch(`${FEE_API_BASE}/settings/update_settings/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+};
+
+// ============================================================
+// 5. DISCOUNTS & CONCESSION TIERS (OPTION A)
+// ============================================================
+
+export const discountsAPI = {
+  list: async (params?: { search?: string; occurrence?: string; discount_type?: string }): Promise<Discount[]> => {
+    const response = await api.get(`${FEE_API_BASE}/discounts/`, { params });
+    return response.data?.results || response.data || [];
+  },
+
+  create: async (data: Partial<Discount>): Promise<Discount> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/discounts/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  get: async (id: number): Promise<Discount> => {
+    const response = await api.get(`${FEE_API_BASE}/discounts/${id}/`);
+    return response.data;
+  },
+
+  update: async (id: number, data: Partial<Discount>): Promise<Discount> => {
+    try {
+      const response = await api.put(`${FEE_API_BASE}/discounts/${id}/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`${FEE_API_BASE}/discounts/${id}/`);
+  },
+};
+
+export const discountTiersAPI = {
+  list: async (params?: { discount?: number; student_class?: number }): Promise<ClassDiscountTier[]> => {
+    const response = await api.get(`${FEE_API_BASE}/discount-tiers/`, { params });
+    return response.data?.results || response.data || [];
+  },
+
+  create: async (data: { discount: number; student_class: number; tier_amount: string | number }): Promise<ClassDiscountTier> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/discount-tiers/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  update: async (id: number, data: Partial<ClassDiscountTier>): Promise<ClassDiscountTier> => {
+    try {
+      const response = await api.put(`${FEE_API_BASE}/discount-tiers/${id}/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`${FEE_API_BASE}/discount-tiers/${id}/`);
+  },
+};
+
+export const discountEnrollmentsAPI = {
+  list: async (params?: { student?: number; discount?: number; is_active?: boolean; search?: string }): Promise<StudentDiscountEnrollment[]> => {
+    const response = await api.get(`${FEE_API_BASE}/discount-enrollments/`, { params });
+    return response.data?.results || response.data || [];
+  },
+
+  create: async (data: { student: number; discount: number; is_active?: boolean }): Promise<StudentDiscountEnrollment> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/discount-enrollments/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  update: async (id: number, data: Partial<StudentDiscountEnrollment>): Promise<StudentDiscountEnrollment> => {
+    try {
+      const response = await api.put(`${FEE_API_BASE}/discount-enrollments/${id}/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`${FEE_API_BASE}/discount-enrollments/${id}/`);
+  },
+};
+
+// ============================================================
+// 6. FEE WAIVERS
+// ============================================================
+
+export const feeWaiversAPI = {
+  list: async (params?: { status?: string; invoice_item?: number; family_invoice_item?: number }): Promise<FeeWaiver[]> => {
+    const response = await api.get(`${FEE_API_BASE}/waivers/`, { params });
+    return response.data?.results || response.data || [];
+  },
+
+  create: async (data: { invoice_item?: number; family_invoice_item?: number; amount_waived: string | number; reason: string }): Promise<FeeWaiver> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/waivers/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  approve: async (id: number): Promise<FeeWaiver> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/waivers/${id}/approve/`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  reject: async (id: number, rejection_reason: string): Promise<FeeWaiver> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/waivers/${id}/reject/`, { rejection_reason });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+};
+
+// ============================================================
+// 7. INVOICES (STUDENT & FAMILY)
+// ============================================================
+
+export const invoicesAPI = {
+  list: async (filters?: InvoiceListFilters): Promise<any> => {
+    const response = await api.get(`${FEE_API_BASE}/invoices/`, { params: filters });
+    return response.data;
+  },
+
+  get: async (id: number): Promise<Invoice> => {
+    const response = await api.get(`${FEE_API_BASE}/invoices/${id}/`);
+    return response.data;
+  },
+
+  createManual: async (data: { student: number; session: number; period: number }): Promise<Invoice> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/invoices/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  generateSingle: async (data: { student_id: number; session_id: number; period_id: number }) => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/invoices/generate-single/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  void: async (id: number): Promise<Invoice> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/invoices/${id}/void/`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  delete: async (id: number): Promise<void> => {
+    try {
+      await api.delete(`${FEE_API_BASE}/invoices/${id}/`);
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  addItem: async (data: { invoice_id: number; fee_master_id: number }): Promise<InvoiceItem> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/invoice-items/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  removeItem: async (itemId: number): Promise<void> => {
+    try {
+      await api.delete(`${FEE_API_BASE}/invoice-items/${itemId}/`);
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+};
+
+export const familyInvoicesAPI = {
+  list: async (filters?: InvoiceListFilters): Promise<any> => {
+    const response = await api.get(`${FEE_API_BASE}/family-invoices/`, { params: filters });
+    return response.data;
+  },
+
+  get: async (id: number): Promise<FamilyInvoice> => {
+    const response = await api.get(`${FEE_API_BASE}/family-invoices/${id}/`);
+    return response.data;
+  },
+
+  void: async (id: number): Promise<FamilyInvoice> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/family-invoices/${id}/void/`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+};
+
+// ============================================================
+// 8. PAYMENTS (STUDENT & FAMILY)
+// ============================================================
+
+export const feePaymentsAPI = {
+  list: async (filters?: PaymentListFilters): Promise<any> => {
+    const response = await api.get(`${FEE_API_BASE}/payments/`, { params: filters });
+    return response.data;
+  },
+
+  listPending: async (): Promise<FeePayment[]> => {
+    const response = await api.get(`${FEE_API_BASE}/payments/pending/`);
+    return response.data?.results || response.data || [];
+  },
+
+  record: async (data: FormData | any): Promise<FeePayment> => {
+    const isFormData = data instanceof FormData;
+    try {
+      const response = await api.post(`${FEE_API_BASE}/payments/record/`, data, {
+        headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  confirm: async (id: number, item_breakdown?: { invoice_item_id: number; amount: string | number }[]): Promise<FeePayment> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/payments/${id}/confirm/`, { item_breakdown });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  revert: async (id: number, reason: string): Promise<FeePayment> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/payments/${id}/revert/`, { reason });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+};
+
+export const familyPaymentsAPI = {
+  list: async (filters?: PaymentListFilters): Promise<any> => {
+    const response = await api.get(`${FEE_API_BASE}/family-payments/`, { params: filters });
+    return response.data;
+  },
+
+  record: async (data: FormData | any): Promise<FamilyFeePayment> => {
+    const isFormData = data instanceof FormData;
+    try {
+      const response = await api.post(`${FEE_API_BASE}/family-payments/record/`, data, {
+        headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  confirm: async (id: number, item_breakdown?: { family_invoice_item_id: number; amount: string | number }[]): Promise<FamilyFeePayment> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/family-payments/${id}/confirm/`, { item_breakdown });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  revert: async (id: number, reason: string): Promise<FamilyFeePayment> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/family-payments/${id}/revert/`, { reason });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+};
+
+// ============================================================
+// 9. ANCILLARY DEBTS & CLEARANCES
+// ============================================================
+
+export const otherPaymentsAPI = {
+  list: async (filters?: OtherPaymentListFilters): Promise<OtherPayment[]> => {
+    const response = await api.get(`${FEE_API_BASE}/other-payments/`, { params: filters });
+    return response.data?.results || response.data || [];
+  },
+
+  create: async (data: Partial<OtherPayment>): Promise<OtherPayment> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/other-payments/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  update: async (id: number, data: Partial<OtherPayment>): Promise<OtherPayment> => {
+    try {
+      const response = await api.put(`${FEE_API_BASE}/other-payments/${id}/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`${FEE_API_BASE}/other-payments/${id}/`);
+  },
+};
+
+export const otherPaymentClearancesAPI = {
+  list: async (params?: { other_payment?: number; status?: string }): Promise<OtherPaymentClearance[]> => {
+    const response = await api.get(`${FEE_API_BASE}/other-payment-clearances/`, { params });
+    return response.data?.results || response.data || [];
+  },
+
+  create: async (data: { other_payment: number; amount: string | number; payment_mode: string; bank_account?: number; date?: string; reference?: string; notes?: string }): Promise<OtherPaymentClearance> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/other-payment-clearances/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  reverse: async (id: number, reason: string): Promise<OtherPaymentClearance> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/other-payment-clearances/${id}/reverse/`, { reason });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+};
+
+// ============================================================
+// 10. GENERATION JOBS & DASHBOARD
+// ============================================================
+
+export const generationJobsAPI = {
+  list: async (): Promise<InvoiceGenerationJob[]> => {
+    const response = await api.get(`${FEE_API_BASE}/generation-jobs/`);
+    return response.data?.results || response.data || [];
+  },
+
+  start: async (data: { session_id: number; period_id: number; class_ids: number[] }): Promise<InvoiceGenerationJob> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/generation-jobs/start/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  getStatus: async (id: number): Promise<any> => {
+    const response = await api.get(`${FEE_API_BASE}/generation-jobs/${id}/job_status/`);
+    return response.data;
+  },
+};
+
+export const studentDashboardAPI = {
+  get: async (studentId: number, params?: { invoice_id?: number; session_id?: number; period_id?: number }): Promise<StudentFinancialDashboard> => {
+    try {
+      const response = await api.get(`${FEE_API_BASE}/students/${studentId}/dashboard/`, { params });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+};
+
+// ============================================================
+// EXPORT ALL API SERVICES AS A SINGLE OBJECT
+// ============================================================
+
+export const feeAPI = {
+  groups: feeGroupsAPI,
+  fees: feesAPI,
+  structures: feeStructuresAPI,
+  settings: feeSettingsAPI,
+  discounts: discountsAPI,
+  discountTiers: discountTiersAPI,
+  discountEnrollments: discountEnrollmentsAPI,
+  waivers: feeWaiversAPI,
+  invoices: invoicesAPI,
+  familyInvoices: familyInvoicesAPI,
+  payments: feePaymentsAPI,
+  familyPayments: familyPaymentsAPI,
+  otherPayments: otherPaymentsAPI,
+  otherPaymentClearances: otherPaymentClearancesAPI,
+  generationJobs: generationJobsAPI,
+  studentDashboard: studentDashboardAPI,
+};
+
+// ============================================================
+// DEFAULT EXPORT
+// ============================================================
+
+export default feeAPI;

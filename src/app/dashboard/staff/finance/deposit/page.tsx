@@ -9,12 +9,23 @@ import {
   financeSettingsAPI,
   studentFundingAPI,
   staffFundingAPI,
+  bankDetailsAPI,
+  gatewayAPI,
+  onlinePaymentAPI,
 } from '@/lib/api';
 import {
   Users, Search, ArrowLeft, X, Loader2, UserCircle, Sparkles,
   AlertCircle, Check, Wallet, CreditCard, Banknote, ChevronDown,
-  Eye, List, RefreshCw, Plus, DollarSign, Upload,
+  Eye, List, RefreshCw, Plus, DollarSign, Upload, Globe, ShieldCheck,
 } from 'lucide-react';
+
+// Declare global gateway window objects for TypeScript
+declare global {
+  interface Window {
+    PaystackPop?: any;
+    FlutterwaveCheckout?: any;
+  }
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 let _toastId = 0;
@@ -45,6 +56,10 @@ function toTitleCase(str: string): string {
   return str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 }
 
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 // ─── Toast Stack ───────────────────────────────────────────────────────────────
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
@@ -61,6 +76,24 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Full-Screen Verification Overlay ──────────────────────────────────────────
+function VerificationOverlay({ isVisible }: { isVisible: boolean }) {
+  if (!isVisible) return null;
+  return (
+    <div className="fixed inset-0 z-[80] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
+        <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-inner">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        </div>
+        <h3 className="text-lg font-bold text-slate-900 mb-1.5">Verifying Payment...</h3>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Connecting to payment gateway and reconciling the school ledger. Please do not refresh or close this window.
+        </p>
+      </div>
     </div>
   );
 }
@@ -158,7 +191,7 @@ function QuickAmount({ amount, onClick }: { amount: number; onClick: (val: numbe
 }
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
-export default function DepositPage() {
+export default function DepositCreationPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { hasPermission, user } = useAuth();
@@ -177,17 +210,25 @@ export default function DepositPage() {
   const [loadingPreset, setLoadingPreset] = useState(!!presetId);
   const [error, setError] = useState<string | null>(null);
 
+  // Mode & Gateway state
+  const [paymentMode, setPaymentMode] = useState<'offline' | 'online'>('offline');
+  const [banks, setBanks] = useState<any[]>([]);
+  const [bankAccount, setBankAccount] = useState<string>('');
+  const [hasActiveGateway, setHasActiveGateway] = useState(false);
+  const [billingEmail, setBillingEmail] = useState('');
+  const [isManualEmail, setIsManualEmail] = useState(false);
+
   const [walletType, setWalletType] = useState<'canteen' | 'fee'>('canteen');
   const [amount, setAmount] = useState<number | ''>('');
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<string>('cash');
-  const [status, setStatus] = useState<'pending' | 'confirmed'>('pending');
   const [tellerNumber, setTellerNumber] = useState('');
   const [reference, setReference] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
-  // Default after-save = list
-  const [postSaveAction, setPostSaveAction] = useState<'stay' | 'list' | 'detail'>('list');
+  // Persistent LocalStorage memory for redirect option
+  const [postSaveAction, setPostSaveAction] = useState<'stay' | 'list' | 'draw_out'>('list');
   const [savedFundingId, setSavedFundingId] = useState<number | null>(null);
 
   const [settings, setSettings] = useState<any>(null);
@@ -208,29 +249,70 @@ export default function DepositPage() {
   };
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  // ─── Fetch settings ──
+  // ── Load saved redirect preference from localStorage on mount ──
   useEffect(() => {
-    financeSettingsAPI.get().then(data => {
-      setSettings(data || {});
-      setLoadingSettings(false);
-    }).catch(() => setLoadingSettings(false));
+    const savedPref = localStorage.getItem('pos_redirect_pref') as 'stay' | 'list' | 'draw_out';
+    if (savedPref && ['stay', 'list', 'draw_out'].includes(savedPref)) {
+      setPostSaveAction(savedPref);
+    }
   }, []);
 
-  // ─── Pre-load person if presetId ──
+  const handleRedirectChange = (val: 'stay' | 'list' | 'draw_out') => {
+    setPostSaveAction(val);
+    localStorage.setItem('pos_redirect_pref', val);
+  };
+
+  // ── Dynamically Load Payment Gateway Scripts ──
+  useEffect(() => {
+    if (!document.getElementById('paystack-script')) {
+      const script = document.createElement('script');
+      script.id = 'paystack-script';
+      script.src = 'https://js.paystack.co/v1/inline.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+    if (!document.getElementById('flutterwave-script')) {
+      const script = document.createElement('script');
+      script.id = 'flutterwave-script';
+      script.src = 'https://checkout.flutterwave.com/v3.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  // ── Fetch settings, banks & gateways ──
+  useEffect(() => {
+    Promise.all([
+      financeSettingsAPI.get().catch(() => null),
+      bankDetailsAPI.list({ is_active: true, account_type: 'bank' }).catch(() => []),
+      gatewayAPI.list().catch(() => []),
+    ]).then(([settingsData, banksData, gatewaysData]) => {
+      setSettings(settingsData || {});
+      setBanks(Array.isArray(banksData) ? banksData : []);
+      setHasActiveGateway(Array.isArray(gatewaysData) && gatewaysData.some((g: any) => g.is_active));
+      setLoadingSettings(false);
+    });
+
+    const returnedRef = searchParams.get('reference') || searchParams.get('trxref');
+    if (returnedRef) {
+      handlePostPaymentReconciliation(returnedRef, null);
+    }
+  }, [router, searchParams]);
+
+  // ── Pre-load person if presetId ──
   useEffect(() => {
     if (!presetId) return;
     setLoadingPreset(true);
     const fetcher = presetType === 'student' ? studentsAPI.get : staffAPI.get;
     fetcher(presetId)
       .then(data => {
-        setSelectedPerson(data);
-        fetchWalletAndHistory(data, presetType);
+        handleSelectPerson(data);
       })
       .catch(() => setError('Could not load the person. Please search manually.'))
       .finally(() => setLoadingPreset(false));
   }, [presetId, presetType]);
 
-  // ─── Search debounce ──
+  // ── Search debounce ──
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
@@ -252,7 +334,7 @@ export default function DepositPage() {
     return () => { if (searchDebounce.current) clearTimeout(searchDebounce.current); };
   }, [searchQuery, searchType]);
 
-  // ─── Fetch wallet and recent history ──
+  // ── Fetch wallet and recent history ──
   const fetchWalletAndHistory = async (person: any, type: 'student' | 'staff') => {
     if (!person) return;
     setLoadingWallet(true);
@@ -297,11 +379,22 @@ export default function DepositPage() {
     setAmount('');
     setProofFile(null);
     setPaymentMethod(settings?.default_expense_payment_method || 'cash');
-    setStatus('pending');
+    setBankAccount('');
     setTellerNumber('');
     setReference('');
     setSavedFundingId(null);
-    setPostSaveAction('list');
+    // Note: We retain postSaveAction from localStorage instead of resetting to 'list'
+
+    let resolved = '';
+    if (person.email && typeof person.email === 'string' && person.email.trim() !== '') {
+      resolved = person.email.trim();
+    } else if (searchType === 'student' && person.parent_email && typeof person.parent_email === 'string' && person.parent_email.trim() !== '') {
+      resolved = person.parent_email.trim();
+    }
+    setBillingEmail(resolved);
+    setIsManualEmail(!resolved);
+
+    fetchWalletAndHistory(person, searchType);
   };
 
   const clearSelection = () => {
@@ -320,75 +413,198 @@ export default function DepositPage() {
     }
   };
 
-  // ─── Submit ──
+  // ── Synchronous Post-Payment Verification & Routing ──
+  const handlePostPaymentReconciliation = async (txRef: string, fundingRecordId: number | null) => {
+    setIsVerifying(true);
+    try {
+      await onlinePaymentAPI.verifyLive(txRef);
+      showToast('success', `Payment successfully verified and credited to ledger!`);
+
+      const filterType = searchType === 'student' ? 'student' : 'staff';
+
+      if (postSaveAction === 'list') {
+        router.push(`/dashboard/staff/finance/deposits?filter=${filterType}`);
+        return;
+      }
+
+      if (postSaveAction === 'draw_out' && fundingRecordId) {
+        router.push(`/dashboard/staff/finance/deposits?filter=${filterType}&open_audit=${fundingRecordId}`);
+        return;
+      }
+
+      if (selectedPerson) {
+        fetchWalletAndHistory(selectedPerson, searchType);
+      }
+      setAmount('');
+      setReference('');
+    } catch (err) {
+      setError(extractError(err));
+      showToast('error', 'Live verification failed or pending. Please check transaction history.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  // ── Launch Inline Payment Modal ──
+  const launchInlineCheckout = (gatewayRes: any, numAmount: number, fundingRecordId: number) => {
+    const provider = gatewayRes.provider;
+    const publicKey = gatewayRes.public_key;
+    const txRef = gatewayRes.reference;
+
+    if (provider === 'paystack') {
+      if (!window.PaystackPop) {
+        showToast('error', 'Paystack SDK failed to load. Redirecting via web checkout...');
+        if (gatewayRes.payment_url) window.location.href = gatewayRes.payment_url;
+        return;
+      }
+      const handler = window.PaystackPop.setup({
+        key: publicKey,
+        email: billingEmail.trim(),
+        amount: numAmount * 100, // Kobo
+        ref: txRef,
+        access_code: gatewayRes.access_code,
+        onClose: () => {
+          showToast('error', 'Online payment checkout canceled by cashier.');
+        },
+        callback: () => {
+          handlePostPaymentReconciliation(txRef, fundingRecordId);
+        },
+      });
+      handler.openIframe();
+    } else if (provider === 'flutterwave') {
+      if (!window.FlutterwaveCheckout) {
+        showToast('error', 'Flutterwave SDK failed to load. Redirecting via web checkout...');
+        if (gatewayRes.payment_url) window.location.href = gatewayRes.payment_url;
+        return;
+      }
+      window.FlutterwaveCheckout({
+        public_key: publicKey,
+        tx_ref: txRef,
+        amount: numAmount,
+        currency: 'NGN',
+        customer: { email: billingEmail.trim() },
+        onclose: () => {
+          showToast('error', 'Online payment checkout canceled by cashier.');
+        },
+        callback: () => {
+          handlePostPaymentReconciliation(txRef, fundingRecordId);
+        },
+      });
+    } else {
+      if (gatewayRes.payment_url) {
+        window.location.href = gatewayRes.payment_url;
+      } else {
+        setError('Payment gateway did not return valid inline checkout credentials.');
+      }
+    }
+  };
+
+  // ── Submit & Comprehensive Validation ──
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPerson) return;
 
-    if (!amount || amount <= 0) {
-      setError('Amount is required and must be greater than 0.');
+    const numAmount = Number(amount);
+    if (!amount || isNaN(numAmount) || numAmount <= 0) {
+      setError('Amount is required and must be greater than ₦0.00.');
       return;
     }
-    if (settings?.max_funding_amount && amount > settings.max_funding_amount) {
-      setError(`Amount exceeds maximum allowed of ${fmtMoney(settings.max_funding_amount)}`);
+    if (settings?.max_funding_amount && numAmount > Number(settings.max_funding_amount)) {
+      setError(`Amount exceeds maximum allowed limit of ${fmtMoney(Number(settings.max_funding_amount))}`);
       return;
     }
-    if (settings?.require_proof_for_funding && !proofFile) {
-      setError('Proof of payment is required per school policy.');
-      return;
+
+    if (paymentMode === 'offline') {
+      if (paymentMethod !== 'cash' && !bankAccount) {
+        setError('A settlement bank account is required for all non-cash offline deposits.');
+        return;
+      }
+      if (settings?.require_proof_for_funding && paymentMethod !== 'cash' && !proofFile) {
+        setError('School policy strictly mandates uploading a proof of payment document for non-cash deposits.');
+        return;
+      }
+    } else {
+      if (!billingEmail || !isValidEmail(billingEmail.trim())) {
+        setError('A valid billing email address (e.g., name@domain.com) is strictly required by online payment gateways.');
+        return;
+      }
     }
 
     setIsSubmitting(true);
     setError(null);
 
     try {
-      const formData = new FormData();
-      const endpoint = searchType === 'student' ? studentFundingAPI.create : staffFundingAPI.create;
+      const filterType = searchType === 'student' ? 'student' : 'staff';
 
-      formData.append('amount', String(amount));
-      formData.append('method', paymentMethod);
-      formData.append('mode', 'offline');   // always offline
-      formData.append('status', status);
-      if (tellerNumber) formData.append('teller_number', tellerNumber);
-      if (reference) formData.append('reference', reference);
-      if (proofFile) formData.append('proof_of_payment', proofFile);
+      if (paymentMode === 'offline') {
+        const formData = new FormData();
+        const endpoint = searchType === 'student' ? studentFundingAPI.create : staffFundingAPI.create;
 
-      if (searchType === 'student') {
-        formData.append('student', String(selectedPerson.id));
-        formData.append('wallet_type', walletType);
+        formData.append('amount', String(numAmount));
+        formData.append('method', paymentMethod);
+        formData.append('mode', 'offline');
+
+        if (paymentMethod !== 'cash' && bankAccount) formData.append('bank_account', bankAccount);
+        if (tellerNumber.trim()) formData.append('teller_number', tellerNumber.trim());
+        if (reference.trim()) formData.append('reference', reference.trim());
+        if (proofFile) formData.append('proof_of_payment', proofFile);
+
+        if (searchType === 'student') {
+          formData.append('student', String(selectedPerson.id));
+          formData.append('wallet_type', walletType);
+        } else {
+          formData.append('staff', String(selectedPerson.id));
+        }
+
+        const response = await endpoint(formData);
+        const fundingId = response?.id;
+
+        showToast('success', `Funding of ${fmtMoney(numAmount)} recorded successfully`);
+
+        if (postSaveAction === 'list') {
+          router.push(`/dashboard/staff/finance/deposits?filter=${filterType}`);
+          return;
+        }
+
+        if (postSaveAction === 'draw_out' && fundingId) {
+          router.push(`/dashboard/staff/finance/deposits?filter=${filterType}&open_audit=${fundingId}`);
+          return;
+        }
+
+        setSavedFundingId(fundingId);
+        clearSelection();
+        setAmount('');
+        setProofFile(null);
+        setTellerNumber('');
+        setReference('');
+        setError(null);
       } else {
-        formData.append('staff', String(selectedPerson.id));
+        // ── ONLINE GATEWAY FLOW ──
+        const pendingPayload: any = {
+          amount: numAmount,
+          method: 'bank_transfer',
+          mode: 'online',
+        };
+        if (searchType === 'student') {
+          pendingPayload.student = selectedPerson.id;
+          pendingPayload.wallet_type = walletType;
+        } else {
+          pendingPayload.staff = selectedPerson.id;
+        }
+
+        const createdRecord = searchType === 'student'
+          ? await studentFundingAPI.create(pendingPayload)
+          : await staffFundingAPI.create(pendingPayload);
+
+        const gatewayRes = await onlinePaymentAPI.initiate({
+          payment_type: searchType === 'student' ? 'student_funding' : 'staff_funding',
+          payment_id: createdRecord.id,
+          amount: numAmount,
+          email: billingEmail.trim(),
+        });
+
+        launchInlineCheckout(gatewayRes, numAmount, createdRecord.id);
       }
-
-      const response = await endpoint(formData);
-      const fundingId = response?.id;
-
-      showToast('success', `Funding of ${fmtMoney(Number(amount))} recorded successfully`);
-
-      // Post-save action
-      if (postSaveAction === 'list') {
-        const filterType = searchType === 'student' ? 'student' : 'staff';
-        router.push(`/dashboard/staff/finance/deposits?filter=${filterType}`);
-        return;
-      }
-
-      if (postSaveAction === 'detail' && fundingId) {
-        const detailPath = searchType === 'student'
-          ? `/dashboard/staff/finance/student-funding/${fundingId}`
-          : `/dashboard/staff/finance/staff-funding/${fundingId}`;
-        router.push(detailPath);
-        return;
-      }
-
-      // Stay: clear and reset
-      setSavedFundingId(fundingId);
-      clearSelection();
-      setAmount('');
-      setProofFile(null);
-      setTellerNumber('');
-      setReference('');
-      setError(null);
-
     } catch (err) {
       setError(extractError(err));
     } finally {
@@ -396,7 +612,11 @@ export default function DepositPage() {
     }
   };
 
-  // ─── Permission guard ──
+  const hasConfiguredSettings = settings && (
+    settings.max_funding_amount || settings.require_proof_for_funding || settings.auto_confirm_funding
+  );
+
+  // ── Permission guard ──
   if (!canFundStudent && !canFundStaff) {
     return (
       <div className="min-h-[500px] flex items-center justify-center">
@@ -423,10 +643,11 @@ export default function DepositPage() {
   return (
     <div className="pb-28 max-w-7xl mx-auto">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      <VerificationOverlay isVisible={isVerifying} />
 
       {/* ── Header ── */}
       <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => router.back()} className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors flex-shrink-0">
+        <button onClick={() => router.push('/dashboard/staff/finance/deposits')} className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors flex-shrink-0">
           <ArrowLeft className="h-4 w-4 text-slate-600" />
         </button>
         <div>
@@ -434,9 +655,9 @@ export default function DepositPage() {
             <div className="w-9 h-9 bg-gradient-to-br from-emerald-600 to-teal-600 rounded-xl flex items-center justify-center shadow-md shadow-emerald-200">
               <Wallet className="h-5 w-5 text-white" />
             </div>
-            Wallet Deposit
+            Create Wallet Deposit
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5 pl-12">Fund student or staff wallets</p>
+          <p className="text-sm text-slate-400 mt-0.5 pl-12">Fund student or staff wallets directly at the POS terminal</p>
         </div>
       </div>
 
@@ -451,26 +672,24 @@ export default function DepositPage() {
         </div>
       )}
 
-      {/* ── Settings Banner ── */}
-      {settings && (
-        <div className="mb-4 flex flex-wrap items-center gap-3 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500">
-          <span className="font-medium">Settings:</span>
+      {/* ── Conditional Settings Banner ── */}
+      {hasConfiguredSettings && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600">
+          <span className="font-semibold text-slate-800">Active School Rules:</span>
           {settings.max_funding_amount && (
-            <span className="flex items-center gap-1">
-              <span>Max funding:</span>
-              <span className="font-semibold text-slate-700">{fmtMoney(settings.max_funding_amount)}</span>
+            <span className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-slate-200 shadow-2xs">
+              <span>Max Ceiling:</span>
+              <span className="font-bold text-slate-800">{fmtMoney(Number(settings.max_funding_amount))}</span>
             </span>
           )}
           {settings.require_proof_for_funding && (
-            <span className="flex items-center gap-1">
-              <Upload className="h-3 w-3" />
-              <span className="font-medium text-amber-600">Proof required</span>
+            <span className="flex items-center gap-1 bg-amber-50 px-2 py-1 rounded border border-amber-200 text-amber-800 font-medium">
+              <Upload className="h-3 w-3 text-amber-600" /> Proof Required
             </span>
           )}
           {settings.auto_confirm_funding && (
-            <span className="flex items-center gap-1">
-              <Check className="h-3 w-3 text-emerald-600" />
-              <span className="font-medium text-emerald-600">Auto-confirm</span>
+            <span className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded border border-emerald-200 text-emerald-800 font-medium">
+              <Check className="h-3 w-3 text-emerald-600" /> Auto-Confirm Active
             </span>
           )}
         </div>
@@ -621,8 +840,8 @@ export default function DepositPage() {
                     <div className="space-y-1.5">
                       {recentFundings.slice(0, 3).map((f: any) => (
                         <div key={f.id} className="flex items-center justify-between text-xs">
-                          <span className="text-slate-600">
-                            {fmtMoney(f.amount)} · {f.wallet_type || 'Wallet'}
+                          <span className="text-slate-600 font-medium">
+                            {fmtMoney(f.amount)} · {f.wallet_type ? toTitleCase(f.wallet_type) : 'Wallet'}
                           </span>
                           <span className="text-slate-400">
                             {new Date(f.created_at).toLocaleDateString()}
@@ -645,8 +864,27 @@ export default function DepositPage() {
           {/* Right: Funding Form */}
           <div className="lg:col-span-3">
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-50">
+              <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between">
                 <h3 className="text-sm font-bold text-slate-800">Fund Wallet</h3>
+
+                {hasActiveGateway && (
+                  <div className="flex bg-slate-100 p-0.5 rounded-lg text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('offline')}
+                      className={`px-3 py-1 rounded-md transition-all ${paymentMode === 'offline' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      Offline
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('online')}
+                      className={`px-3 py-1 rounded-md transition-all ${paymentMode === 'online' ? 'bg-white text-blue-700 shadow-sm flex items-center gap-1' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      <Globe className="h-3 w-3" /> Pay Online
+                    </button>
+                  </div>
+                )}
               </div>
 
               <form onSubmit={handleSubmit} className="p-6 space-y-5">
@@ -705,7 +943,7 @@ export default function DepositPage() {
                   </div>
                   {settings?.max_funding_amount && amount && amount > settings.max_funding_amount && (
                     <p className="mt-1 text-xs text-red-600">
-                      Exceeds max of {fmtMoney(settings.max_funding_amount)}
+                      Exceeds max limit of {fmtMoney(Number(settings.max_funding_amount))}
                     </p>
                   )}
                   <div className="flex flex-wrap gap-2 mt-2">
@@ -715,88 +953,130 @@ export default function DepositPage() {
                   </div>
                 </div>
 
-                {/* Payment Method & Proof (inline) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-                      Payment Method <span className="text-red-500 normal-case">*</span>
-                    </label>
-                    <select
-                      value={paymentMethod}
-                      onChange={e => setPaymentMethod(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none bg-white"
-                    >
-                      <option value="cash">Cash</option>
-                      <option value="pos">POS</option>
-                      <option value="bank_teller">Bank Teller</option>
-                      <option value="bank_transfer">Bank Transfer</option>
-                    </select>
-                  </div>
+                {/* ── OFFLINE FIELDS ── */}
+                {paymentMode === 'offline' && (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                          Payment Method <span className="text-red-500 normal-case">*</span>
+                        </label>
+                        <select
+                          value={paymentMethod}
+                          onChange={e => setPaymentMethod(e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none bg-white"
+                        >
+                          <option value="cash">Cash</option>
+                          <option value="pos">POS</option>
+                          <option value="bank_teller">Bank Teller</option>
+                          <option value="bank_transfer">Bank Transfer</option>
+                        </select>
+                      </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-                      Proof of Payment
-                      {settings?.require_proof_for_funding && <span className="text-red-500 normal-case ml-1">*</span>}
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <label className="flex-1 cursor-pointer">
-                        <div className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-xl hover:border-emerald-400 transition-colors bg-white text-sm text-slate-500">
-                          <Upload className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
-                          <span className="truncate text-xs">
-                            {proofFile ? proofFile.name : 'Choose file'}
-                          </span>
+                      {paymentMethod !== 'cash' && (
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                            Settlement Bank <span className="text-red-500 normal-case">*</span>
+                          </label>
+                          <select
+                            value={bankAccount}
+                            onChange={e => setBankAccount(e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none bg-white"
+                            required
+                          >
+                            <option value="">Select bank account</option>
+                            {banks.map(b => (
+                              <option key={b.id} value={b.id}>{b.bank_name} ({b.account_number})</option>
+                            ))}
+                          </select>
                         </div>
-                        <input type="file" className="hidden" accept="image/*,application/pdf" onChange={handleFileChange} />
-                      </label>
-                      {proofFile && (
-                        <button type="button" onClick={() => setProofFile(null)} className="text-slate-400 hover:text-red-500 flex-shrink-0">
-                          <X className="h-4 w-4" />
-                        </button>
                       )}
                     </div>
-                    {settings?.require_proof_for_funding && !proofFile && (
-                      <p className="mt-1 text-xs text-amber-600">Proof required</p>
+
+                    {paymentMethod !== 'cash' && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                          Proof of Payment
+                          {settings?.require_proof_for_funding && <span className="text-red-500 normal-case ml-1">*</span>}
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <label className="flex-1 cursor-pointer">
+                            <div className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-xl hover:border-emerald-400 transition-colors bg-white text-sm text-slate-500">
+                              <Upload className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                              <span className="truncate text-xs">
+                                {proofFile ? proofFile.name : 'Choose file'}
+                              </span>
+                            </div>
+                            <input type="file" className="hidden" accept="image/*,application/pdf" onChange={handleFileChange} />
+                          </label>
+                          {proofFile && (
+                            <button type="button" onClick={() => setProofFile(null)} className="text-slate-400 hover:text-red-500 flex-shrink-0">
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     )}
-                  </div>
-                </div>
 
-                {/* Reference & Teller Number */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Reference</label>
-                    <input
-                      type="text"
-                      value={reference}
-                      onChange={e => setReference(e.target.value)}
-                      className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                      placeholder="e.g. Invoice number"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Teller Number</label>
-                    <input
-                      type="text"
-                      value={tellerNumber}
-                      onChange={e => setTellerNumber(e.target.value)}
-                      className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                      placeholder="e.g. Teller #123"
-                    />
-                  </div>
-                </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                          External Reference / Invoice # <span className="normal-case font-normal text-slate-400">(Optional)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={reference}
+                          onChange={e => setReference(e.target.value)}
+                          className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                          placeholder="Leave blank to auto-generate"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Teller Number</label>
+                        <input
+                          type="text"
+                          value={tellerNumber}
+                          onChange={e => setTellerNumber(e.target.value)}
+                          className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                          placeholder="e.g. Teller #123"
+                        />
+                      </div>
+                    </div>
 
-                {/* Status (conditional) */}
-                {!settings?.auto_confirm_funding && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Status</label>
-                    <select
-                      value={status}
-                      onChange={e => setStatus(e.target.value as any)}
-                      className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none bg-white"
-                    >
-                      <option value="pending">Pending (Requires Approval)</option>
-                      <option value="confirmed">Confirmed (Immediate Credit)</option>
-                    </select>
-                    <p className="text-xs text-slate-400 mt-1">Select 'Confirmed' to credit wallet immediately.</p>
+                  </>
+                )}
+
+                {/* ── ONLINE GATEWAY FIELDS ── */}
+                {paymentMode === 'online' && (
+                  <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100 space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                        Billing Email for Gateway <span className="text-red-500">*</span>
+                      </label>
+                      {isManualEmail ? (
+                        <div>
+                          <input
+                            type="email"
+                            required
+                            value={billingEmail}
+                            onChange={e => setBillingEmail(e.target.value)}
+                            placeholder="Enter payer email address"
+                            className="w-full px-3.5 py-2 text-sm border border-blue-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                          <p className="text-[11px] text-amber-700 mt-1">⚠️ Required for inline checkout authorization.</p>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between px-3.5 py-2 bg-white rounded-xl border border-slate-200 text-sm">
+                          <span className="font-medium text-slate-700">{billingEmail}</span>
+                          <button type="button" onClick={() => setIsManualEmail(true)} className="text-xs text-blue-600 font-bold hover:underline">
+                            Change
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      An inline modal will open to process the card or transfer. Once completed, the cashier desk will immediately verify the transaction and credit the school ledger.
+                    </p>
                   </div>
                 )}
 
@@ -806,21 +1086,24 @@ export default function DepositPage() {
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">After Save</label>
                     <select
                       value={postSaveAction}
-                      onChange={e => setPostSaveAction(e.target.value as any)}
-                      className="w-full px-3.5 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none bg-white"
+                      onChange={e => handleRedirectChange(e.target.value as any)}
+                      className="w-full px-3.5 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none bg-white font-medium text-slate-700"
                     >
-                      <option value="list">📋 Go to List (default)</option>
+                      <option value="list">📋 Go to List</option>
                       <option value="stay">🔄 Stay (Clear & Reset)</option>
-                      <option value="detail">👁️ Go to Detail</option>
+                      <option value="draw_out">👁️ Go to Index & View Receipt</option>
                     </select>
                   </div>
+
                   <button
                     type="submit"
-                    disabled={isSubmitting}
-                    className="flex-1 sm:flex-none px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all disabled:opacity-50 shadow-md shadow-emerald-200 flex items-center justify-center gap-2"
+                    disabled={isSubmitting || isVerifying}
+                    className={`flex-1 sm:flex-none px-6 py-2.5 text-white font-bold rounded-xl transition-all disabled:opacity-50 shadow-md flex items-center justify-center gap-2 ${paymentMode === 'online' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200' : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-200'}`}
                   >
-                    {isSubmitting ? (
-                      <><Loader2 className="h-4 w-4 animate-spin" /> Processing...</>
+                    {isSubmitting || isVerifying ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /> Verifying...</>
+                    ) : paymentMode === 'online' ? (
+                      <><Globe className="h-4 w-4" /> Pay Online</>
                     ) : (
                       <><Wallet className="h-4 w-4" /> Fund Wallet</>
                     )}

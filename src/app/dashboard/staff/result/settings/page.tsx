@@ -307,8 +307,7 @@ function SettingsModal({ settings, isSaving, onSave, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col" style={{ maxHeight: '92vh' }}>
-
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col h-[85vh]">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">

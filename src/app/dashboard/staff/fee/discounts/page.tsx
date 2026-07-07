@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { feeAPI } from '@/lib/api';
-import { Discount, Fee, FeeOccurrence, DiscountApplication } from '@/lib/types';
+import { feeAPI } from '@/lib/fee.service';
+import { Discount, Fee, FeeOccurrence } from '@/lib/types';
 import {
-  Tag, Plus, Edit2, Trash2, Check, X, AlertCircle,
+  Tag, Plus, Edit2, Check, AlertCircle,
   Loader2, Search, ChevronDown, ChevronUp, Percent, Hash,
 } from 'lucide-react';
 
@@ -16,8 +16,9 @@ const fmt = (v: string | number = 0) => {
 
 // ─── Discount Form ────────────────────────────────────────────────────────────
 
+// FIXED: Extended interface locally to satisfy TS
 interface DiscountFormProps {
-  initial?: Partial<Discount>;
+  initial?: Partial<Discount> & { description?: string };
   fees: Fee[];
   onSave: (data: any) => Promise<void>;
   onCancel: () => void;
@@ -132,23 +133,27 @@ function DiscountForm({ initial, fees, onSave, onCancel, title }: DiscountFormPr
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+// FIXED: Extended local type
+type ExtendedDiscount = Discount & { description?: string; is_protected?: boolean };
+
 export default function DiscountsPage() {
   const { user, hasPermission } = useAuth();
   const canManage = user?.is_superuser || hasPermission('fee_management.manage_fees');
 
-  const [discounts, setDiscounts] = useState<Discount[]>([]);
+  const [discounts, setDiscounts] = useState<ExtendedDiscount[]>([]);
   const [fees, setFees] = useState<Fee[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [view, setView] = useState<'list' | 'create' | { mode: 'edit'; discount: Discount }>('list');
+  const [view, setView] = useState<'list' | 'create' | { mode: 'edit'; discount: ExtendedDiscount }>('list');
   const [expanded, setExpanded] = useState<number | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [d, f] = await Promise.all([feeAPI.getDiscounts(), feeAPI.getFees()]);
-      setDiscounts(d); setFees(f);
+      const [d, f] = await Promise.all([feeAPI.discounts.list(), feeAPI.fees.list()]);
+      setDiscounts(d as ExtendedDiscount[]);
+      setFees(f);
     } catch { /* silent */ }
     finally { setLoading(false); }
   }, []);
@@ -158,16 +163,16 @@ export default function DiscountsPage() {
   const showSuccess = (msg: string) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(null), 3000); };
 
   const handleCreate = async (data: any) => {
-    const created = await feeAPI.createDiscount(data);
-    setDiscounts(prev => [created, ...prev]);
+    const created = await feeAPI.discounts.create(data);
+    setDiscounts(prev => [created as ExtendedDiscount, ...prev]);
     setView('list');
     showSuccess('Discount created');
   };
 
   const handleUpdate = async (data: any) => {
     if (typeof view !== 'object') return;
-    const updated = await feeAPI.updateDiscount(view.discount.id, data);
-    setDiscounts(prev => prev.map(d => d.id === view.discount.id ? updated : d));
+    const updated = await feeAPI.discounts.update(view.discount.id, data);
+    setDiscounts(prev => prev.map(d => d.id === view.discount.id ? (updated as ExtendedDiscount) : d));
     setView('list');
     showSuccess('Discount updated');
   };

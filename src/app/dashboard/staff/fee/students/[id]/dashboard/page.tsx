@@ -1103,7 +1103,7 @@ export default function StudentFinancialDashboardPage() {
           <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-gray-900">Current Invoice</h2>
-              <p className="text-xs text-gray-400">{current_invoice.invoice_number} · {current_invoice.period_name}</p>
+              <p className="text-xs text-gray-400">{current_invoice.invoice_number} · {current_invoice.period_display}</p>
             </div>
             <div className="flex items-center gap-2">
               <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLES[current_invoice.status] || 'bg-gray-100 text-gray-600'}`}>
@@ -1296,7 +1296,7 @@ export default function StudentFinancialDashboardPage() {
                   {invoice_history?.map((inv: Invoice) => (
                     <tr key={inv.id} className={`hover:bg-gray-50/50 transition-colors ${activeInvoiceId === inv.id ? 'bg-emerald-50/50' : ''}`}>
                       <td className="px-6 py-3 font-mono text-xs text-gray-600">{inv.invoice_number}</td>
-                      <td className="px-4 py-3 text-gray-700">{inv.period_name || inv.session_display}</td>
+                      <td className="px-4 py-3 text-gray-700">{inv.period_display || inv.session_display}</td>
                       <td className="px-4 py-3 text-right font-mono text-xs">{fmt(inv.total_amount)}</td>
                       <td className={`px-4 py-3 text-right font-mono text-xs font-bold ${parseFloat(inv.balance) > 0 ? 'text-red-600' : 'text-green-600'}`}>
                         {fmt(inv.balance)}

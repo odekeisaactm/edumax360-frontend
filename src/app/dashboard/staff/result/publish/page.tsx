@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { resultPublishAPI } from '@/lib/result.service';
 import { ResultPublish, PublishStats } from '@/lib/result.types';
-import { 
-  CheckCircle2, AlertCircle, Loader2, Globe, Layers, 
+import {
+  CheckCircle2, AlertCircle, Loader2, Globe, Layers,
   ArrowLeft, Info, Send, XCircle, ChevronRight, BarChart3,
   ExternalLink, AlertTriangle, RefreshCcw, MoreVertical,
   History, Calendar, Users, Eye
@@ -27,15 +27,56 @@ const formatDate = (dateStr: string) => {
   }
 };
 
+// ─── Error Modal ──────────────────────────────────────────────────────────────
+function ErrorModal({
+  message,
+  onClose
+}: {
+  message: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+          <div className="w-10 h-10 bg-red-50 text-red-600 rounded-xl flex items-center justify-center">
+            <AlertCircle className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Something Went Wrong</h3>
+            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Action could not be completed</p>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="p-6">
+          <p className="text-sm text-slate-600 leading-relaxed">{message}</p>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
+          <button
+            onClick={onClose}
+            className="px-6 py-2 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 shadow-lg shadow-red-200 transition-all"
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Progress Modal ───────────────────────────────────────────────────────────
-function PublishProgressModal({ 
-  record, 
-  onConfirm, 
-  onClose 
-}: { 
-  record: ResultPublish; 
-  onConfirm: () => Promise<void>; 
-  onClose: () => void; 
+function PublishProgressModal({
+  record,
+  onConfirm,
+  onClose
+}: {
+  record: ResultPublish;
+  onConfirm: () => Promise<void>;
+  onClose: () => void;
 }) {
   const [stats, setStats] = useState<PublishStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -111,9 +152,9 @@ function PublishProgressModal({
                     {stats.percentage}%
                   </span>
                 </div>
-                
+
                 <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
-                  <div 
+                  <div
                     className={`h-full transition-all duration-1000 ${isLowProgress ? 'bg-amber-500' : 'bg-emerald-500'}`}
                     style={{ width: `${stats.percentage}%` }}
                   />
@@ -140,7 +181,7 @@ function PublishProgressModal({
                   <div className="space-y-1">
                     <p className="text-sm font-bold text-amber-900">Low Upload Progress</p>
                     <p className="text-xs text-amber-700 leading-relaxed">
-                      It is highly recommended to have at least <b>70%</b> of results computed before publishing. 
+                      It is highly recommended to have at least <b>70%</b> of results computed before publishing.
                       Publishing now will make results visible to parents even if incomplete.
                     </p>
                   </div>
@@ -160,7 +201,7 @@ function PublishProgressModal({
               )}
 
               {/* Link to Tracking */}
-              <button 
+              <button
                 onClick={() => window.open('/dashboard/staff/result/tracking', '_blank')}
                 className="w-full flex items-center justify-center gap-2 py-2 text-sm text-indigo-600 font-semibold hover:bg-indigo-50 rounded-lg transition-colors border border-dashed border-indigo-200"
               >
@@ -175,7 +216,7 @@ function PublishProgressModal({
           <button onClick={onClose} disabled={publishing} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-800">
             Cancel
           </button>
-          <button 
+          <button
             onClick={handlePublish}
             disabled={loading || publishing}
             className={`px-6 py-2 rounded-xl text-sm font-bold text-white shadow-lg transition-all flex items-center gap-2
@@ -194,11 +235,12 @@ function PublishProgressModal({
 export default function ResultPublishPage() {
   const router = useRouter();
   const { user } = useAuth();
-  
+
   const [records, setRecords] = useState<ResultPublish[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<{ type: 'publish' | 'split' | 'merge', record: ResultPublish } | null>(null);
+  const [errorModalMessage, setErrorModalMessage] = useState<string | null>(null);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -219,7 +261,7 @@ export default function ResultPublishPage() {
       await resultPublishAPI.toggle(id);
       fetchRecords();
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to update status');
+      setErrorModalMessage(err.response?.data?.detail || 'Failed to update status');
     }
   };
 
@@ -228,7 +270,7 @@ export default function ResultPublishPage() {
       await resultPublishAPI.split(id);
       fetchRecords();
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to split sections');
+      setErrorModalMessage(err.response?.data?.detail || 'Failed to split sections');
     }
   };
 
@@ -237,13 +279,13 @@ export default function ResultPublishPage() {
       await resultPublishAPI.merge(id);
       fetchRecords();
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to merge sections');
+      setErrorModalMessage(err.response?.data?.detail || 'Failed to merge sections');
     }
   };
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-20">
-      
+
       {/* ── Header ── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
@@ -260,7 +302,7 @@ export default function ResultPublishPage() {
             <p className="text-sm text-slate-400 font-medium mt-1">Control visibility of results for parents and students</p>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 px-4 py-2 rounded-2xl">
           <Info className="h-4 w-4 text-indigo-500" />
           <p className="text-xs text-indigo-700 font-medium leading-snug max-w-[300px]">
@@ -336,7 +378,7 @@ export default function ResultPublishPage() {
                                {rec.section_name}
                              </span>
                              {!rec.is_published && (
-                               <button 
+                               <button
                                  onClick={() => isGlobal ? handleSplit(rec.id) : handleMerge(rec.id)}
                                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white rounded-md border border-slate-100 text-[10px] font-bold text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-1 ml-1"
                                  title={isGlobal ? "Split into Sections" : "Merge into Global"}
@@ -348,8 +390,8 @@ export default function ResultPublishPage() {
                         </td>
                         <td className="px-6 py-5 text-center">
                            <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-[11px] font-bold border-2
-                             ${rec.is_published 
-                               ? 'bg-emerald-50 border-emerald-100 text-emerald-700' 
+                             ${rec.is_published
+                               ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
                                : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
                              <div className={`w-1.5 h-1.5 rounded-full ${rec.is_published ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
                              {rec.is_published ? 'Published' : 'Hidden'}
@@ -368,11 +410,11 @@ export default function ResultPublishPage() {
                            ) : <span className="text-slate-300 text-xs italic">—</span>}
                         </td>
                         <td className="px-6 py-5">
-                           <button 
+                           <button
                              onClick={() => rec.is_published ? handleToggle(rec.id) : setActiveModal({ type: 'publish', record: rec })}
                              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all
-                               ${rec.is_published 
-                                 ? 'bg-red-50 text-red-600 hover:bg-red-100' 
+                               ${rec.is_published
+                                 ? 'bg-red-50 text-red-600 hover:bg-red-100'
                                  : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-100'}`}
                            >
                              {rec.is_published ? (
@@ -394,10 +436,17 @@ export default function ResultPublishPage() {
 
       {/* ── Modals ── */}
       {activeModal && activeModal.type === 'publish' && (
-        <PublishProgressModal 
+        <PublishProgressModal
           record={activeModal.record}
           onConfirm={() => handleToggle(activeModal.record.id)}
           onClose={() => setActiveModal(null)}
+        />
+      )}
+
+      {errorModalMessage && (
+        <ErrorModal
+          message={errorModalMessage}
+          onClose={() => setErrorModalMessage(null)}
         />
       )}
 

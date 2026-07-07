@@ -18,13 +18,9 @@ import type {
   StudentFormValues, ParentListFilters, StudentListFilters, BulkStudentUpload,
   ResetPasswordPayload, ResetPasswordResponse, ToggleStatusPayload,
   ToggleStatusResponse, StudentListItem, ParentListItem, StudentWallet,
-  WalletTransaction, Invoice, FamilyInvoice, FeePayment, FamilyFeePayment,
-  OtherPayment, FeeGroup, Fee, FeeStructure, Discount, DiscountApplication,
-  StudentDiscount, FeeWaiver, SchoolBankDetail, PaymentGatewayConfig,
-  StudentFinancialDashboard, InvoiceGenerationJob, FeeSetting,
-  InvoiceItem, FamilyInvoiceItem, ItemBreakdownEntry, FamilyItemBreakdownEntry,
-  PeriodFeeAmount, WalletField, PaymentMode, PaymentStatus, InvoiceStatus,
-  FeeOccurrence, DiscountType, WaiverStatus, GatewayPurpose,
+  WalletTransaction, Invoice,
+  SchoolBankDetail, PaymentGatewayConfig,
+  StudentFinancialDashboard, InvoiceGenerationJob, FeeSetting, GatewayPurpose,
   ClassFormValues, SubjectFormValues, SubjectGroupFormValues,
   DuplicateCheckResult,
   AcademicPeriod,
@@ -1975,364 +1971,6 @@ export const studentUtilsAPI = {
     },
 };
 
-// ==================== FEE MANAGEMENT API ====================
-
-export const feeAPI = {
-  // Dashboard
-  getDashboard: async (params?: { session_id?: number; period_id?: number }) => {
-    const response = await api.get<ApiResponse<any>>('/api/fee/dashboard/', { params });
-    return response.data;
-  },
-
-  // Student financial dashboard
-  getStudentDashboard: async (
-    studentId: number,
-    params?: { session_id?: number; period_id?: number; invoice_id?: number }
-  ): Promise<StudentFinancialDashboard> => {
-    const response = await api.get(`/api/fee/students/${studentId}/dashboard/`, { params });
-    return response.data;
-  },
-
-  // Wallets
-  getWalletByStudent: async (studentId: number): Promise<StudentWallet> => {
-    const response = await api.get(`/api/fee/wallets/student/${studentId}/`);
-    return response.data;
-  },
-
-  getWalletTransactions: async (studentId: number): Promise<WalletTransaction[]> => {
-    const response = await api.get(`/api/fee/wallets/student/${studentId}/transactions/`);
-    return response.data.results || response.data;
-  },
-
-  fundWallet: async (data: {
-    student: number;
-    amount: string;
-    wallet_field: WalletField;
-    notes?: string;
-    reference?: string;
-  }): Promise<{ wallet: StudentWallet; funding_record_id: number }> => {
-    const response = await api.post('/api/fee/wallets/fund/', data);
-    return response.data;
-  },
-
-  transferWalletField: async (data: {
-    student_id: number;
-    amount: string;
-    from_field: WalletField;
-    to_field: WalletField;
-    reason: string;
-  }): Promise<StudentWallet> => {
-    const response = await api.post('/api/fee/wallets/transfer/field/', data);
-    return response.data;
-  },
-
-  transferWalletSibling: async (data: {
-    from_student_id: number;
-    to_student_id: number;
-    amount: string;
-    from_field: WalletField;
-    to_field: WalletField;
-    reason: string;
-  }): Promise<{ from_wallet: StudentWallet; to_wallet: StudentWallet }> => {
-    const response = await api.post('/api/fee/wallets/transfer/sibling/', data);
-    return response.data;
-  },
-
-  // Payments
-  recordPayment: async (data: FormData | object): Promise<FeePayment> => {
-    const isFormData = data instanceof FormData;
-    const response = await api.post('/api/fee/payments/record/', data, {
-      headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : {},
-    });
-    return response.data;
-  },
-
-  confirmPayment: async (id: number): Promise<FeePayment> => {
-    const response = await api.post(`/api/fee/payments/${id}/confirm/`);
-    return response.data;
-  },
-
-  revertPayment: async (id: number, reason: string): Promise<FeePayment> => {
-    const response = await api.post(`/api/fee/payments/${id}/revert/`, { reason });
-    return response.data;
-  },
-
-  getPendingPayments: async (params?: object): Promise<FeePayment[]> => {
-    const response = await api.get('/api/fee/payments/pending/', { params });
-    return response.data.results || response.data;
-  },
-
-  getPaymentHistory: async (params?: object): Promise<FeePayment[]> => {
-    const response = await api.get('/api/fee/payments/', { params });
-    return response.data.results || response.data;
-  },
-
-  // Family payments
-  recordFamilyPayment: async (data: object): Promise<FamilyFeePayment> => {
-    const response = await api.post('/api/fee/family-payments/record/', data);
-    return response.data;
-  },
-
-  confirmFamilyPayment: async (id: number): Promise<FamilyFeePayment> => {
-    const response = await api.post(`/api/fee/family-payments/${id}/confirm/`);
-    return response.data;
-  },
-
-  // Invoices
-  getInvoices: async (params?: object): Promise<Invoice[]> => {
-    const response = await api.get('/api/fee/invoices/', { params });
-    return response.data.results || response.data;
-  },
-
-  createInvoice: async (data: {
-    student: number;
-    session: number;
-    period: number;
-  }): Promise<Invoice> => {
-    const response = await api.post('/api/fee/invoices/', data);
-    return response.data;
-  },
-
-  deleteInvoice: async (id: number): Promise<void> => {
-    await api.delete(`/api/fee/invoices/${id}/`);
-  },
-
-  generateSingleInvoice: async (data: {
-    student_id: number;
-    session_id: number;
-    period_id: number;
-  }): Promise<{ created: boolean; invoice: Invoice | null; family_invoice: FamilyInvoice | null }> => {
-    const response = await api.post('/api/fee/invoices/generate-single/', data);
-    return response.data;
-  },
-
-  // Invoice items
-  addInvoiceItem: async (data: {
-    invoice_id: number;
-    fee_master_id: number;
-  }): Promise<InvoiceItem> => {
-    const response = await api.post('/api/fee/invoice-items/', data);
-    return response.data;
-  },
-
-  deleteInvoiceItem: async (id: number): Promise<void> => {
-    await api.delete(`/api/fee/invoice-items/${id}/`);
-  },
-
-  // Generation jobs
-  getGenerationJobs: async (params?: object): Promise<InvoiceGenerationJob[]> => {
-    const response = await api.get('/api/fee/generation-jobs/', { params });
-    return response.data.results || response.data;
-  },
-
-  startGenerationJob: async (data: {
-    session_id: number;
-    period_id: number;
-    class_ids: number[];
-  }): Promise<InvoiceGenerationJob> => {
-    const response = await api.post('/api/fee/generation-jobs/start/', data);
-    return response.data;
-  },
-
-  getJobStatus: async (id: string): Promise<InvoiceGenerationJob> => {
-    const response = await api.get(`/api/fee/generation-jobs/${id}/job-status/`);
-    return response.data;
-  },
-
-  // Fee groups
-  getFeeGroups: async (): Promise<FeeGroup[]> => {
-    const response = await api.get('/api/fee/groups/');
-    return response.data.results || response.data;
-  },
-
-  createFeeGroup: async (data: Partial<FeeGroup>): Promise<FeeGroup> => {
-    const response = await api.post('/api/fee/groups/', data);
-    return response.data;
-  },
-
-  updateFeeGroup: async (id: number, data: Partial<FeeGroup>): Promise<FeeGroup> => {
-    const response = await api.put(`/api/fee/groups/${id}/`, data);
-    return response.data;
-  },
-
-  deleteFeeGroup: async (id: number): Promise<void> => {
-    await api.delete(`/api/fee/groups/${id}/`);
-  },
-
-  // Fees (blueprints)
-  getFees: async (): Promise<Fee[]> => {
-    const response = await api.get('/api/fee/fees/');
-    return response.data.results || response.data;
-  },
-
-  createFee: async (data: Partial<Fee>): Promise<Fee> => {
-    const response = await api.post('/api/fee/fees/', data);
-    return response.data;
-  },
-
-  updateFee: async (id: number, data: Partial<Fee>): Promise<Fee> => {
-    const response = await api.put(`/api/fee/fees/${id}/`, data);
-    return response.data;
-  },
-
-  deleteFee: async (id: number): Promise<void> => {
-    await api.delete(`/api/fee/fees/${id}/`);
-  },
-
-  // Fee structures
-  getFeeStructures: async (): Promise<FeeStructure[]> => {
-    const response = await api.get('/api/fee/structures/');
-    return response.data.results || response.data;
-  },
-
-  getFeeStructure: async (id: number): Promise<FeeStructure> => {
-    const response = await api.get(`/api/fee/structures/${id}/`);
-    return response.data;
-  },
-
-  createFeeStructure: async (data: Partial<FeeStructure>): Promise<FeeStructure> => {
-    const response = await api.post('/api/fee/structures/', data);
-    return response.data;
-  },
-
-  updateFeeStructure: async (id: number, data: Partial<FeeStructure>): Promise<FeeStructure> => {
-    const response = await api.put(`/api/fee/structures/${id}/`, data);
-    return response.data;
-  },
-
-  deleteFeeStructure: async (id: number): Promise<void> => {
-    await api.delete(`/api/fee/structures/${id}/`);
-  },
-
-  setPeriodAmounts: async (id: number, amounts: { period: number; amount: string }[]): Promise<PeriodFeeAmount[]> => {
-    const response = await api.post(`/api/fee/structures/${id}/set-period-amounts/`, amounts);
-    return response.data;
-  },
-
-  // Discounts
-  getDiscounts: async (): Promise<Discount[]> => {
-    const response = await api.get('/api/fee/discounts/');
-    return response.data.results || response.data;
-  },
-
-  createDiscount: async (data: Partial<Discount>): Promise<Discount> => {
-    const response = await api.post('/api/fee/discounts/', data);
-    return response.data;
-  },
-
-  updateDiscount: async (id: number, data: Partial<Discount>): Promise<Discount> => {
-    const response = await api.put(`/api/fee/discounts/${id}/`, data);
-    return response.data;
-  },
-
-  getDiscountApplications: async (): Promise<DiscountApplication[]> => {
-    const response = await api.get('/api/fee/discount-applications/');
-    return response.data.results || response.data;
-  },
-
-  createDiscountApplication: async (data: Partial<DiscountApplication>): Promise<DiscountApplication> => {
-    const response = await api.post('/api/fee/discount-applications/', data);
-    return response.data;
-  },
-
-  getAppliedDiscounts: async (params?: object): Promise<StudentDiscount[]> => {
-    const response = await api.get('/api/fee/student-discounts/', { params });
-    return response.data.results || response.data;
-  },
-
-  // Waivers
-  getWaivers: async (params?: object): Promise<FeeWaiver[]> => {
-    const response = await api.get('/api/fee/waivers/', { params });
-    return response.data.results || response.data;
-  },
-
-  createWaiver: async (data: Partial<FeeWaiver>): Promise<FeeWaiver> => {
-    const response = await api.post('/api/fee/waivers/', data);
-    return response.data;
-  },
-
-  approveWaiver: async (id: number): Promise<FeeWaiver> => {
-    const response = await api.post(`/api/fee/waivers/${id}/approve/`);
-    return response.data;
-  },
-
-  rejectWaiver: async (id: number, rejection_reason: string): Promise<FeeWaiver> => {
-    const response = await api.post(`/api/fee/waivers/${id}/reject/`, { rejection_reason });
-    return response.data;
-  },
-
-  // Other payments
-  getOtherPayments: async (params?: object): Promise<OtherPayment[]> => {
-    const response = await api.get('/api/fee/other-payments/', { params });
-    return response.data.results || response.data;
-  },
-
-  createOtherPayment: async (data: Partial<OtherPayment>): Promise<OtherPayment> => {
-    const response = await api.post('/api/fee/other-payments/', data);
-    return response.data;
-  },
-
-  // Bank accounts
-  getBankAccounts: async (): Promise<SchoolBankDetail[]> => {
-    const response = await api.get('/api/fee/bank-accounts/');
-    return response.data.results || response.data;
-  },
-
-  createBankAccount: async (data: Partial<SchoolBankDetail>): Promise<SchoolBankDetail> => {
-    const response = await api.post('/api/fee/bank-accounts/', data);
-    return response.data;
-  },
-
-  updateBankAccount: async (id: number, data: Partial<SchoolBankDetail>): Promise<SchoolBankDetail> => {
-    const response = await api.put(`/api/fee/bank-accounts/${id}/`, data);
-    return response.data;
-  },
-
-  deleteBankAccount: async (id: number): Promise<void> => {
-    await api.delete(`/api/fee/bank-accounts/${id}/`);
-  },
-
-  // Fee settings
-  getSettings: async (): Promise<FeeSetting> => {
-    const response = await api.get('/api/fee/settings/retrieve_settings/');
-    return response.data;
-  },
-
-  updateSettings: async (data: Partial<FeeSetting>): Promise<FeeSetting> => {
-    const response = await api.patch('/api/fee/settings/update_settings/', data);
-    return response.data;
-  },
-
-  // Invoice PDF
-  getInvoicePDF: async (invoiceId: number): Promise<string> => {
-    return `${getApiUrl()}/api/fee/invoices/${invoiceId}/pdf/`;
-  },
-
-  getReceiptPDF: async (paymentId: number): Promise<string> => {
-    return `${getApiUrl()}/api/fee/payments/${paymentId}/receipt-pdf/`;
-  },
-
-  // Gateway configurations
-  getGatewayConfigs: async (): Promise<PaymentGatewayConfig[]> => {
-    const response = await api.get('/api/fee/gateways/');
-    return response.data.results || response.data;
-  },
-
-  createGatewayConfig: async (data: Partial<PaymentGatewayConfig>): Promise<PaymentGatewayConfig> => {
-    const response = await api.post('/api/fee/gateways/', data);
-    return response.data;
-  },
-
-  updateGatewayConfig: async (id: number, data: Partial<PaymentGatewayConfig>): Promise<PaymentGatewayConfig> => {
-    const response = await api.put(`/api/fee/gateways/${id}/`, data);
-    return response.data;
-  },
-
-  deleteGatewayConfig: async (id: number): Promise<void> => {
-    await api.delete(`/api/fee/gateways/${id}/`);
-  },
-};
-
 
 const fetchUploadableClasses = async (resultType: 'score' | 'text' | 'special') => {
   const response = await api.get('/api/academic/class-subjects/uploadable/', {
@@ -2478,3 +2116,69 @@ export * from './salary_management.service';
 // Export the default api instance for custom requests
 export { api };
 export default api;
+
+
+import { feeAPI as newFeeAPI } from './fee.service';
+import { financeAPI } from './finance.service';
+
+// This adapter maps old flat UI calls to the new nested architecture
+export const feeAPI = {
+  // Fee Groups & Fees
+  getFeeGroups: newFeeAPI.groups.list,
+  createFeeGroup: newFeeAPI.groups.create,
+  updateFeeGroup: newFeeAPI.groups.update,
+  deleteFeeGroup: newFeeAPI.groups.delete,
+  getFees: newFeeAPI.fees.list,
+  createFee: newFeeAPI.fees.create,
+  updateFee: newFeeAPI.fees.update,
+  deleteFee: newFeeAPI.fees.delete,
+
+  // Structures & Settings
+  getFeeStructures: newFeeAPI.structures.list,
+  getFeeStructure: newFeeAPI.structures.get,
+  createFeeStructure: newFeeAPI.structures.create,
+  updateFeeStructure: newFeeAPI.structures.update,
+  setPeriodAmounts: newFeeAPI.structures.setPeriodAmounts,
+  getSettings: newFeeAPI.settings.get,
+
+  // Discounts
+  getDiscounts: newFeeAPI.discounts.list,
+  createDiscount: newFeeAPI.discounts.create,
+  updateDiscount: newFeeAPI.discounts.update,
+  getDiscountApplications: async (p?: any) => [], // Temporary stubs for UI compatibility
+  createDiscountApplication: async (d?: any) => ({}),
+  getAppliedDiscounts: async (p?: any) => [],
+
+  // Banks & Gateways (UI calls Fee, but we route to Finance backend)
+  getBankAccounts: financeAPI.bankDetails.list,
+  createBankAccount: financeAPI.bankDetails.create,
+  updateBankAccount: financeAPI.bankDetails.update,
+  deleteBankAccount: financeAPI.bankDetails.delete,
+  getGatewayConfigs: financeAPI.gateways.list,
+  createGatewayConfig: financeAPI.gateways.create,
+  updateGatewayConfig: financeAPI.gateways.update,
+  deleteGatewayConfig: financeAPI.gateways.delete,
+
+  // Invoices & Dashboard
+  getGenerationJobs: newFeeAPI.generationJobs.list,
+  startGenerationJob: newFeeAPI.generationJobs.start,
+  getJobStatus: newFeeAPI.generationJobs.getStatus,
+  createInvoice: newFeeAPI.invoices.createManual,
+  addInvoiceItem: newFeeAPI.invoices.addItem,
+  deleteInvoice: newFeeAPI.invoices.delete,
+  deleteInvoiceItem: newFeeAPI.invoices.removeItem,
+  getStudentDashboard: newFeeAPI.studentDashboard.get,
+
+  // Payments
+  recordPayment: newFeeAPI.payments.record,
+  confirmPayment: newFeeAPI.payments.confirm,
+  revertPayment: newFeeAPI.payments.revert,
+  recordFamilyPayment: newFeeAPI.familyPayments.record,
+  confirmFamilyPayment: newFeeAPI.familyPayments.confirm,
+
+  // Wallets (UI calls Fee, but we route to Finance backend)
+  getWalletTransactions: async (p?: any) => financeAPI.auditLedgers?.getStudentWalletLedger(p) || [],
+  fundWallet: financeAPI.studentFunding.create,
+  transferWalletField: async (d?: any) => financeAPI.walletTransfer?.create(d) || {},
+  transferWalletSibling: async (d?: any) => financeAPI.walletTransfer?.create(d) || {},
+};

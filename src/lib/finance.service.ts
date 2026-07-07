@@ -16,6 +16,7 @@ import type {
   StaffFundingFormValues,
   StaffFundingListFilters,
   StaffFundingActionPayload,
+  MyFundingListParams,
   IncomeCategory,
   IncomeCategoryFormValues,
   Income,
@@ -36,169 +37,310 @@ import type {
   AdvanceSettlementFormValues,
   AdvanceSettlementListFilters,
   FinanceDashboardStats,
+  PaymentGatewayConfig,
+  WalletTransfer,
+  WalletTransferFormValues,
+  WalletTransferListFilters,
+  WalletTransferListResponse,
   PaginatedResponse,
+
 } from '@/lib/finance.types';
+
+// ============================================================
+// BASE PATH VARIABLE
+// ============================================================
+
+const FINANCE_API_BASE = '/api/finance';
+
+const getDrfError = (error: any): string => {
+  const data = error?.response?.data;
+  if (data && typeof data === 'object') {
+    if (data.detail) return String(data.detail);
+    if (data.message) return String(data.message);
+    if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
+      return String(data.non_field_errors[0]);
+    }
+
+    // Format field-specific errors cleanly (e.g., "Name: income category model with this name already exists.")
+    for (const [key, val] of Object.entries(data)) {
+      if (Array.isArray(val) && val.length > 0) {
+        const fieldName = key.charAt(0).toUpperCase() + key.slice(1);
+        return `${fieldName}: ${val[0]}`;
+      }
+      if (typeof val === 'string') return val;
+    }
+  }
+  return error?.message || 'An error occurred';
+};
 
 // ============================================================
 // 1. FINANCE SETTINGS (Singleton)
 // ============================================================
 
 export const financeSettingsAPI = {
-  /**
-   * Get finance settings
-   * Returns null if doesn't exist (404) - THIS IS NOT AN ERROR!
-   */
   get: async (): Promise<FinanceSettings | null> => {
     try {
-      const response = await api.get('/api/finance/settings/');
-      return response.data.data;
+      const response = await api.get(`${FINANCE_API_BASE}/settings/`);
+      return response.data;
     } catch (error: any) {
-      if (error.response?.status === 404) {
-        return null;
-      }
+      if (error.response?.status === 404) return null;
       throw error;
     }
   },
 
   create: async (data: FinanceSettingsFormValues) => {
-    const response = await api.put('/api/finance/settings/', data);
-      return response.data.data;
-    },
+    // Hits POST /api/finance/settings/
+    const response = await api.post(`${FINANCE_API_BASE}/settings/`, data);
+    return response.data;
+  },
 
-  /**
-   * Update finance settings
-   */
-  update: async (data: Partial<FinanceSettingsFormValues>): Promise<FinanceSettings> => {
-    const response = await api.put('/api/finance/settings/', data);
-    return response.data.data;
+  update: async (data: any) => {
+    try {
+      const response = await api.put(`${FINANCE_API_BASE}/settings/`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
   },
 };
 
 // ============================================================
-// 2. SCHOOL BANK DETAILS
+// 2. SCHOOL BANK DETAILS (Fixed to /bank-accounts/)
 // ============================================================
 
 export const bankDetailsAPI = {
-  /**
-   * List all bank details with optional filters
-   */
   list: async (filters?: SchoolBankDetailListFilters): Promise<SchoolBankDetail[]> => {
-    const response = await api.get('/api/finance/bank-details/', { params: filters });
-    return response.data.data || [];
+    const response = await api.get(`${FINANCE_API_BASE}/bank-accounts/`, { params: filters });
+    return response.data.data || response.data.results || [];
   },
 
-  /**
-   * Create a new bank detail
-   */
   create: async (data: SchoolBankDetailFormValues): Promise<SchoolBankDetail> => {
-    const response = await api.post('/api/finance/bank-details/', data);
-    return response.data.data;
+    const response = await api.post(`${FINANCE_API_BASE}/bank-accounts/`, data);
+    return response.data.data || response.data;
   },
 
-  /**
-   * Get bank detail by ID
-   */
   get: async (id: number): Promise<SchoolBankDetail> => {
-    const response = await api.get(`/api/finance/bank-details/${id}/`);
-    return response.data.data;
+    const response = await api.get(`${FINANCE_API_BASE}/bank-accounts/${id}/`);
+    return response.data.data || response.data;
   },
 
-  /**
-   * Update bank detail
-   */
   update: async (id: number, data: Partial<SchoolBankDetailFormValues>): Promise<SchoolBankDetail> => {
-    const response = await api.put(`/api/finance/bank-details/${id}/`, data);
-    return response.data.data;
+    const response = await api.put(`${FINANCE_API_BASE}/bank-accounts/${id}/`, data);
+    return response.data.data || response.data;
+  },
+
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`${FINANCE_API_BASE}/bank-accounts/${id}/`);
   },
 
   /**
-   * Delete bank detail
+   * Manual balance correction for a specific Bank Account or Cash Vault
    */
-  delete: async (id: number): Promise<void> => {
-    await api.delete(`/api/finance/bank-details/${id}/`);
+  adjustBalance: async (
+    id: number,
+    payload: { adjustment_type: 'add' | 'subtract' | 'set'; amount: string; reason: string }
+  ): Promise<SchoolBankDetail> => {
+    const response = await api.post(`${FINANCE_API_BASE}/bank-accounts/${id}/adjust_balance/`, payload);
+    return response.data.data || response.data;
+  },
+
+  /**
+   * Manual balance correction targeting the user's active physical Cash Vault
+   */
+  adjustCashBalance: async (payload: {
+    adjustment_type: 'add' | 'subtract' | 'set';
+    amount: string;
+    reason: string;
+  }): Promise<{ vault_id: number; vault_name: string; current_balance: string }> => {
+    const response = await api.post(`${FINANCE_API_BASE}/bank-accounts/adjust-cash/`, payload);
+    return response.data.data || response.data;
+  },
+
+  /**
+   * Internal transfers across Cash Vaults and Bank Accounts
+   * Pass null/undefined for source_bank_id to withdraw from Cash Box to Bank
+   * Pass null/undefined for destination_bank_id to withdraw from Bank to Cash Box
+   */
+  transferFunds: async (payload: {
+    source_bank_id?: number | null;
+    destination_bank_id?: number | null;
+    amount: string;
+    reason: string;
+  }): Promise<{ detail: string }> => {
+    const response = await api.post(`${FINANCE_API_BASE}/bank-accounts/transfer/`, payload);
+    return response.data;
   },
 };
 
 // ============================================================
-// 3. STUDENT WALLET FUNDING
+// 3. STUDENT WALLET FUNDING (Fixed to /student-fundings/)
 // ============================================================
 
 export const studentFundingAPI = {
-  /**
-   * List student fundings with pagination and filters
-   */
-  list: async (filters?: StudentFundingListFilters): Promise<PaginatedResponse<StudentFunding>> => {
-    const response = await api.get('/api/finance/student-funding/', { params: filters });
-    // The view uses StandardResultsSetPagination which returns paginated response
-    return response.data.results || { count: 0, next: null, previous: null, results: [] };
+  list: async (filters?: any): Promise<any> => {
+    const response = await api.get(`${FINANCE_API_BASE}/student-fundings/`, { params: filters });
+    return response.data;
   },
 
-  /**
-   * Create a new student funding
-   */
-  create: async (data: StudentFundingFormValues | FormData): Promise<StudentFunding> => {
+  create: async (data: any): Promise<any> => {
     const isFormData = data instanceof FormData;
-    const response = await api.post('/api/finance/student-funding/', data, {
+    const response = await api.post(`${FINANCE_API_BASE}/student-fundings/`, data, {
       headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
     });
-    return response.data.data;
+    return response.data.data || response.data;
   },
 
-  /**
-   * Get student funding by ID
-   */
-  get: async (id: number): Promise<StudentFunding> => {
-    const response = await api.get(`/api/finance/student-funding/${id}/`);
-    return response.data.data;
+  get: async (id: number): Promise<any> => {
+    const response = await api.get(`${FINANCE_API_BASE}/student-fundings/${id}/`);
+    return response.data.data || response.data;
   },
 
-  /**
-   * Perform action on student funding (confirm/decline/revert)
-   */
-  action: async (id: number, payload: StudentFundingActionPayload): Promise<{ message: string }> => {
-    const response = await api.post(`/api/finance/student-funding/${id}/action/`, payload);
+  action: async (id: number, payload: { action: string; reason?: string }): Promise<any> => {
+    const response = await api.post(`${FINANCE_API_BASE}/student-fundings/${id}/${payload.action}/`, {
+      reason: payload.reason,
+    });
+    return response.data;
+  },
+
+  confirm: async (id: number): Promise<any> => {
+    const response = await api.post(`${FINANCE_API_BASE}/student-fundings/${id}/confirm/`, {});
+    return response.data;
+  },
+
+  decline: async (id: number, payload: { reason: string }): Promise<any> => {
+    const response = await api.post(`${FINANCE_API_BASE}/student-fundings/${id}/decline/`, payload);
+    return response.data;
+  },
+
+  revert: async (id: number, payload: { reason: string }): Promise<any> => {
+    const response = await api.post(`${FINANCE_API_BASE}/student-fundings/${id}/revert/`, payload);
     return response.data;
   },
 };
 
 // ============================================================
-// 4. STAFF WALLET FUNDING
+// 4. STAFF WALLET FUNDING (Fixed to /staff-fundings/)
 // ============================================================
 
+
 export const staffFundingAPI = {
-  /**
-   * List staff fundings with pagination and filters
-   */
-  list: async (filters?: StaffFundingListFilters): Promise<PaginatedResponse<StaffFunding>> => {
-    const response = await api.get('/api/finance/staff-funding/', { params: filters });
-    return response.data.results || { count: 0, next: null, previous: null, results: [] };
+  list: async (filters?: any): Promise<any> => {
+    const response = await api.get(`${FINANCE_API_BASE}/staff-fundings/`, { params: filters });
+    return response.data;
   },
 
-  /**
-   * Create a new staff funding
-   */
-  create: async (data: StaffFundingFormValues | FormData): Promise<StaffFunding> => {
+  create: async (data: any): Promise<any> => {
     const isFormData = data instanceof FormData;
-    const response = await api.post('/api/finance/staff-funding/', data, {
+    const response = await api.post(`${FINANCE_API_BASE}/staff-fundings/`, data, {
       headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
     });
-    return response.data.data;
+    return response.data.data || response.data;
   },
 
-  /**
-   * Get staff funding by ID
-   */
-  get: async (id: number): Promise<StaffFunding> => {
-    const response = await api.get(`/api/finance/staff-funding/${id}/`);
-    return response.data.data;
+  get: async (id: number): Promise<any> => {
+    const response = await api.get(`${FINANCE_API_BASE}/staff-fundings/${id}/`);
+    return response.data.data || response.data;
   },
 
-  /**
-   * Perform action on staff funding (confirm/decline/revert)
-   */
-  action: async (id: number, payload: StaffFundingActionPayload): Promise<{ message: string }> => {
-    const response = await api.post(`/api/finance/staff-funding/${id}/action/`, payload);
+  action: async (id: number, payload: { action: string; reason?: string }): Promise<any> => {
+    const response = await api.post(`${FINANCE_API_BASE}/staff-fundings/${id}/${payload.action}/`, {
+      reason: payload.reason,
+    });
     return response.data;
+  },
+
+  confirm: async (id: number): Promise<any> => {
+    const response = await api.post(`${FINANCE_API_BASE}/staff-fundings/${id}/confirm/`, {});
+    return response.data;
+  },
+
+  decline: async (id: number, payload: { reason: string }): Promise<any> => {
+    const response = await api.post(`${FINANCE_API_BASE}/staff-fundings/${id}/decline/`, payload);
+    return response.data;
+  },
+
+  revert: async (id: number, payload: { reason: string }): Promise<any> => {
+    const response = await api.post(`${FINANCE_API_BASE}/staff-fundings/${id}/revert/`, payload);
+    return response.data;
+  },
+};
+
+// ==================== WALLET TRANSFERS API ====================
+export const walletTransferAPI = {
+  list: async (params?: WalletTransferListFilters): Promise<WalletTransferListResponse> => {
+    const response = await api.get(`${FINANCE_API_BASE}/wallet-transfers/`, { params });
+    return response.data;
+  },
+  get: async (id: number): Promise<WalletTransfer> => {
+    const response = await api.get(`${FINANCE_API_BASE}/wallet-transfers/${id}/`);
+    return response.data;
+  },
+  create: async (data: WalletTransferFormValues): Promise<WalletTransfer> => {
+    const response = await api.post(`${FINANCE_API_BASE}/wallet-transfers/`, data);
+    return response.data;
+  },
+  confirm: async (id: number): Promise<WalletTransfer> => {
+    const response = await api.post(`${FINANCE_API_BASE}/wallet-transfers/${id}/confirm/`);
+    return response.data;
+  },
+  decline: async (id: number, reason: string): Promise<{ detail: string }> => {
+    const response = await api.post(`${FINANCE_API_BASE}/wallet-transfers/${id}/decline/`, { reason });
+    return response.data;
+  },
+  revert: async (id: number, reason: string): Promise<WalletTransfer> => {
+    const response = await api.post(`${FINANCE_API_BASE}/wallet-transfers/${id}/revert/`, { reason });
+    return response.data;
+  },
+};
+
+// ============================================================
+// 13. AUDIT LEDGERS (New Additions for Read-Only Views)
+// ============================================================
+
+export const auditLedgersAPI = {
+  getBankLedger: async (params?: any) => {
+    const response = await api.get(`${FINANCE_API_BASE}/bank-ledger/`, { params });
+    return response.data;
+  },
+  getStudentWalletLedger: async (params?: any) => {
+    const response = await api.get(`${FINANCE_API_BASE}/student-wallet-ledger/`, { params });
+    return response.data;
+  },
+  getStaffWalletLedger: async (params?: any) => {
+    const response = await api.get(`${FINANCE_API_BASE}/staff-wallet-ledger/`, { params });
+    return response.data;
+  },
+};
+
+
+// ==================== SELF-SERVICE MY FUNDING API ====================
+
+export const myFundingAPI = {
+  /**
+   * Fetch logged-in staff member's profile, live wallet balance, and funding history.
+   * Hits: GET /api/finance/my-funding/staff/
+   */
+  getStaffFunding: async (params?: MyFundingListParams) => {
+    try {
+      const response = await api.get(`${FINANCE_API_BASE}/my-funding/staff/`, { params });
+      // Returns the unwrapped data payload (handles DRF paginated or custom envelope structures)
+      return response.data;
+    } catch (error: any) {
+      throw error;
+    }
+  },
+
+  /**
+   * Fetch logged-in student/ward funding history.
+   * Hits: GET /api/finance/my-funding/student/
+   */
+  getStudentFunding: async (params?: MyFundingListParams) => {
+    try {
+      const response = await api.get(`${FINANCE_API_BASE}/my-funding/student/`, { params });
+      return response.data;
+    } catch (error: any) {
+      throw error;
+    }
   },
 };
 
@@ -211,39 +353,60 @@ export const incomeCategoriesAPI = {
    * List all income categories
    */
   list: async (): Promise<IncomeCategory[]> => {
-    const response = await api.get('/api/finance/income-categories/');
-    return response.data.data || [];
+    try {
+      const response = await api.get(`${FINANCE_API_BASE}/income-categories/`);
+      if (Array.isArray(response.data)) return response.data;
+      return response.data?.results || response.data?.data || [];
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
   },
 
   /**
    * Create a new income category
    */
   create: async (data: IncomeCategoryFormValues): Promise<IncomeCategory> => {
-    const response = await api.post('/api/finance/income-categories/', data);
-    return response.data.data;
+    try {
+      const response = await api.post(`${FINANCE_API_BASE}/income-categories/`, data);
+      return response.data?.data || response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
   },
 
   /**
    * Get income category by ID
    */
   get: async (id: number): Promise<IncomeCategory> => {
-    const response = await api.get(`/api/finance/income-categories/${id}/`);
-    return response.data.data;
+    try {
+      const response = await api.get(`${FINANCE_API_BASE}/income-categories/${id}/`);
+      return response.data?.data || response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
   },
 
   /**
    * Update income category
    */
   update: async (id: number, data: Partial<IncomeCategoryFormValues>): Promise<IncomeCategory> => {
-    const response = await api.put(`/api/finance/income-categories/${id}/`, data);
-    return response.data.data;
+    try {
+      const response = await api.put(`${FINANCE_API_BASE}/income-categories/${id}/`, data);
+      return response.data?.data || response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
   },
 
   /**
    * Delete income category
    */
   delete: async (id: number): Promise<void> => {
-    await api.delete(`/api/finance/income-categories/${id}/`);
+    try {
+      await api.delete(`${FINANCE_API_BASE}/income-categories/${id}/`);
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
   },
 };
 
@@ -256,8 +419,8 @@ export const incomeAPI = {
    * List income records with pagination and filters
    */
   list: async (filters?: IncomeListFilters): Promise<PaginatedResponse<Income>> => {
-    const response = await api.get('/api/finance/incomes/', { params: filters });
-    return response.data.results || { count: 0, next: null, previous: null, results: [] };
+    const response = await api.get(`${FINANCE_API_BASE}/incomes/`, { params: filters });
+    return response.data.results || response.data || { count: 0, next: null, previous: null, results: [] };
   },
 
   /**
@@ -265,18 +428,18 @@ export const incomeAPI = {
    */
   create: async (data: IncomeFormValues | FormData): Promise<Income> => {
     const isFormData = data instanceof FormData;
-    const response = await api.post('/api/finance/incomes/', data, {
+    const response = await api.post(`${FINANCE_API_BASE}/incomes/`, data, {
       headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
     });
-    return response.data.data;
+    return response.data.data || response.data;
   },
 
   /**
    * Get income record by ID
    */
   get: async (id: number): Promise<Income> => {
-    const response = await api.get(`/api/finance/incomes/${id}/`);
-    return response.data.data;
+    const response = await api.get(`${FINANCE_API_BASE}/incomes/${id}/`);
+    return response.data.data || response.data;
   },
 
   /**
@@ -284,17 +447,17 @@ export const incomeAPI = {
    */
   update: async (id: number, data: Partial<IncomeFormValues> | FormData): Promise<Income> => {
     const isFormData = data instanceof FormData;
-    const response = await api.put(`/api/finance/incomes/${id}/`, data, {
+    const response = await api.put(`${FINANCE_API_BASE}/incomes/${id}/`, data, {
       headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
     });
-    return response.data.data;
+    return response.data.data || response.data;
   },
 
   /**
    * Delete income record
    */
   delete: async (id: number): Promise<void> => {
-    await api.delete(`/api/finance/incomes/${id}/`);
+    await api.delete(`${FINANCE_API_BASE}/incomes/${id}/`);
   },
 };
 
@@ -307,39 +470,60 @@ export const expenseCategoriesAPI = {
    * List all expense categories
    */
   list: async (): Promise<ExpenseCategory[]> => {
-    const response = await api.get('/api/finance/expense-categories/');
-    return response.data.data || [];
+    try {
+      const response = await api.get(`${FINANCE_API_BASE}/expense-categories/`);
+      if (Array.isArray(response.data)) return response.data;
+      return response.data?.results || response.data?.data || [];
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
   },
 
   /**
    * Create a new expense category
    */
   create: async (data: ExpenseCategoryFormValues): Promise<ExpenseCategory> => {
-    const response = await api.post('/api/finance/expense-categories/', data);
-    return response.data.data;
+    try {
+      const response = await api.post(`${FINANCE_API_BASE}/expense-categories/`, data);
+      return response.data?.data || response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
   },
 
   /**
    * Get expense category by ID
    */
   get: async (id: number): Promise<ExpenseCategory> => {
-    const response = await api.get(`/api/finance/expense-categories/${id}/`);
-    return response.data.data;
+    try {
+      const response = await api.get(`${FINANCE_API_BASE}/expense-categories/${id}/`);
+      return response.data?.data || response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
   },
 
   /**
    * Update expense category
    */
   update: async (id: number, data: Partial<ExpenseCategoryFormValues>): Promise<ExpenseCategory> => {
-    const response = await api.put(`/api/finance/expense-categories/${id}/`, data);
-    return response.data.data;
+    try {
+      const response = await api.put(`${FINANCE_API_BASE}/expense-categories/${id}/`, data);
+      return response.data?.data || response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
   },
 
   /**
    * Delete expense category
    */
   delete: async (id: number): Promise<void> => {
-    await api.delete(`/api/finance/expense-categories/${id}/`);
+    try {
+      await api.delete(`${FINANCE_API_BASE}/expense-categories/${id}/`);
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
   },
 };
 
@@ -352,8 +536,8 @@ export const expenseAPI = {
    * List expense records with pagination and filters
    */
   list: async (filters?: ExpenseListFilters): Promise<PaginatedResponse<Expense>> => {
-    const response = await api.get('/api/finance/expenses/', { params: filters });
-    return response.data.results || { count: 0, next: null, previous: null, results: [] };
+    const response = await api.get(`${FINANCE_API_BASE}/expenses/`, { params: filters });
+    return response.data.results || response.data || { count: 0, next: null, previous: null, results: [] };
   },
 
   /**
@@ -361,38 +545,41 @@ export const expenseAPI = {
    */
   create: async (data: ExpenseFormValues | FormData): Promise<Expense> => {
     const isFormData = data instanceof FormData;
-    const response = await api.post('/api/finance/expenses/', data, {
+    const response = await api.post(`${FINANCE_API_BASE}/expenses/`, data, {
       headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
     });
-    return response.data.data;
+    return response.data.data || response.data;
   },
 
   /**
    * Get expense record by ID
    */
   get: async (id: number): Promise<Expense> => {
-    const response = await api.get(`/api/finance/expenses/${id}/`);
-    return response.data.data;
+    const response = await api.get(`${FINANCE_API_BASE}/expenses/${id}/`);
+    return response.data.data || response.data;
   },
 
   /**
    * Update expense record
    */
-  update: async (id: number, data: Partial<ExpenseFormValues> | FormData): Promise<Expense> => {
+  update: async (id: number, data: Partial<ExpenseFormValues> | FormData | any): Promise<Expense> => {
     const isFormData = data instanceof FormData;
-    const response = await api.put(`/api/finance/expenses/${id}/`, data, {
+    // Changed api.put to api.patch:
+    const response = await api.patch(`${FINANCE_API_BASE}/expenses/${id}/`, data, {
       headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
     });
-    return response.data.data;
+    return response.data?.data || response.data;
   },
 
   /**
    * Delete expense record
    */
   delete: async (id: number): Promise<void> => {
-    await api.delete(`/api/finance/expenses/${id}/`);
+    await api.delete(`${FINANCE_API_BASE}/expenses/${id}/`);
   },
 };
+
+
 
 // ============================================================
 // 9. SUPPLIER PAYMENTS
@@ -403,7 +590,7 @@ export const supplierPaymentsAPI = {
    * List supplier payments with pagination and filters
    */
   list: async (filters?: SupplierPaymentListFilters): Promise<PaginatedResponse<SupplierPayment>> => {
-    const response = await api.get('/api/finance/supplier-payments/', { params: filters });
+    const response = await api.get(`${FINANCE_API_BASE}/supplier-payments/`, { params: filters });
     return response.data.results || { count: 0, next: null, previous: null, results: [] };
   },
 
@@ -411,7 +598,7 @@ export const supplierPaymentsAPI = {
    * Create a new supplier payment
    */
   create: async (data: SupplierPaymentFormValues): Promise<SupplierPayment> => {
-    const response = await api.post('/api/finance/supplier-payments/', data);
+    const response = await api.post(`${FINANCE_API_BASE}/supplier-payments/`, data);
     return response.data.data;
   },
 
@@ -419,7 +606,7 @@ export const supplierPaymentsAPI = {
    * Get supplier payment by ID
    */
   get: async (id: number): Promise<SupplierPayment> => {
-    const response = await api.get(`/api/finance/supplier-payments/${id}/`);
+    const response = await api.get(`${FINANCE_API_BASE}/supplier-payments/${id}/`);
     return response.data.data;
   },
 };
@@ -433,7 +620,7 @@ export const advancePaymentsAPI = {
    * List purchase advance payments with pagination and filters
    */
   list: async (filters?: PurchaseAdvancePaymentListFilters): Promise<PaginatedResponse<PurchaseAdvancePayment>> => {
-    const response = await api.get('/api/finance/advance-payments/', { params: filters });
+    const response = await api.get(`${FINANCE_API_BASE}/advance-payments/`, { params: filters });
     return response.data.results || { count: 0, next: null, previous: null, results: [] };
   },
 
@@ -441,7 +628,7 @@ export const advancePaymentsAPI = {
    * Create a new purchase advance payment
    */
   create: async (data: PurchaseAdvancePaymentFormValues): Promise<PurchaseAdvancePayment> => {
-    const response = await api.post('/api/finance/advance-payments/', data);
+    const response = await api.post(`${FINANCE_API_BASE}/advance-payments/`, data);
     return response.data.data;
   },
 
@@ -449,7 +636,7 @@ export const advancePaymentsAPI = {
    * Get purchase advance payment by ID
    */
   get: async (id: number): Promise<PurchaseAdvancePayment> => {
-    const response = await api.get(`/api/finance/advance-payments/${id}/`);
+    const response = await api.get(`${FINANCE_API_BASE}/advance-payments/${id}/`);
     return response.data.data;
   },
 };
@@ -461,11 +648,9 @@ export const advancePaymentsAPI = {
 export const advanceSettlementsAPI = {
   /**
    * List advance settlements with pagination and filters
-   * Note: This endpoint may not exist yet in your URLs,
-   * but keeping it ready for when you add it.
    */
   list: async (filters?: AdvanceSettlementListFilters): Promise<PaginatedResponse<AdvanceSettlement>> => {
-    const response = await api.get('/api/finance/advance-settlements/', { params: filters });
+    const response = await api.get(`${FINANCE_API_BASE}/advance-settlements/`, { params: filters });
     return response.data.results || { count: 0, next: null, previous: null, results: [] };
   },
 
@@ -473,7 +658,7 @@ export const advanceSettlementsAPI = {
    * Create a new advance settlement
    */
   create: async (data: AdvanceSettlementFormValues): Promise<AdvanceSettlement> => {
-    const response = await api.post('/api/finance/advance-settlements/', data);
+    const response = await api.post(`${FINANCE_API_BASE}/advance-settlements/`, data);
     return response.data.data;
   },
 
@@ -481,7 +666,7 @@ export const advanceSettlementsAPI = {
    * Get advance settlement by ID
    */
   get: async (id: number): Promise<AdvanceSettlement> => {
-    const response = await api.get(`/api/finance/advance-settlements/${id}/`);
+    const response = await api.get(`${FINANCE_API_BASE}/advance-settlements/${id}/`);
     return response.data.data;
   },
 
@@ -489,7 +674,7 @@ export const advanceSettlementsAPI = {
    * Update advance settlement
    */
   update: async (id: number, data: Partial<AdvanceSettlementFormValues>): Promise<AdvanceSettlement> => {
-    const response = await api.put(`/api/finance/advance-settlements/${id}/`, data);
+    const response = await api.put(`${FINANCE_API_BASE}/advance-settlements/${id}/`, data);
     return response.data.data;
   },
 
@@ -497,7 +682,7 @@ export const advanceSettlementsAPI = {
    * Delete advance settlement
    */
   delete: async (id: number): Promise<void> => {
-    await api.delete(`/api/finance/advance-settlements/${id}/`);
+    await api.delete(`${FINANCE_API_BASE}/advance-settlements/${id}/`);
   },
 };
 
@@ -510,8 +695,121 @@ export const financeDashboardAPI = {
    * Get finance dashboard statistics
    */
   getStats: async (params?: { session_id?: number; period_id?: number }): Promise<FinanceDashboardStats> => {
-    const response = await api.get('/api/finance/dashboard/stats/', { params });
+    const response = await api.get(`${FINANCE_API_BASE}/dashboard/stats/`, { params });
     return response.data.data;
+  },
+};
+
+
+// ============================================================
+// 14. PAYMENT GATEWAY CONFIGURATIONS
+// ============================================================
+
+export const gatewayAPI = {
+  /**
+   * List all institutional payment gateways
+   */
+  list: async (): Promise<PaymentGatewayConfig[]> => {
+    const response = await api.get(`${FINANCE_API_BASE}/gateways/`);
+    return response.data.data || response.data.results || response.data || [];
+  },
+
+  /**
+   * Register a new payment gateway provider
+   */
+  create: async (data: any): Promise<PaymentGatewayConfig> => {
+    try {
+      const response = await api.post(`${FINANCE_API_BASE}/gateways/`, data);
+      return response.data.data || response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  /**
+   * Get specific gateway details by ID
+   */
+  get: async (id: number): Promise<PaymentGatewayConfig> => {
+    const response = await api.get(`${FINANCE_API_BASE}/gateways/${id}/`);
+    return response.data.data || response.data;
+  },
+
+  /**
+   * Update existing gateway configuration
+   */
+  update: async (id: number, data: any): Promise<PaymentGatewayConfig> => {
+    try {
+      const response = await api.put(`${FINANCE_API_BASE}/gateways/${id}/`, data);
+      return response.data.data || response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  /**
+   * Delete gateway configuration
+   */
+  delete: async (id: number): Promise<void> => {
+    try {
+      await api.delete(`${FINANCE_API_BASE}/gateways/${id}/`);
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  /**
+   * Set specific gateway as the institutional default
+   */
+  setDefault: async (id: number): Promise<PaymentGatewayConfig> => {
+    try {
+      const response = await api.post(`${FINANCE_API_BASE}/gateways/${id}/set-default/`);
+      return response.data.data || response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+};
+
+
+// ============================================================
+// 15. ONLINE PAYMENT TRANSACTIONS (Paystack / Flutterwave Initiate)
+// ============================================================
+export const onlinePaymentAPI = {
+  /**
+   * List online payment audit trail
+   */
+  list: async (params?: any) => {
+    const response = await api.get(`${FINANCE_API_BASE}/online-transactions/`, { params });
+    return response.data.results || response.data;
+  },
+
+  /**
+   * Initiate online checkout session
+   */
+  initiate: async (payload: {
+    payment_type: 'student_funding' | 'staff_funding';
+    payment_id: number;
+    amount: string | number;
+    email?: string; // <-- Added to allow frontend email overrides/fallbacks
+  }) => {
+    try {
+      const response = await api.post(`${FINANCE_API_BASE}/online-transactions/initiate/`, payload);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  /**
+   * Synchronously verify a transaction reference with the payment gateway
+   */
+  verifyLive: async (reference: string) => {
+    try {
+      const response = await api.post(`${FINANCE_API_BASE}/online-transactions/verify-live/`, { reference });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
   },
 };
 
@@ -532,6 +830,11 @@ export const financeAPI = {
   advancePayments: advancePaymentsAPI,
   advanceSettlements: advanceSettlementsAPI,
   dashboard: financeDashboardAPI,
+  gateways: gatewayAPI,
+  onlinePayments: onlinePaymentAPI,
+  auditLedgers: auditLedgersAPI,
+  walletTransfer: walletTransferAPI,
+  myFunding: myFundingAPI,
 };
 
 // ============================================================

@@ -35,6 +35,18 @@ interface CategoryFormData {
   student_class: number[];
 }
 
+interface PreviewFieldRow {
+  id: number;
+  name: string;
+  order: number;
+}
+
+interface PreviewCategoryGroup {
+  categoryId: number;
+  categoryName: string;
+  fields: PreviewFieldRow[];
+}
+
 let _uid = 0;
 const uid = () => String(++_uid);
 let _toastId = 0;
@@ -542,7 +554,6 @@ function TeachersModal({ categoryName, assignedTeachers, isSaving, onSave, onClo
             <p className="text-center text-sm text-slate-400 py-8">Type at least 2 characters to search for staff</p>
           )}
 
-          {/* CHANGE 4: localTeachers.length instead of assignedTeachers.length */}
           {localTeachers.length > 0 && (
             <div className="space-y-2 pt-4 border-t border-slate-100">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Currently Assigned</p>
@@ -571,6 +582,152 @@ function TeachersModal({ categoryName, assignedTeachers, isSaving, onSave, onClo
           <button onClick={handleSubmit} disabled={isSaving}
             className="px-5 py-2 text-sm bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-blue-200">
             {isSaving ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</> : <><Check className="h-4 w-4" /> Save Teachers</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Preview Modal ─────────────────────────────────────────────────────────────
+function PreviewModal({
+  allClassConfigs,
+  loading,
+  results,
+  onRunPreview,
+  onClose,
+}: {
+  allClassConfigs: ClassConfiguration[];
+  loading: boolean;
+  results: PreviewCategoryGroup[] | null;
+  onRunPreview: (configIds: number[], kind: 'normal' | 'special' | 'both') => void;
+  onClose: () => void;
+}) {
+  const grouped = useMemo(() => {
+    const map: Record<string, { classId: number; className: string; configs: ClassConfiguration[] }> = {};
+    allClassConfigs.forEach(cfg => {
+      const className = cfg.class_name || `Class ${cfg.student_class}`;
+      if (!map[className]) {
+        map[className] = { classId: cfg.student_class as number, className, configs: [] };
+      }
+      map[className].configs.push(cfg);
+    });
+    return Object.values(map);
+  }, [allClassConfigs]);
+
+  const [selectedClassName, setSelectedClassName] = useState<string>('');
+  const [selectedConfigId, setSelectedConfigId] = useState<number | ''>('');
+  const [kind, setKind] = useState<'normal' | 'special' | 'both'>('both');
+
+  const currentGroup = grouped.find(g => g.className === selectedClassName) || null;
+  const hasMultipleSections = (currentGroup?.configs.length || 0) > 1;
+
+  const handleClassChange = (className: string) => {
+    setSelectedClassName(className);
+    setSelectedConfigId('');
+  };
+
+  const handleShowPreview = () => {
+    if (!currentGroup) return;
+    const configIds = selectedConfigId
+      ? [Number(selectedConfigId)]
+      : currentGroup.configs.map(c => c.id);
+    onRunPreview(configIds, kind);
+  };
+
+  const inputCls = "w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white";
+  const labelCls = "block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5";
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col" style={{ maxHeight: '92vh' }}>
+
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Layers className="h-4 w-4" />
+            Preview Categories &amp; Fields
+          </h3>
+          <button onClick={onClose} className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5 overflow-y-auto flex-1 min-h-0">
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className={labelCls}>Class</label>
+              <select value={selectedClassName} onChange={e => handleClassChange(e.target.value)} className={inputCls}>
+                <option value="">Select Class</option>
+                {grouped.map(g => <option key={g.className} value={g.className}>{g.className}</option>)}
+              </select>
+            </div>
+
+            {hasMultipleSections && (
+              <div>
+                <label className={labelCls}>Section <span className="text-slate-300 normal-case">(optional)</span></label>
+                <select value={selectedConfigId} onChange={e => setSelectedConfigId(e.target.value ? Number(e.target.value) : '')} className={inputCls}>
+                  <option value="">All Sections</option>
+                  {currentGroup?.configs.map(cfg => (
+                    <option key={cfg.id} value={cfg.id}>{cfg.class_section_name || currentGroup.className}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className={labelCls}>Student Kind</label>
+              <select value={kind} onChange={e => setKind(e.target.value as any)} className={inputCls}>
+                <option value="both">Both</option>
+                <option value="normal">Normal</option>
+                <option value="special">Special</option>
+              </select>
+            </div>
+          </div>
+
+          <button
+            onClick={handleShowPreview}
+            disabled={!selectedClassName || loading}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50"
+          >
+            {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Loading...</> : <><Search className="h-4 w-4" /> Show Preview</>}
+          </button>
+
+          {results && (
+            results.length === 0 ? (
+              <p className="text-sm text-slate-400 italic text-center py-8">No categories or fields match this selection.</p>
+            ) : (
+              <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+                {results.map(group => (
+                  <div key={group.categoryId}>
+                    <div className="px-4 py-2 bg-slate-50 border-b border-slate-100">
+                      <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">{group.categoryName}</p>
+                    </div>
+                    {group.fields.length === 0 ? (
+                      <p className="px-4 py-3 text-sm text-slate-400 italic">No matching fields.</p>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <tbody>
+                          {group.fields.map((f, idx) => (
+                            <tr key={f.id} className={idx !== group.fields.length - 1 ? 'border-b border-slate-50' : ''}>
+                              <td className="px-4 py-2 text-slate-400 w-10">{f.order}</td>
+                              <td className="px-4 py-2 text-slate-700">{f.name}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex-shrink-0">
+          <button type="button" onClick={onClose}
+            className="px-4 py-2 text-sm border border-slate-200 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition-colors">
+            Close
           </button>
         </div>
       </div>
@@ -688,7 +845,6 @@ export default function TextCategoriesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [loadingTeachers, setLoadingTeachers] = useState(false);
 
-  // CHANGE 1: added pendingTeachers and teacherModalKey
   const [pendingTeachers, setPendingTeachers] = useState<Staff[] | null>(null);
   const [teacherModalKey, setTeacherModalKey] = useState(0);
 
@@ -714,9 +870,14 @@ export default function TextCategoriesPage() {
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canCreate = user?.is_superuser || hasPermission('result.add_textresultcategorymodel');
-  const canEdit = user?.is_superuser || hasPermission('result.change_textresultcategorymodel');
-  const canDelete = user?.is_superuser || hasPermission('result.delete_textresultcategorymodel');
+  // ── Preview state ──
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewResults, setPreviewResults] = useState<PreviewCategoryGroup[] | null>(null);
+
+  const canCreate = user?.is_superuser || hasPermission('result.manage_result_configuration');
+  const canEdit = user?.is_superuser || hasPermission('result.manage_result_configuration');
+  const canDelete = user?.is_superuser || hasPermission('result.manage_result_configuration');
 
   const scope = settings?.text_category_scope || 'fixed';
 
@@ -1029,6 +1190,44 @@ export default function TextCategoriesPage() {
     }
   };
 
+  // ── Preview handler ──
+  const handleRunPreview = async (configIds: number[], kind: 'normal' | 'special' | 'both') => {
+    setPreviewLoading(true);
+    setPreviewResults(null);
+    try {
+      const matchesClass = (studentClass: number[] | undefined | null) =>
+        !studentClass || studentClass.length === 0 || studentClass.some(id => configIds.includes(id));
+
+      const matchesKind = (itemKind: string) =>
+        kind === 'both' ? true : (itemKind === kind || itemKind === 'combined');
+
+      const matchingCategories = categories
+        .filter(c => matchesClass(c.student_class) && matchesKind(c.student_kind))
+        .sort((a, b) => a.order - b.order);
+
+      const groups: PreviewCategoryGroup[] = [];
+      for (const category of matchingCategories) {
+        const fieldsData = await textCategoriesAPI.listFields({ category: category.id });
+        const fields = Array.isArray(fieldsData) ? fieldsData : [];
+        const matchingFields = fields
+          .filter(f => matchesClass(f.student_class) && matchesKind(f.student_kind || category.student_kind))
+          .sort((a, b) => a.order - b.order)
+          .map(f => ({ id: f.id, name: f.name, order: f.order }));
+
+        if (matchingFields.length > 0) {
+          groups.push({ categoryId: category.id, categoryName: category.name, fields: matchingFields });
+        }
+      }
+
+      setPreviewResults(groups);
+    } catch (err) {
+      showToast('error', extractError(err));
+      setPreviewResults([]);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const getPeriodTypeLabel = () => {
     if (!periodType) return 'Period';
     return periodType.singular_name.charAt(0).toUpperCase() + periodType.singular_name.slice(1);
@@ -1107,7 +1306,6 @@ export default function TextCategoriesPage() {
         />
       )}
 
-      {/* CHANGE 3: key={teacherModalKey}, pendingTeachers, updated onClose */}
       {showTeachersModal && selectedCategoryForTeachers && pendingTeachers !== null && (
         <TeachersModal
           key={teacherModalKey}
@@ -1116,6 +1314,16 @@ export default function TextCategoriesPage() {
           isSaving={isSavingTeachers}
           onSave={handleSaveTeachers}
           onClose={() => { setShowTeachersModal(false); setSelectedCategoryForTeachers(null); setPendingTeachers(null); }}
+        />
+      )}
+
+      {showPreviewModal && (
+        <PreviewModal
+          allClassConfigs={allClassConfigs}
+          loading={previewLoading}
+          results={previewResults}
+          onRunPreview={handleRunPreview}
+          onClose={() => { setShowPreviewModal(false); setPreviewResults(null); }}
         />
       )}
 
@@ -1130,12 +1338,18 @@ export default function TextCategoriesPage() {
           </h1>
           <p className="text-sm text-slate-400 mt-1 pl-12">Manage text-based result categories and fields</p>
         </div>
-        {canCreate && (
-          <button onClick={() => { setEditingCategory(null); setShowCategoryModal(true); }}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-blue-200">
-            <Plus className="h-4 w-4" /> New Category
+        <div className="flex items-center gap-3">
+          <button onClick={() => { setPreviewResults(null); setShowPreviewModal(true); }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-50 transition-all">
+            <Search className="h-4 w-4" /> Preview
           </button>
-        )}
+          {canCreate && (
+            <button onClick={() => { setEditingCategory(null); setShowCategoryModal(true); }}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-blue-200">
+              <Plus className="h-4 w-4" /> New Category
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Filters ── */}
@@ -1327,7 +1541,6 @@ export default function TextCategoriesPage() {
                       <div className="flex items-center gap-1">
                         {canEdit && (
                           <>
-                            {/* CHANGE 2: updated button click handler */}
                             <button
                               onClick={async () => {
                                 setSelectedCategoryForTeachers(category);

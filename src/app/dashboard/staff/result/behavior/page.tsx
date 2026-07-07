@@ -286,9 +286,9 @@ export default function BehaviorPage() {
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canCreate = user?.is_superuser || hasPermission('result.add_resultbehaviorcategorymodel');
-  const canEdit = user?.is_superuser || hasPermission('result.change_resultbehaviorcategorymodel');
-  const canDelete = user?.is_superuser || hasPermission('result.delete_resultbehaviorcategorymodel');
+  const canCreate = user?.is_superuser || hasPermission('result.manage_result_configuration');
+  const canEdit = user?.is_superuser || hasPermission('result.manage_result_configuration');
+  const canDelete = user?.is_superuser || hasPermission('result.manage_result_configuration');
 
   const showToast = (type: 'success' | 'error' | 'warn', message: string) => {
     const id = ++_toastId;
