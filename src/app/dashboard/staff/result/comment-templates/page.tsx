@@ -7,7 +7,7 @@ import { ResultCommentTemplate, ResultConfigurationGroup } from '@/lib/types';
 import {
   MessageSquare, Plus, Edit3, Trash2, Search, X, Check, AlertCircle,
   AlertTriangle, Loader2, RefreshCw, ChevronDown, ChevronUp,
-  Layers, Shield, FileText, Copy, Trash, Eye, ChevronLeft, ChevronRight,
+  Layers, Shield, FileText, Copy, Trash, Eye,
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -288,12 +288,6 @@ export default function CommentTemplatesPage() {
 
   const [templates, setTemplates] = useState<ResultCommentTemplate[]>([]);
   const [groups, setGroups] = useState<ResultConfigurationGroup[]>([]);
-
-  // --- Pagination States ---
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
-  const PAGE_SIZE = 20;
-
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
@@ -332,50 +326,22 @@ export default function CommentTemplatesPage() {
   const fetchData = useCallback(async () => {
     setLoading(true); setPageError(null);
     try {
-      const params: any = { page: currentPage };
-
-      // Sending filters to the backend
+      const params: any = {};
       if (filterGroup) params.configuration_group = filterGroup;
       if (filterType) params.comment_type = filterType;
-      if (filterAppliesTo) params.applies_to = filterAppliesTo;
-      if (searchTerm) params.search = searchTerm;
 
       const [templatesData, groupsData] = await Promise.all([
         resultCommentTemplatesAPI.list(params),
         resultGroupsAPI.list(),
       ]);
-
-      // --- THE TYPE FIX ---
-      // Handle standard Django REST framework paginated responses OR raw arrays
-      if (templatesData && typeof templatesData === 'object' && 'results' in templatesData) {
-        // Assert the exact shape so TypeScript compiles
-        const paginatedData = templatesData as { results: ResultCommentTemplate[], count: number };
-        setTemplates(paginatedData.results);
-        setTotalCount(paginatedData.count);
-      } else if (Array.isArray(templatesData)) {
-        setTemplates(templatesData as ResultCommentTemplate[]);
-        setTotalCount(templatesData.length);
-      } else {
-        setTemplates([]);
-        setTotalCount(0);
-      }
-
+      setTemplates(Array.isArray(templatesData) ? templatesData : []);
       setGroups(Array.isArray(groupsData) ? groupsData : []);
     } catch (err) {
       setPageError(extractError(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [currentPage, filterGroup, filterType, filterAppliesTo, searchTerm]);
+    } finally { setLoading(false); }
+  }, [filterGroup, filterType]);
 
-  // Reset to page 1 if any filter changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filterGroup, filterType, filterAppliesTo, searchTerm]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleSave = async (data: TemplateFormData) => {
     setIsSaving(true);
@@ -390,15 +356,17 @@ export default function CommentTemplatesPage() {
       };
 
       if (editingTemplate) {
-        await resultCommentTemplatesAPI.update(editingTemplate.id, payload as any);
+        const updated = await resultCommentTemplatesAPI.update(editingTemplate.id, payload as any);
+        setTemplates(prev => prev.map(t => t.id === editingTemplate.id ? updated : t));
         showToast('success', 'Template updated successfully');
       } else {
-        await resultCommentTemplatesAPI.create(payload as any);
+        const created = await resultCommentTemplatesAPI.create(payload as any);
+        setTemplates(prev => [created, ...prev]);
         showToast('success', 'Template created successfully');
       }
       setShowModal(false);
       setEditingTemplate(null);
-      fetchData(); // Refetch to maintain accurate pagination
+      fetchData();
     } catch (err) {
       throw err;
     } finally {
@@ -411,9 +379,9 @@ export default function CommentTemplatesPage() {
     setIsDeleting(true);
     try {
       await resultCommentTemplatesAPI.delete(deletingTemplate.id);
+      setTemplates(prev => prev.filter(t => t.id !== deletingTemplate.id));
       showToast('success', 'Template deleted successfully');
       setDeletingTemplate(null);
-      fetchData(); // Refetch to fill the gap left by deletion
     } catch (err) {
       showToast('error', extractError(err));
       setDeletingTemplate(null);
@@ -439,12 +407,16 @@ export default function CommentTemplatesPage() {
 
   const getGroupName = (id: number) => groups.find(g => g.id === id)?.name ?? `Group ${id}`;
 
-  // Fallback client-side filtering (only applied to current page if backend doesn't support the query params)
   const filtered = templates.filter(t => {
     const matchSearch = !searchTerm || t.comment_text.toLowerCase().includes(searchTerm.toLowerCase());
     const matchAppliesTo = !filterAppliesTo || (t as any).applies_to === filterAppliesTo;
     return matchSearch && matchAppliesTo;
   });
+
+  const totalByType = {
+    form_teacher: templates.filter(t => t.comment_type === 'form_teacher').length,
+    head_teacher: templates.filter(t => t.comment_type === 'head_teacher').length,
+  };
 
   const getAppliesToLabel = (appliesTo: string) => {
     switch (appliesTo) {
@@ -454,8 +426,6 @@ export default function CommentTemplatesPage() {
       default: return appliesTo;
     }
   };
-
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
   return (
     <div className="space-y-6 pb-10">
@@ -499,11 +469,12 @@ export default function CommentTemplatesPage() {
       </div>
 
       {/* ── Stat Chips ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Total Database Templates', value: totalCount, icon: MessageSquare, color: 'from-blue-500 to-blue-600' },
-          { label: 'Configuration Groups', value: groups.length, icon: Layers, color: 'from-orange-400 to-amber-500' },
-          { label: 'Current Page Total', value: filtered.length, icon: FileText, color: 'from-emerald-500 to-teal-600' },
+          { label: 'Total Templates', value: templates.length, icon: MessageSquare, color: 'from-blue-500 to-blue-600' },
+          { label: 'Form Teacher', value: totalByType.form_teacher, icon: FileText, color: 'from-emerald-500 to-teal-600' },
+          { label: 'Head Teacher', value: totalByType.head_teacher, icon: Shield, color: 'from-violet-500 to-purple-600' },
+          { label: 'Groups', value: groups.length, icon: Layers, color: 'from-orange-400 to-amber-500' },
         ].map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
             <div className={`w-9 h-9 bg-gradient-to-br ${color} rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm`}>
@@ -772,38 +743,13 @@ export default function CommentTemplatesPage() {
               ))}
             </div>
 
-            {/* --- NEW PAGINATION FOOTER --- */}
-            {totalCount > 0 && (
-              <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/40">
-                <p className="text-xs text-slate-500">
-                  Showing <span className="font-medium text-slate-700">{(currentPage - 1) * PAGE_SIZE + 1}</span> to <span className="font-medium text-slate-700">{Math.min(currentPage * PAGE_SIZE, totalCount)}</span> of <span className="font-medium text-slate-700">{totalCount}</span> templates
-                </p>
-
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-medium text-slate-500">
-                    Page {currentPage} of {totalPages}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1 || loading}
-                      className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-50 hover:bg-slate-50 transition-colors shadow-sm"
-                      title="Previous Page"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages || loading}
-                      className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-50 hover:bg-slate-50 transition-colors shadow-sm"
-                      title="Next Page"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-slate-50 bg-slate-50/40">
+              <p className="text-xs text-slate-400">
+                Showing {filtered.length} of {templates.length} template{templates.length !== 1 ? 's' : ''}
+                {filterGroup ? ` in group` : ''}{filterType ? ` (${filterType === 'form_teacher' ? 'Form Teacher' : 'Head Teacher'})` : ''}
+              </p>
+            </div>
           </>
         )}
       </div>
