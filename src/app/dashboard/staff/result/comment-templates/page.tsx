@@ -338,19 +338,22 @@ export default function CommentTemplatesPage() {
       if (filterGroup) params.configuration_group = filterGroup;
       if (filterType) params.comment_type = filterType;
       if (filterAppliesTo) params.applies_to = filterAppliesTo;
-      if (searchTerm) params.search = searchTerm; // Assuming your DRF viewset uses SearchFilter
+      if (searchTerm) params.search = searchTerm;
 
       const [templatesData, groupsData] = await Promise.all([
         resultCommentTemplatesAPI.list(params),
         resultGroupsAPI.list(),
       ]);
 
+      // --- THE TYPE FIX ---
       // Handle standard Django REST framework paginated responses OR raw arrays
       if (templatesData && typeof templatesData === 'object' && 'results' in templatesData) {
-        setTemplates(templatesData.results);
-        setTotalCount(templatesData.count);
+        // Assert the exact shape so TypeScript compiles
+        const paginatedData = templatesData as { results: ResultCommentTemplate[], count: number };
+        setTemplates(paginatedData.results);
+        setTotalCount(paginatedData.count);
       } else if (Array.isArray(templatesData)) {
-        setTemplates(templatesData);
+        setTemplates(templatesData as ResultCommentTemplate[]);
         setTotalCount(templatesData.length);
       } else {
         setTemplates([]);
