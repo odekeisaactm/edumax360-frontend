@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { resultViewAPI } from '@/lib/api';
@@ -38,7 +38,6 @@ interface DashboardStats {
 }
 
 interface FilterOption { id: number; name: string; }
-interface SectionOption extends FilterOption { parentClassId: number; }
 
 let _toastId = 0;
 interface ToastItem { id: number; type: 'success' | 'error' | 'warn'; message: string; }
@@ -92,13 +91,10 @@ export default function UploadedResultsPage() {
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
-  // --- Filter Options ---
-  const [schoolSectionOptions, setSchoolSectionOptions] = useState<FilterOption[]>([]);
-  const [studentClassOptions, setStudentClassOptions] = useState<FilterOption[]>([]);
-  const [classSectionOptions, setClassSectionOptions] = useState<SectionOption[]>([]);
-  const [subjectOptions, setSubjectOptions] = useState<FilterOption[]>([]);
+  // --- Filter Options States ---
+  const [rawFilterData, setRawFilterData] = useState<any[]>([]);
 
-  // --- Filter States ---
+  // --- Filter Selection States ---
   const [statusFilter, setStatusFilter] = useState<'all' | 'complete' | 'partial' | 'pending'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<'class_name' | 'subject_name'>('class_name');
@@ -125,39 +121,12 @@ export default function UploadedResultsPage() {
   };
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  // --- Fetch Dynamic Filters ---
+  // 1. Fetch raw permitted data (ONLY 'score' based to hide Play Group)
   useEffect(() => {
     const loadFilters = async () => {
       try {
-        const response = await api.get('/api/academic/class-subjects/uploadable/', { params: { result_type: 'all' }});
-        const classesData = response.data?.data?.classes || [];
-
-        const uSchoolSections = new Map<number, FilterOption>();
-        const uStudentClasses = new Map<number, FilterOption>();
-        const uClassSections = new Map<number, SectionOption>();
-        const uSubjects = new Map<number, FilterOption>();
-
-        classesData.forEach((cls: any) => {
-          if (cls.school_section_id) {
-            uSchoolSections.set(cls.school_section_id, { id: cls.school_section_id, name: cls.school_section_name });
-          }
-          if (cls.student_class_id) {
-            uStudentClasses.set(cls.student_class_id, { id: cls.student_class_id, name: cls.class_name });
-          }
-          if (cls.class_section_id) {
-            // Store the parent student_class_id so we can filter sections based on selected class
-            uClassSections.set(cls.class_section_id, { id: cls.class_section_id, name: cls.class_section_name, parentClassId: cls.student_class_id });
-          }
-          cls.subjects?.forEach((sub: any) => {
-            uSubjects.set(sub.id, { id: sub.id, name: sub.name });
-          });
-        });
-
-        setSchoolSectionOptions(Array.from(uSchoolSections.values()));
-        setStudentClassOptions(Array.from(uStudentClasses.values()));
-        setClassSectionOptions(Array.from(uClassSections.values()));
-        setSubjectOptions(Array.from(uSubjects.values()));
-
+        const response = await api.get('/api/academic/class-subjects/uploadable/', { params: { result_type: 'score' }});
+        setRawFilterData(response.data?.data?.classes || []);
       } catch (err) {
         console.error("Failed to load permitted filter options", err);
       }
@@ -165,18 +134,65 @@ export default function UploadedResultsPage() {
     loadFilters();
   }, []);
 
-  // Filter available arms/sections based on the selected Base Class
-  const availableSections = studentClassId
-    ? classSectionOptions.filter(sec => sec.parentClassId === Number(studentClassId))
-    : classSectionOptions;
+  // 2. Cascading Dropdown Logic using useMemo
+  const sectionOptions = useMemo(() => {
+    const map = new Map<number, FilterOption>();
+    rawFilterData.forEach(c => {
+      if (c.school_section_id) map.set(c.school_section_id, { id: c.school_section_id, name: c.school_section_name });
+    });
+    return Array.from(map.values());
+  }, [rawFilterData]);
 
-  // Auto-reset section if a class is selected and the current section doesn't belong to it
+  const classOptions = useMemo(() => {
+    const map = new Map<number, FilterOption>();
+    rawFilterData.forEach(c => {
+      if (!schoolSectionId || c.school_section_id === Number(schoolSectionId)) {
+        map.set(c.student_class_id, { id: c.student_class_id, name: c.class_name });
+      }
+    });
+    return Array.from(map.values());
+  }, [rawFilterData, schoolSectionId]);
+
+  const armOptions = useMemo(() => {
+    const map = new Map<number, FilterOption>();
+    rawFilterData.forEach(c => {
+      const matchSection = !schoolSectionId || c.school_section_id === Number(schoolSectionId);
+      const matchClass = !studentClassId || c.student_class_id === Number(studentClassId);
+      if (matchSection && matchClass && c.class_section_id) {
+        map.set(c.class_section_id, { id: c.class_section_id, name: c.class_section_name });
+      }
+    });
+    return Array.from(map.values());
+  }, [rawFilterData, schoolSectionId, studentClassId]);
+
+  const subjectOptions = useMemo(() => {
+    const map = new Map<number, FilterOption>();
+    rawFilterData.forEach(c => {
+      const matchSection = !schoolSectionId || c.school_section_id === Number(schoolSectionId);
+      const matchClass = !studentClassId || c.student_class_id === Number(studentClassId);
+      const matchArm = !classSectionId || c.class_section_id === Number(classSectionId);
+
+      if (matchSection && matchClass && matchArm && c.subjects) {
+        c.subjects.forEach((sub: any) => {
+          map.set(sub.id, { id: sub.id, name: sub.name });
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rawFilterData, schoolSectionId, studentClassId, classSectionId]);
+
+  // 3. Auto-reset child dropdowns if their selected value becomes invalid due to a parent changing
   useEffect(() => {
-    if (studentClassId && classSectionId) {
-      const isValid = availableSections.some(sec => sec.id === Number(classSectionId));
-      if (!isValid) setClassSectionId('');
-    }
-  }, [studentClassId, classSectionId, availableSections]);
+    if (studentClassId && !classOptions.some(c => c.id === Number(studentClassId))) setStudentClassId('');
+  }, [classOptions, studentClassId]);
+
+  useEffect(() => {
+    if (classSectionId && !armOptions.some(a => a.id === Number(classSectionId))) setClassSectionId('');
+  }, [armOptions, classSectionId]);
+
+  useEffect(() => {
+    if (subjectId && !subjectOptions.some(s => s.id === Number(subjectId))) setSubjectId('');
+  }, [subjectOptions, subjectId]);
 
 
   // --- Fetch Dashboard Tracking Data ---
@@ -351,7 +367,7 @@ export default function UploadedResultsPage() {
               className="bg-transparent text-sm text-slate-600 outline-none font-medium cursor-pointer"
             >
               <option value="">All Sections</option>
-              {schoolSectionOptions.map(sec => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
+              {sectionOptions.map(sec => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
             </select>
           </div>
 
@@ -363,7 +379,7 @@ export default function UploadedResultsPage() {
               className="bg-transparent text-sm text-slate-600 outline-none font-medium cursor-pointer max-w-[150px]"
             >
               <option value="">All Classes</option>
-              {studentClassOptions.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
+              {classOptions.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
             </select>
           </div>
 
@@ -375,7 +391,7 @@ export default function UploadedResultsPage() {
               className="bg-transparent text-sm text-slate-600 outline-none font-medium cursor-pointer max-w-[150px]"
             >
               <option value="">All Arms/Sections</option>
-              {availableSections.map(sec => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
+              {armOptions.map(sec => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
             </select>
           </div>
 
