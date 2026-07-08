@@ -4,11 +4,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { resultViewAPI } from '@/lib/api';
-// Fallback axios import in case your api.ts doesn't have the uploadable endpoint mapped yet
 import api from '@/lib/api';
 import {
   ClipboardList, Search, X, Check, AlertCircle, AlertTriangle,
-  Loader2, RefreshCw, Eye, Edit3, Layers, Shield, FileText,
+  Loader2, RefreshCw, Eye, Edit3, Layers, Shield, FileText, SplitSquareHorizontal,
   ChevronDown, ChevronUp, TrendingUp, ExternalLink, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
@@ -38,10 +37,8 @@ interface DashboardStats {
   progressPercentage: number;
 }
 
-interface FilterOption {
-  id: number;
-  name: string;
-}
+interface FilterOption { id: number; name: string; }
+interface SectionOption extends FilterOption { parentClassId: number; }
 
 let _toastId = 0;
 interface ToastItem { id: number; type: 'success' | 'error' | 'warn'; message: string; }
@@ -90,26 +87,27 @@ export default function UploadedResultsPage() {
   const router = useRouter();
   const { hasPermission, user } = useAuth();
 
-  // --- Data States ---
   const [results, setResults] = useState<DashboardItem[]>([]);
   const [stats, setStats] = useState<DashboardStats>({ total: 0, complete: 0, partial: 0, pending: 0, progressPercentage: 0 });
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
-  // --- Dynamic Filter Options (Populated from backend) ---
-  const [sectionOptions, setSectionOptions] = useState<FilterOption[]>([]);
-  const [classOptions, setClassOptions] = useState<FilterOption[]>([]);
+  // --- Filter Options ---
+  const [schoolSectionOptions, setSchoolSectionOptions] = useState<FilterOption[]>([]);
+  const [studentClassOptions, setStudentClassOptions] = useState<FilterOption[]>([]);
+  const [classSectionOptions, setClassSectionOptions] = useState<SectionOption[]>([]);
   const [subjectOptions, setSubjectOptions] = useState<FilterOption[]>([]);
 
-  // --- Filter Selection States ---
+  // --- Filter States ---
   const [statusFilter, setStatusFilter] = useState<'all' | 'complete' | 'partial' | 'pending'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<'class_name' | 'subject_name'>('class_name');
+
   const [schoolSectionId, setSchoolSectionId] = useState<string>('');
-  const [classId, setClassId] = useState<string>('');
+  const [studentClassId, setStudentClassId] = useState<string>('');
+  const [classSectionId, setClassSectionId] = useState<string>('');
   const [subjectId, setSubjectId] = useState<string>('');
 
-  // --- Pagination States ---
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const PAGE_SIZE = 50;
@@ -127,33 +125,38 @@ export default function UploadedResultsPage() {
   };
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  // --- Fetch Dynamic Allowed Filters ---
+  // --- Fetch Dynamic Filters ---
   useEffect(() => {
     const loadFilters = async () => {
       try {
         const response = await api.get('/api/academic/class-subjects/uploadable/', { params: { result_type: 'all' }});
         const classesData = response.data?.data?.classes || [];
 
-        const uniqueSections = new Map<number, FilterOption>();
-        const uniqueClasses = new Map<number, FilterOption>();
-        const uniqueSubjects = new Map<number, FilterOption>();
+        const uSchoolSections = new Map<number, FilterOption>();
+        const uStudentClasses = new Map<number, FilterOption>();
+        const uClassSections = new Map<number, SectionOption>();
+        const uSubjects = new Map<number, FilterOption>();
 
         classesData.forEach((cls: any) => {
-          // Extract unique sections
           if (cls.school_section_id) {
-            uniqueSections.set(cls.school_section_id, { id: cls.school_section_id, name: cls.school_section_name });
+            uSchoolSections.set(cls.school_section_id, { id: cls.school_section_id, name: cls.school_section_name });
           }
-          // Extract unique classes
-          uniqueClasses.set(cls.id, { id: cls.id, name: cls.name });
-          // Extract unique subjects
+          if (cls.student_class_id) {
+            uStudentClasses.set(cls.student_class_id, { id: cls.student_class_id, name: cls.class_name });
+          }
+          if (cls.class_section_id) {
+            // Store the parent student_class_id so we can filter sections based on selected class
+            uClassSections.set(cls.class_section_id, { id: cls.class_section_id, name: cls.class_section_name, parentClassId: cls.student_class_id });
+          }
           cls.subjects?.forEach((sub: any) => {
-            uniqueSubjects.set(sub.id, { id: sub.id, name: sub.name });
+            uSubjects.set(sub.id, { id: sub.id, name: sub.name });
           });
         });
 
-        setSectionOptions(Array.from(uniqueSections.values()));
-        setClassOptions(Array.from(uniqueClasses.values()));
-        setSubjectOptions(Array.from(uniqueSubjects.values()));
+        setSchoolSectionOptions(Array.from(uSchoolSections.values()));
+        setStudentClassOptions(Array.from(uStudentClasses.values()));
+        setClassSectionOptions(Array.from(uClassSections.values()));
+        setSubjectOptions(Array.from(uSubjects.values()));
 
       } catch (err) {
         console.error("Failed to load permitted filter options", err);
@@ -161,6 +164,20 @@ export default function UploadedResultsPage() {
     };
     loadFilters();
   }, []);
+
+  // Filter available arms/sections based on the selected Base Class
+  const availableSections = studentClassId
+    ? classSectionOptions.filter(sec => sec.parentClassId === Number(studentClassId))
+    : classSectionOptions;
+
+  // Auto-reset section if a class is selected and the current section doesn't belong to it
+  useEffect(() => {
+    if (studentClassId && classSectionId) {
+      const isValid = availableSections.some(sec => sec.id === Number(classSectionId));
+      if (!isValid) setClassSectionId('');
+    }
+  }, [studentClassId, classSectionId, availableSections]);
+
 
   // --- Fetch Dashboard Tracking Data ---
   const fetchData = useCallback(async () => {
@@ -176,7 +193,8 @@ export default function UploadedResultsPage() {
 
       if (searchTerm) params.search = searchTerm;
       if (schoolSectionId) params.school_section_id = schoolSectionId;
-      if (classId) params.class_id = classId;
+      if (studentClassId) params.student_class_id = studentClassId;
+      if (classSectionId) params.class_section_id = classSectionId;
       if (subjectId) params.subject_id = subjectId;
 
       const [listRes, statsRes] = await Promise.all([
@@ -199,16 +217,14 @@ export default function UploadedResultsPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, statusFilter, searchTerm, sortOrder, schoolSectionId, classId, subjectId]);
+  }, [currentPage, statusFilter, searchTerm, sortOrder, schoolSectionId, studentClassId, classSectionId, subjectId]);
 
   // Reset to page 1 if any filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, searchTerm, sortOrder, schoolSectionId, classId, subjectId]);
+  }, [statusFilter, searchTerm, sortOrder, schoolSectionId, studentClassId, classSectionId, subjectId]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const getStatusBadge = (status: string) => {
     if (status === 'Complete') {
@@ -335,19 +351,31 @@ export default function UploadedResultsPage() {
               className="bg-transparent text-sm text-slate-600 outline-none font-medium cursor-pointer"
             >
               <option value="">All Sections</option>
-              {sectionOptions.map(sec => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
+              {schoolSectionOptions.map(sec => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
             </select>
           </div>
 
           <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
             <Shield className="h-3.5 w-3.5 text-slate-400" />
             <select
-              value={classId}
-              onChange={e => setClassId(e.target.value)}
+              value={studentClassId}
+              onChange={e => setStudentClassId(e.target.value)}
               className="bg-transparent text-sm text-slate-600 outline-none font-medium cursor-pointer max-w-[150px]"
             >
               <option value="">All Classes</option>
-              {classOptions.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
+              {studentClassOptions.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+            <SplitSquareHorizontal className="h-3.5 w-3.5 text-slate-400" />
+            <select
+              value={classSectionId}
+              onChange={e => setClassSectionId(e.target.value)}
+              className="bg-transparent text-sm text-slate-600 outline-none font-medium cursor-pointer max-w-[150px]"
+            >
+              <option value="">All Arms/Sections</option>
+              {availableSections.map(sec => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
             </select>
           </div>
 
