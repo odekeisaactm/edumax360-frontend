@@ -29,6 +29,7 @@ import type {
   ResultModel,
   CumulativeResult,
   ConfigurationReadiness,
+  PaginatedResponse
 } from '@/lib/types';
 
 
@@ -352,9 +353,17 @@ export const resultCommentTemplatesAPI = {
   list: async (params?: {
     configuration_group?: number;
     comment_type?: 'form_teacher' | 'head_teacher';
-  }): Promise<ResultCommentTemplate[]> => {
-    const r = await api.get('/api/result/comment-templates/', { params });
-    return r.data.results || r.data;
+    applies_to?: 'end_of_term' | 'midterm' | 'both';
+    page?: number;
+    page_size?: number;
+  }): Promise<PaginatedResponse<ResultCommentTemplate>> => {
+    const r = await api.get<any>('/api/result/comment-templates/', { params });
+    return {
+      count: r.data?.count ?? 0,
+      next: r.data?.next ?? null,
+      previous: r.data?.previous ?? null,
+      results: r.data?.results ?? (Array.isArray(r.data) ? r.data : []),
+    };
   },
   create: async (data: Omit<ResultCommentTemplate, 'id'>): Promise<ResultCommentTemplate> => {
     const r = await api.post('/api/result/comment-templates/', data);
