@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { resultViewAPI } from '@/lib/api';
+// Fallback axios import in case your api.ts doesn't have the uploadable endpoint mapped yet
+import api from '@/lib/api';
 import {
   ClipboardList, Search, X, Check, AlertCircle, AlertTriangle,
   Loader2, RefreshCw, Eye, Edit3, Layers, Shield, FileText,
@@ -34,6 +36,11 @@ interface DashboardStats {
   partial: number;
   pending: number;
   progressPercentage: number;
+}
+
+interface FilterOption {
+  id: number;
+  name: string;
 }
 
 let _toastId = 0;
@@ -89,11 +96,15 @@ export default function UploadedResultsPage() {
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
-  // --- Filter States ---
+  // --- Dynamic Filter Options (Populated from backend) ---
+  const [sectionOptions, setSectionOptions] = useState<FilterOption[]>([]);
+  const [classOptions, setClassOptions] = useState<FilterOption[]>([]);
+  const [subjectOptions, setSubjectOptions] = useState<FilterOption[]>([]);
+
+  // --- Filter Selection States ---
   const [statusFilter, setStatusFilter] = useState<'all' | 'complete' | 'partial' | 'pending'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<'class_name' | 'subject_name'>('class_name');
-
   const [schoolSectionId, setSchoolSectionId] = useState<string>('');
   const [classId, setClassId] = useState<string>('');
   const [subjectId, setSubjectId] = useState<string>('');
@@ -116,6 +127,42 @@ export default function UploadedResultsPage() {
   };
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
+  // --- Fetch Dynamic Allowed Filters ---
+  useEffect(() => {
+    const loadFilters = async () => {
+      try {
+        const response = await api.get('/api/academic/class-subjects/uploadable/', { params: { result_type: 'all' }});
+        const classesData = response.data?.data?.classes || [];
+
+        const uniqueSections = new Map<number, FilterOption>();
+        const uniqueClasses = new Map<number, FilterOption>();
+        const uniqueSubjects = new Map<number, FilterOption>();
+
+        classesData.forEach((cls: any) => {
+          // Extract unique sections
+          if (cls.school_section_id) {
+            uniqueSections.set(cls.school_section_id, { id: cls.school_section_id, name: cls.school_section_name });
+          }
+          // Extract unique classes
+          uniqueClasses.set(cls.id, { id: cls.id, name: cls.name });
+          // Extract unique subjects
+          cls.subjects?.forEach((sub: any) => {
+            uniqueSubjects.set(sub.id, { id: sub.id, name: sub.name });
+          });
+        });
+
+        setSectionOptions(Array.from(uniqueSections.values()));
+        setClassOptions(Array.from(uniqueClasses.values()));
+        setSubjectOptions(Array.from(uniqueSubjects.values()));
+
+      } catch (err) {
+        console.error("Failed to load permitted filter options", err);
+      }
+    };
+    loadFilters();
+  }, []);
+
+  // --- Fetch Dashboard Tracking Data ---
   const fetchData = useCallback(async () => {
     setLoading(true);
     setPageError(null);
@@ -132,7 +179,6 @@ export default function UploadedResultsPage() {
       if (classId) params.class_id = classId;
       if (subjectId) params.subject_id = subjectId;
 
-      // Fetch Paginated List AND Stats in parallel
       const [listRes, statsRes] = await Promise.all([
         resultViewAPI.trackingDashboard(params),
         resultViewAPI.trackingDashboardStats()
@@ -278,8 +324,9 @@ export default function UploadedResultsPage() {
           </div>
         </div>
 
-        {/* Bottom Row: Dropdown Filters & Sort */}
+        {/* Bottom Row: Dynamic Dropdown Filters & Sort */}
         <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-slate-100">
+
           <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
             <Layers className="h-3.5 w-3.5 text-slate-400" />
             <select
@@ -287,8 +334,8 @@ export default function UploadedResultsPage() {
               onChange={e => setSchoolSectionId(e.target.value)}
               className="bg-transparent text-sm text-slate-600 outline-none font-medium cursor-pointer"
             >
-              <option value="">All School Sections</option>
-              {/* Optional: Add school section options here if loaded */}
+              <option value="">All Sections</option>
+              {sectionOptions.map(sec => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
             </select>
           </div>
 
@@ -297,10 +344,10 @@ export default function UploadedResultsPage() {
             <select
               value={classId}
               onChange={e => setClassId(e.target.value)}
-              className="bg-transparent text-sm text-slate-600 outline-none font-medium cursor-pointer"
+              className="bg-transparent text-sm text-slate-600 outline-none font-medium cursor-pointer max-w-[150px]"
             >
               <option value="">All Classes</option>
-              {/* Optional: Add class options here if loaded */}
+              {classOptions.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
             </select>
           </div>
 
@@ -309,10 +356,10 @@ export default function UploadedResultsPage() {
             <select
               value={subjectId}
               onChange={e => setSubjectId(e.target.value)}
-              className="bg-transparent text-sm text-slate-600 outline-none font-medium cursor-pointer"
+              className="bg-transparent text-sm text-slate-600 outline-none font-medium cursor-pointer max-w-[150px]"
             >
               <option value="">All Subjects</option>
-              {/* Optional: Add subject options here if loaded */}
+              {subjectOptions.map(sub => <option key={sub.id} value={sub.id}>{sub.name}</option>)}
             </select>
           </div>
 
@@ -321,7 +368,7 @@ export default function UploadedResultsPage() {
             <select
               value={sortOrder}
               onChange={e => setSortOrder(e.target.value as any)}
-              className="px-3 py-1.5 text-sm bg-blue-50 border border-blue-100 text-blue-700 font-medium rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-1.5 text-sm bg-blue-50 border border-blue-100 text-blue-700 font-medium rounded-lg outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
             >
               <option value="class_name">Class Name</option>
               <option value="subject_name">Subject Name</option>
@@ -363,7 +410,7 @@ export default function UploadedResultsPage() {
               ) : results.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-16 text-center">
-                    <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-slate-100 shadow-inner">
                       <ClipboardList className="h-8 w-8 text-slate-300" />
                     </div>
                     <h3 className="font-bold text-slate-700 mb-1">No assignments found</h3>
