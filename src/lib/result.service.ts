@@ -689,9 +689,12 @@ export const resultViewAPI = {
   },
 
   trackingDashboard: async (params?: {
-    result_type?: 'all' | 'score' | 'text' | 'special' | 'pending';
+    status?: 'all' | 'complete' | 'partial' | 'pending';
     search?: string;
-    class_id?: number;
+    school_section_id?: string | number;
+    class_id?: string | number;
+    subject_id?: string | number;
+    ordering?: 'class_name' | 'subject_name';
     page?: number;
     page_size?: number;
   }): Promise<{
@@ -701,6 +704,17 @@ export const resultViewAPI = {
     results: any[];
   }> => {
     const r = await api.get('/api/result/tracking/dashboard/', { params });
+    return r.data;
+  },
+
+  trackingDashboardStats: async (): Promise<{
+    total: number;
+    complete: number;
+    partial: number;
+    pending: number;
+    progressPercentage: number;
+  }> => {
+    const r = await api.get('/api/result/tracking/dashboard-stats/');
     return r.data;
   },
 };

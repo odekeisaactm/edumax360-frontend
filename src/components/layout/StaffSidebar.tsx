@@ -407,13 +407,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/result/archive'),
           requiredPermissions: ['result.view_resultmodel'],
         },
-        {
-          name: 'Comments',
-          href: '/dashboard/staff/result/comment-templates',
-          icon: <MessageSquare className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/result/comment-templates'),
-          requiredPermissions: ['result.view_resultmodel'],
-        },
+
         {
           name: 'Configuration',
           href: '#',
@@ -439,6 +433,13 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               icon: <Star className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/result/grade-sets'),
               requiredPermissions: ['result.view_result_configuration'],
+            },
+            {
+              name: 'Comments',
+              href: '/dashboard/staff/result/comment-templates',
+              icon: <MessageSquare className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/result/comment-templates'),
+              requiredPermissions: ['result.view_resultmodel'],
             },
             {
               name: 'Templates',
