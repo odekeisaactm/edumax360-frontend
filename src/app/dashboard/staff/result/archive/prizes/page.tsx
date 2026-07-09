@@ -63,6 +63,27 @@ function StepPills({ step }: { step: 1 | 2 | 3 }) {
   );
 }
 
+// ─── Report shape (explicit discriminated union) ──────────────────────────────
+// Without this annotation, TypeScript widens `type: 'students'` / `type: 'groups'`
+// to plain `string` when inferring the useMemo's return type, which merges the
+// two branches into one object with every branch-specific field marked optional
+// — that's what produced the "possibly undefined" errors even after narrowing
+// on `.type`. Declaring the union explicitly keeps the literals literal.
+type StudentsReport = {
+  type: 'students';
+  cumulative: Record<string, any[]>;
+  subjects: Record<string, Record<string, any[]>>;
+  disqualified: any[];
+};
+
+type GroupsReport = {
+  type: 'groups';
+  topClasses: any[];
+  topSubjects: any[];
+};
+
+type ProcessedReport = StudentsReport | GroupsReport;
+
 export default function PrizeArchivePage() {
   const router = useRouter();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -185,7 +206,7 @@ export default function PrizeArchivePage() {
     return rankOutput;
   };
 
-  const processedReport = useMemo(() => {
+  const processedReport = useMemo<ProcessedReport | null>(() => {
     if (!rawData) return null;
     const topN = filters.topNLimit === 'custom' ? filters.customTopN : Number(filters.topNLimit);
     const getGroupName = (r: any) => filters.competitionPool === 'class_arm' ? r.class_arm_name : filters.competitionPool === 'class_level' ? r.class_level_name : 'Global/Section Level';
@@ -255,6 +276,12 @@ export default function PrizeArchivePage() {
     }
   }, [rawData, filters.competitionPool, filters.topNLimit, filters.customTopN, filters.analysisTarget, rules.tieBreaker, rules.strictSubjectEligibility]);
 
+  // Narrow the union here, once, into its own const. TypeScript's control-flow
+  // narrowing on `processedReport.type === 'students'` doesn't reliably carry
+  // into the .map() closures further down in the JSX, so we lock the variant
+  // in ahead of time instead of relying on inline narrowing (or `as any`).
+  const studentReport = processedReport && processedReport.type === 'students' ? processedReport : null;
+  const groupReport = processedReport && processedReport.type === 'groups' ? processedReport : null;
 
   const handleDragStart = (e: React.DragEvent, index: number, type: 'class' | 'subject') => e.dataTransfer.setData('text/plain', `${type}|${index}`);
   const handleDragOver = (e: React.DragEvent) => e.preventDefault();
@@ -539,7 +566,7 @@ export default function PrizeArchivePage() {
           </div>
 
           {/* === RENDER: STUDENT RANKINGS === */}
-          {processedReport.type === 'students' && (
+          {studentReport && (
             <>
               <div className="bg-white p-3 rounded-lg border border-slate-100 flex items-center justify-between print-hidden shadow-sm">
                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2">Structure:</span>
@@ -552,7 +579,7 @@ export default function PrizeArchivePage() {
               <div className="space-y-8">
                  {/* Cumulative (Always Class-Centric) */}
                  {layoutConfig.classOrder.filter(c => layoutConfig.visibleClasses[c]).map(cls => {
-                    const ranks = processedReport.cumulative[cls] || [];
+                    const ranks = studentReport.cumulative[cls] || [];
                     if (ranks.length === 0) return null;
                     return (
                        <div key={`cumul_${cls}`} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden print-shadow-none print-break-avoid">
@@ -592,7 +619,7 @@ export default function PrizeArchivePage() {
                  {/* Subject Awards */}
                  {pivotMode === 'subject_first' ? (
                     layoutConfig.subjectOrder.filter(s => layoutConfig.visibleSubjects[s]).map(sub => {
-                       const classesForSub = layoutConfig.classOrder.filter(c => layoutConfig.visibleClasses[c] && processedReport.subjects[sub]?.[c]?.length > 0);
+                       const classesForSub = layoutConfig.classOrder.filter(c => layoutConfig.visibleClasses[c] && studentReport.subjects[sub]?.[c]?.length > 0);
                        if (classesForSub.length === 0) return null;
                        return (
                          <div key={`sub_${sub}`} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden print-shadow-none print-break-avoid">
@@ -605,7 +632,7 @@ export default function PrizeArchivePage() {
                                   <div className="bg-white px-5 py-1.5 border-b border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{cls}</span></div>
                                   <table className="w-full text-left">
                                      <tbody className="divide-y divide-slate-50">
-                                        {processedReport.subjects[sub][cls].map((r:any) => (
+                                        {studentReport.subjects[sub][cls].map((r:any) => (
                                            <tr key={r.student_id} className="hover:bg-slate-50/50">
                                               <td className="px-5 py-2 font-bold text-slate-400 text-xs w-16">{r.rank}</td>
                                               <td className="px-5 py-2">
@@ -624,7 +651,7 @@ export default function PrizeArchivePage() {
                     })
                  ) : (
                     layoutConfig.classOrder.filter(c => layoutConfig.visibleClasses[c]).map(cls => {
-                       const subjectsForClass = layoutConfig.subjectOrder.filter(s => layoutConfig.visibleSubjects[s] && processedReport.subjects[s]?.[cls]?.length > 0);
+                       const subjectsForClass = layoutConfig.subjectOrder.filter(s => layoutConfig.visibleSubjects[s] && studentReport.subjects[s]?.[cls]?.length > 0);
                        if (subjectsForClass.length === 0) return null;
                        return (
                          <div key={`cls_${cls}`} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden print-shadow-none page-break-before">
@@ -637,7 +664,7 @@ export default function PrizeArchivePage() {
                                   <div className="bg-white px-5 py-1.5 border-b border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{sub}</span></div>
                                   <table className="w-full text-left">
                                      <tbody className="divide-y divide-slate-50">
-                                        {processedReport.subjects[sub][cls].map((r:any) => (
+                                        {studentReport.subjects[sub][cls].map((r:any) => (
                                            <tr key={r.student_id} className="hover:bg-slate-50/50">
                                               <td className="px-5 py-2 font-bold text-slate-400 text-xs w-16">{r.rank}</td>
                                               <td className="px-5 py-2">
@@ -657,15 +684,15 @@ export default function PrizeArchivePage() {
                  )}
               </div>
 
-              {processedReport.disqualified.length > 0 && (
+              {studentReport.disqualified.length > 0 && (
                  <div className="mt-10 bg-white rounded-xl border border-red-100 shadow-sm print-hidden overflow-hidden">
                     <div className="px-5 py-3 bg-red-50 border-b border-red-100 font-bold text-red-800 uppercase tracking-wider text-xs flex items-center justify-between">
                        <span>Disqualified (Rules Engine)</span>
-                       <span className="bg-white text-red-600 px-2.5 py-0.5 rounded shadow-sm border border-red-100">{processedReport.disqualified.length}</span>
+                       <span className="bg-white text-red-600 px-2.5 py-0.5 rounded shadow-sm border border-red-100">{studentReport.disqualified.length}</span>
                     </div>
                     <table className="w-full text-left">
                        <tbody className="divide-y divide-slate-100">
-                          {processedReport.disqualified.map((r:any) => (
+                          {studentReport.disqualified.map((r:any) => (
                              <tr key={r.student_id}>
                                 <td className="px-5 py-2 font-semibold text-slate-700 text-sm">{r.student_name} <span className="text-[10px] text-slate-400 uppercase ml-2">{r.class_arm_name}</span></td>
                                 <td className="px-5 py-2 font-medium text-red-500 text-[11px] uppercase tracking-wide">{r.disqualified_reason}</td>
@@ -680,7 +707,7 @@ export default function PrizeArchivePage() {
           )}
 
           {/* === RENDER: GROUP RANKINGS === */}
-          {processedReport.type === 'groups' && (
+          {groupReport && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Form Teacher Awards */}
               <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden print-shadow-none print-break-avoid">
@@ -697,7 +724,7 @@ export default function PrizeArchivePage() {
                        </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                       {processedReport.topClasses.map((c: any) => (
+                       {groupReport.topClasses.map((c: any) => (
                           <tr key={c.name} className="hover:bg-slate-50/50">
                              <td className="px-5 py-3 font-bold text-slate-900 text-sm">{c.rank}</td>
                              <td className="px-5 py-3">
@@ -726,7 +753,7 @@ export default function PrizeArchivePage() {
                        </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                       {processedReport.topSubjects.map((s: any) => (
+                       {groupReport.topSubjects.map((s: any) => (
                           <tr key={s.name+s.classArm} className="hover:bg-slate-50/50">
                              <td className="px-5 py-3 font-bold text-slate-900 text-sm">{s.rank}</td>
                              <td className="px-5 py-3">
