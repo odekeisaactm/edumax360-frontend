@@ -39,7 +39,6 @@ function HelpModal({ title, content, onClose }: { title: string, content: React.
   );
 }
 
-// ─── Step indicator (mirrors the polish of the dashboard's card language) ────
 function StepPills({ step }: { step: 1 | 2 | 3 }) {
   const steps = [
     { id: 1, label: 'Rules' },
@@ -63,12 +62,6 @@ function StepPills({ step }: { step: 1 | 2 | 3 }) {
   );
 }
 
-// ─── Report shape (explicit discriminated union) ──────────────────────────────
-// Without this annotation, TypeScript widens `type: 'students'` / `type: 'groups'`
-// to plain `string` when inferring the useMemo's return type, which merges the
-// two branches into one object with every branch-specific field marked optional
-// — that's what produced the "possibly undefined" errors even after narrowing
-// on `.type`. Declaring the union explicitly keeps the literals literal.
 type StudentsReport = {
   type: 'students';
   cumulative: Record<string, any[]>;
@@ -135,9 +128,6 @@ export default function PrizeArchivePage() {
       } catch (err) {}
     };
     loadDefaults();
-
-    // School header info — mirrors the School Info page's fetch. Failing silently
-    // here is fine: the header just falls back to a generic icon if unavailable.
     schoolInfoAPI.get().then(data => { if (data) setSchoolInfo(data); }).catch(() => {});
   }, []);
 
@@ -160,7 +150,11 @@ export default function PrizeArchivePage() {
         min_subjects: rules.minSubjects, ignore_abandoned: rules.ignoreAbandoned, term_type: rules.termType
       };
 
-      const res = await api.get('/api/result/archive/prizes/', { params });
+      // TIMEOUT FIX: Ensure massive datasets don't kill the request
+      const res = await api.get('/api/result/archive/prizes/', {
+          params,
+          timeout: 60000
+      });
       setRawData(res.data);
 
       const uniqueClasses = new Set<string>();
@@ -173,7 +167,7 @@ export default function PrizeArchivePage() {
 
       setLayoutConfig({ visibleClasses: Object.fromEntries(initialClasses.map(c => [c, true])), visibleSubjects: Object.fromEntries(initialSubjects.map(s => [s, true])), classOrder: initialClasses, subjectOrder: initialSubjects });
       setStep(3);
-    } catch (err: any) { showToast('error', "Failed to compute records."); } finally { setLoading(false); }
+    } catch (err: any) { showToast('error', "Failed to compute records. Network timeout or error."); } finally { setLoading(false); }
   };
 
   const rankAndSlice = (list: any[], keyField: 'average' | 'score', topN: number) => {
@@ -276,10 +270,6 @@ export default function PrizeArchivePage() {
     }
   }, [rawData, filters.competitionPool, filters.topNLimit, filters.customTopN, filters.analysisTarget, rules.tieBreaker, rules.strictSubjectEligibility]);
 
-  // Narrow the union here, once, into its own const. TypeScript's control-flow
-  // narrowing on `processedReport.type === 'students'` doesn't reliably carry
-  // into the .map() closures further down in the JSX, so we lock the variant
-  // in ahead of time instead of relying on inline narrowing (or `as any`).
   const studentReport = processedReport && processedReport.type === 'students' ? processedReport : null;
   const groupReport = processedReport && processedReport.type === 'groups' ? processedReport : null;
 
@@ -297,7 +287,7 @@ export default function PrizeArchivePage() {
 
   const inputCls = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all";
   const labelCls = "block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center justify-between";
-  const primaryBtnCls = "inline-flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-sm font-semibold transition-all shadow-md shadow-blue-200 disabled:opacity-50";
+  const primaryBtnCls = "inline-flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-sm font-semibold transition-all shadow-sm disabled:opacity-50";
 
   return (
     <div className="max-w-[85rem] mx-auto pb-20 px-4 pt-6 bg-slate-50/50 min-h-screen">
@@ -316,7 +306,6 @@ export default function PrizeArchivePage() {
       <ToastStack toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
       {helpTopic && <HelpModal title={helpTopic.title} content={helpTopic.content} onClose={() => setHelpTopic(null)} />}
 
-      {/* ── Hero header — matches the dashboard's dark gradient banner language ── */}
       <div className="mb-6 print-hidden">
         <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 rounded-2xl px-5 py-4 md:px-7 md:py-5 shadow-lg shadow-slate-300/40">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -337,8 +326,7 @@ export default function PrizeArchivePage() {
                 <p className="text-[10px] font-bold text-blue-300 uppercase tracking-widest truncate">
                   {schoolInfo?.name || schoolInfo?.short_name || 'Result Archive'}
                 </p>
-                <h1 className="text-lg md:text-xl font-bold text-white tracking-tight truncate">Prize & Award Archive</h1>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Enterprise Reporting Engine</p>
+                <h1 className="text-lg md:text-xl font-bold text-white tracking-tight truncate">Prize & Award Engine</h1>
               </div>
             </div>
 
@@ -366,9 +354,9 @@ export default function PrizeArchivePage() {
 
       {/* --- WIZARD STEP 1: RULES ENGINE --- */}
       {step === 1 && (
-        <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-100 shadow-sm animate-in fade-in max-w-3xl mx-auto overflow-hidden relative">
+        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm animate-in fade-in max-w-3xl mx-auto overflow-hidden relative">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-600" />
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-5">
             <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2.5">
                <span className="w-7 h-7 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm shadow-blue-200">
                  <Settings2 className="w-3.5 h-3.5 text-white" />
@@ -377,7 +365,7 @@ export default function PrizeArchivePage() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
               <label className={labelCls}>Period Type</label>
               <div className="flex bg-slate-100 p-1 rounded-lg">
@@ -402,7 +390,7 @@ export default function PrizeArchivePage() {
                 Abandoned Subject Filter
                 <button type="button" onClick={() => setHelpTopic({title: 'Abandoned Subject Filter', content: <p>Excludes subjects where the Exam score is missing or 0 from the student's average calculation.</p>})}><HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-blue-500"/></button>
               </label>
-              <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors h-[42px]">
+              <label className="flex items-center gap-3 p-2.5 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
                 <input type="checkbox" checked={rules.ignoreAbandoned} onChange={e => setRules({...rules, ignoreAbandoned: e.target.checked})} className="w-4 h-4 accent-blue-600 rounded" />
                 <span className="font-semibold text-slate-700 text-sm">Drop Incomplete Subjects</span>
               </label>
@@ -413,7 +401,7 @@ export default function PrizeArchivePage() {
                 Subject Prize Eligibility
                 <button type="button" onClick={() => setHelpTopic({title: 'Subject Award Eligibility', content: <p>If checked, students disqualified from the Overall Ranking (due to minimum subjects) are also disqualified from winning single-subject awards.</p>})}><HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-blue-500"/></button>
               </label>
-              <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors h-[42px]">
+              <label className="flex items-center gap-3 p-2.5 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
                 <input type="checkbox" checked={rules.strictSubjectEligibility} onChange={e => setRules({...rules, strictSubjectEligibility: e.target.checked})} className="w-4 h-4 accent-blue-600 rounded" />
                 <span className="font-semibold text-slate-700 text-sm">Strict Prize Eligibility</span>
               </label>
@@ -429,7 +417,7 @@ export default function PrizeArchivePage() {
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-slate-100 flex justify-end">
+          <div className="mt-6 pt-5 border-t border-slate-100 flex justify-end">
             <button onClick={() => setStep(2)} className={primaryBtnCls}>
               Next Step &rarr;
             </button>
@@ -439,9 +427,9 @@ export default function PrizeArchivePage() {
 
       {/* --- WIZARD STEP 2: SCOPE & CATEGORY --- */}
       {step === 2 && (
-        <form onSubmit={handleGenerate} className="bg-white p-6 md:p-8 rounded-2xl border border-slate-100 shadow-sm animate-in slide-in-from-right-8 max-w-4xl mx-auto overflow-hidden relative">
+        <form onSubmit={handleGenerate} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm animate-in slide-in-from-right-8 max-w-4xl mx-auto overflow-hidden relative">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-600" />
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex justify-between items-center mb-5">
              <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2.5">
                 <span className="w-7 h-7 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm shadow-blue-200">
                   <SlidersHorizontal className="w-3.5 h-3.5 text-white" />
@@ -451,17 +439,17 @@ export default function PrizeArchivePage() {
              <button type="button" onClick={() => setStep(1)} className="text-[10px] font-bold text-slate-400 hover:text-slate-700 tracking-wider uppercase">← Back</button>
           </div>
 
-          <div className="mb-6">
+          <div className="mb-5">
             <label className={labelCls}>
               Analysis Target (Who gets the award?)
               <button type="button" onClick={() => setHelpTopic({title: 'Analysis Target', content: <p><b>Students:</b> Ranks individual pupils.<br/><br/><b>Groups (Teachers):</b> Averages performance across entire classes or subject areas to identify top-performing educators.</p>})}><HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-blue-500"/></button>
             </label>
             <div className="grid grid-cols-2 gap-3">
-              <button type="button" onClick={() => setFilters({...filters, analysisTarget: 'students'})} className={`p-3 border rounded-lg flex items-center gap-3 text-left transition-all ${filters.analysisTarget === 'students' ? 'border-blue-600 bg-blue-50 text-blue-900' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+              <button type="button" onClick={() => setFilters({...filters, analysisTarget: 'students'})} className={`p-2.5 border rounded-lg flex items-center gap-3 text-left transition-all ${filters.analysisTarget === 'students' ? 'border-blue-600 bg-blue-50 text-blue-900' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                 <GraduationCap className="w-5 h-5" />
                 <div><p className="font-bold text-sm">Student Rankings</p></div>
               </button>
-              <button type="button" onClick={() => setFilters({...filters, analysisTarget: 'groups'})} className={`p-3 border rounded-lg flex items-center gap-3 text-left transition-all ${filters.analysisTarget === 'groups' ? 'border-emerald-500 bg-emerald-50 text-emerald-900' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+              <button type="button" onClick={() => setFilters({...filters, analysisTarget: 'groups'})} className={`p-2.5 border rounded-lg flex items-center gap-3 text-left transition-all ${filters.analysisTarget === 'groups' ? 'border-emerald-500 bg-emerald-50 text-emerald-900' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                 <Presentation className="w-5 h-5" />
                 <div><p className="font-bold text-sm">Teacher / Group Awards</p></div>
               </button>
@@ -485,7 +473,7 @@ export default function PrizeArchivePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-3 gap-4 mb-5">
             <div>
               <label className={labelCls}>Limit Section</label>
               <select value={filters.schoolSectionId} onChange={e => setFilters({...filters, schoolSectionId: e.target.value, studentClassId: '', classConfigId: ''})} className={inputCls}>
@@ -509,31 +497,31 @@ export default function PrizeArchivePage() {
             </div>
           </div>
 
-          <div className="mb-6 border-t border-slate-100 pt-5">
+          <div className="mb-5 border-t border-slate-100 pt-4">
             <label className={labelCls}>
               Competition Pool (Grouping)
             </label>
             <div className="grid grid-cols-3 gap-3">
                {[ {id: 'section', label: 'Merge All'}, {id: 'class_level', label: 'By Grade Level'}, {id: 'class_arm', label: 'By Specific Arm'} ].map(opt => (
-                 <button key={opt.id} type="button" onClick={() => setFilters({...filters, competitionPool: opt.id})} className={`p-2.5 border rounded-lg text-xs font-bold text-center transition-all ${filters.competitionPool === opt.id ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                 <button key={opt.id} type="button" onClick={() => setFilters({...filters, competitionPool: opt.id})} className={`p-2 border rounded-lg text-xs font-bold text-center transition-all ${filters.competitionPool === opt.id ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
                    {opt.label}
                  </button>
                ))}
             </div>
           </div>
 
-          <div className="flex items-end justify-between pt-6 border-t border-slate-100">
+          <div className="flex items-end justify-between pt-5 border-t border-slate-100">
             <div className="flex gap-3">
               <div>
                 <label className={labelCls}>Rank Limit</label>
-                <select value={filters.topNLimit} onChange={e => setFilters({...filters, topNLimit: e.target.value})} className={inputCls + " w-32"}>
-                  <option value="1">Top 1 Only</option><option value="3">Top 3</option><option value="5">Top 5</option><option value="10">Top 10</option><option value="custom">Custom...</option>
+                <select value={filters.topNLimit} onChange={e => setFilters({...filters, topNLimit: e.target.value})} className={inputCls + " w-28"}>
+                  <option value="1">Top 1</option><option value="3">Top 3</option><option value="5">Top 5</option><option value="10">Top 10</option><option value="custom">Custom...</option>
                 </select>
               </div>
               {filters.topNLimit === 'custom' && (
                  <div className="animate-in slide-in-from-left-2">
                    <label className="block text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1.5">Enter Limit</label>
-                   <input type="number" min="1" max="500" value={filters.customTopN} onChange={e => setFilters({...filters, customTopN: Number(e.target.value)})} className="w-24 border border-blue-300 rounded-lg px-3 py-2 text-sm font-bold text-blue-700 bg-blue-50 outline-none" />
+                   <input type="number" min="1" max="500" value={filters.customTopN} onChange={e => setFilters({...filters, customTopN: Number(e.target.value)})} className="w-20 border border-blue-300 rounded-lg px-3 py-2 text-sm font-bold text-blue-700 bg-blue-50 outline-none" />
                  </div>
               )}
             </div>
@@ -548,7 +536,6 @@ export default function PrizeArchivePage() {
       {/* --- WIZARD STEP 3: REPORT UI --- */}
       {step === 3 && processedReport && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-6 max-w-6xl mx-auto">
-          {/* Print letterhead — includes school identity since this becomes an official document */}
           <div className="hidden print:block mb-6 text-center border-b border-slate-300 pb-3">
              {schoolInfo?.logo && (
                <img src={schoolInfo.logo} alt={schoolInfo?.name || 'School logo'} className="w-14 h-14 object-contain mx-auto mb-2" />
@@ -568,46 +555,45 @@ export default function PrizeArchivePage() {
           {/* === RENDER: STUDENT RANKINGS === */}
           {studentReport && (
             <>
-              <div className="bg-white p-3 rounded-lg border border-slate-100 flex items-center justify-between print-hidden shadow-sm">
-                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2">Structure:</span>
+              <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 flex items-center justify-between print-hidden shadow-sm">
+                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Structure:</span>
                  <div className="flex bg-slate-100 p-1 rounded-md">
-                    <button onClick={() => setPivotMode('subject_first')} className={`px-4 py-1.5 rounded text-[11px] font-bold uppercase tracking-wider transition-all ${pivotMode === 'subject_first' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>Subject Centric</button>
-                    <button onClick={() => setPivotMode('class_first')} className={`px-4 py-1.5 rounded text-[11px] font-bold uppercase tracking-wider transition-all ${pivotMode === 'class_first' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>Class Centric</button>
+                    <button onClick={() => setPivotMode('subject_first')} className={`px-4 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all ${pivotMode === 'subject_first' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>Subject Centric</button>
+                    <button onClick={() => setPivotMode('class_first')} className={`px-4 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all ${pivotMode === 'class_first' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>Class Centric</button>
                  </div>
               </div>
 
-              <div className="space-y-8">
-                 {/* Cumulative (Always Class-Centric) */}
+              <div className="space-y-6">
                  {layoutConfig.classOrder.filter(c => layoutConfig.visibleClasses[c]).map(cls => {
                     const ranks = studentReport.cumulative[cls] || [];
                     if (ranks.length === 0) return null;
                     return (
-                       <div key={`cumul_${cls}`} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden print-shadow-none print-break-avoid">
-                          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 px-5 py-3 flex items-center justify-between print:bg-slate-100 border-b border-slate-200">
+                       <div key={`cumul_${cls}`} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden print-shadow-none print-break-avoid">
+                          <div className="bg-gradient-to-r from-slate-800 to-indigo-900 px-4 py-2.5 flex items-center justify-between print:bg-slate-100 border-b border-slate-200">
                              <h3 className="font-bold text-white print:text-slate-900 uppercase tracking-widest text-xs flex items-center gap-2"><Trophy className="w-3.5 h-3.5 text-amber-400 print:text-slate-600"/> Overall Cumulative Best</h3>
-                             <span className="text-[10px] font-bold text-slate-300 print:text-slate-700 uppercase tracking-wider">{cls}</span>
+                             <span className="text-[10px] font-bold text-indigo-200 print:text-slate-700 uppercase tracking-wider">{cls}</span>
                           </div>
                           <table className="w-full text-left">
                              <thead className="bg-slate-50 border-b border-slate-200">
                                 <tr>
-                                   <th className="px-5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-16">Rank</th>
-                                   <th className="px-5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Student</th>
-                                   <th className="px-5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center w-24">Subj.</th>
-                                   <th className="px-5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right w-24">Total</th>
-                                   <th className="px-5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right w-24">Average</th>
+                                   <th className="px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-16">Rnk</th>
+                                   <th className="px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Student</th>
+                                   <th className="px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center w-20">Subj</th>
+                                   <th className="px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right w-20">Total</th>
+                                   <th className="px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right w-20">Avg</th>
                                 </tr>
                              </thead>
                              <tbody className="divide-y divide-slate-100">
                                 {ranks.map(r => (
                                    <tr key={r.student_id} className="hover:bg-slate-50/50">
-                                      <td className="px-5 py-2.5 font-bold text-slate-900 text-sm">{r.rank}</td>
-                                      <td className="px-5 py-2.5">
-                                         <span className="font-semibold text-slate-800 text-sm block">{r.student_name}</span>
-                                         <span className="text-[10px] text-slate-400 uppercase tracking-wider">{r.reg_number} • <span className="text-blue-500 print:text-slate-500">{r.class_arm_name}</span></span>
+                                      <td className="px-4 py-2 font-bold text-slate-900 text-sm">{r.rank}</td>
+                                      <td className="px-4 py-2">
+                                         <span className="font-semibold text-slate-800 text-sm block leading-tight">{r.student_name}</span>
+                                         <span className="text-[9px] text-slate-400 uppercase tracking-wider leading-tight">{r.reg_number} • <span className="text-blue-500 print:text-slate-500">{r.class_arm_name}</span></span>
                                       </td>
-                                      <td className="px-5 py-2.5 text-center font-medium text-slate-600 text-sm">{r.subject_count}</td>
-                                      <td className="px-5 py-2.5 text-right font-medium text-slate-600 text-sm">{r.total_score}</td>
-                                      <td className="px-5 py-2.5 text-right font-bold text-slate-900 text-sm">{r.average}%</td>
+                                      <td className="px-4 py-2 text-center font-medium text-slate-600 text-sm">{r.subject_count}</td>
+                                      <td className="px-4 py-2 text-right font-medium text-slate-600 text-sm">{Number(r.total_score).toFixed(1)}</td>
+                                      <td className="px-4 py-2 text-right font-bold text-slate-900 text-sm">{Number(r.average).toFixed(1)}%</td>
                                    </tr>
                                 ))}
                              </tbody>
@@ -616,30 +602,29 @@ export default function PrizeArchivePage() {
                     );
                  })}
 
-                 {/* Subject Awards */}
                  {pivotMode === 'subject_first' ? (
                     layoutConfig.subjectOrder.filter(s => layoutConfig.visibleSubjects[s]).map(sub => {
                        const classesForSub = layoutConfig.classOrder.filter(c => layoutConfig.visibleClasses[c] && studentReport.subjects[sub]?.[c]?.length > 0);
                        if (classesForSub.length === 0) return null;
                        return (
-                         <div key={`sub_${sub}`} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden print-shadow-none print-break-avoid">
-                            <div className="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center gap-2">
+                         <div key={`sub_${sub}`} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden print-shadow-none print-break-avoid">
+                            <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex items-center gap-2">
                                <BookOpen className="w-4 h-4 text-blue-600 print:text-slate-600"/>
                                <h3 className="font-bold text-slate-800 uppercase tracking-wider text-xs">Best in {sub}</h3>
                             </div>
                             {classesForSub.map(cls => (
                                <div key={`${sub}_${cls}`} className="border-t first:border-t-0 border-slate-100">
-                                  <div className="bg-white px-5 py-1.5 border-b border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{cls}</span></div>
+                                  <div className="bg-white px-4 py-1 border-b border-slate-100"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{cls}</span></div>
                                   <table className="w-full text-left">
                                      <tbody className="divide-y divide-slate-50">
                                         {studentReport.subjects[sub][cls].map((r:any) => (
                                            <tr key={r.student_id} className="hover:bg-slate-50/50">
-                                              <td className="px-5 py-2 font-bold text-slate-400 text-xs w-16">{r.rank}</td>
-                                              <td className="px-5 py-2">
+                                              <td className="px-4 py-1.5 font-bold text-slate-400 text-xs w-16">{r.rank}</td>
+                                              <td className="px-4 py-1.5">
                                                 <span className="font-semibold text-slate-700 text-sm">{r.student_name}</span>
-                                                <span className="block text-[10px] text-slate-400 uppercase tracking-wider mt-0.5">{r.reg_number} • <span className="text-blue-500 print:text-slate-500">{r.class_arm_name}</span></span>
+                                                <span className="block text-[9px] text-slate-400 uppercase tracking-wider">{r.reg_number} • <span className="text-blue-500 print:text-slate-500">{r.class_arm_name}</span></span>
                                               </td>
-                                              <td className="px-5 py-2 text-right font-bold text-blue-700 text-sm w-24">{r.score}%</td>
+                                              <td className="px-4 py-1.5 text-right font-bold text-blue-700 text-sm w-20">{Number(r.score).toFixed(1)}%</td>
                                            </tr>
                                         ))}
                                      </tbody>
@@ -654,24 +639,24 @@ export default function PrizeArchivePage() {
                        const subjectsForClass = layoutConfig.subjectOrder.filter(s => layoutConfig.visibleSubjects[s] && studentReport.subjects[s]?.[cls]?.length > 0);
                        if (subjectsForClass.length === 0) return null;
                        return (
-                         <div key={`cls_${cls}`} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden print-shadow-none page-break-before">
-                            <div className="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center gap-2">
+                         <div key={`cls_${cls}`} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden print-shadow-none page-break-before">
+                            <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex items-center gap-2">
                                <Layers className="w-4 h-4 text-blue-600 print:text-slate-600"/>
                                <h3 className="font-bold text-slate-800 uppercase tracking-wider text-xs">Subject Awards: {cls}</h3>
                             </div>
                             {subjectsForClass.map(sub => (
                                <div key={`${cls}_${sub}`} className="border-t first:border-t-0 border-slate-100 print-break-avoid">
-                                  <div className="bg-white px-5 py-1.5 border-b border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{sub}</span></div>
+                                  <div className="bg-white px-4 py-1 border-b border-slate-100"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{sub}</span></div>
                                   <table className="w-full text-left">
                                      <tbody className="divide-y divide-slate-50">
                                         {studentReport.subjects[sub][cls].map((r:any) => (
                                            <tr key={r.student_id} className="hover:bg-slate-50/50">
-                                              <td className="px-5 py-2 font-bold text-slate-400 text-xs w-16">{r.rank}</td>
-                                              <td className="px-5 py-2">
+                                              <td className="px-4 py-1.5 font-bold text-slate-400 text-xs w-16">{r.rank}</td>
+                                              <td className="px-4 py-1.5">
                                                 <span className="font-semibold text-slate-700 text-sm">{r.student_name}</span>
-                                                <span className="block text-[10px] text-slate-400 uppercase tracking-wider mt-0.5">{r.reg_number} • <span className="text-blue-500 print:text-slate-500">{r.class_arm_name}</span></span>
+                                                <span className="block text-[9px] text-slate-400 uppercase tracking-wider">{r.reg_number} • <span className="text-blue-500 print:text-slate-500">{r.class_arm_name}</span></span>
                                               </td>
-                                              <td className="px-5 py-2 text-right font-bold text-blue-700 text-sm w-24">{r.score}%</td>
+                                              <td className="px-4 py-1.5 text-right font-bold text-blue-700 text-sm w-20">{Number(r.score).toFixed(1)}%</td>
                                            </tr>
                                         ))}
                                      </tbody>
@@ -685,18 +670,18 @@ export default function PrizeArchivePage() {
               </div>
 
               {studentReport.disqualified.length > 0 && (
-                 <div className="mt-10 bg-white rounded-xl border border-red-100 shadow-sm print-hidden overflow-hidden">
-                    <div className="px-5 py-3 bg-red-50 border-b border-red-100 font-bold text-red-800 uppercase tracking-wider text-xs flex items-center justify-between">
+                 <div className="mt-8 bg-white rounded-xl border border-red-200 shadow-sm print-hidden overflow-hidden">
+                    <div className="px-4 py-2 bg-red-50 border-b border-red-100 font-bold text-red-800 uppercase tracking-wider text-xs flex items-center justify-between">
                        <span>Disqualified (Rules Engine)</span>
-                       <span className="bg-white text-red-600 px-2.5 py-0.5 rounded shadow-sm border border-red-100">{studentReport.disqualified.length}</span>
+                       <span className="bg-white text-red-600 px-2 py-0.5 rounded text-[10px] shadow-sm border border-red-100">{studentReport.disqualified.length}</span>
                     </div>
                     <table className="w-full text-left">
                        <tbody className="divide-y divide-slate-100">
                           {studentReport.disqualified.map((r:any) => (
                              <tr key={r.student_id}>
-                                <td className="px-5 py-2 font-semibold text-slate-700 text-sm">{r.student_name} <span className="text-[10px] text-slate-400 uppercase ml-2">{r.class_arm_name}</span></td>
-                                <td className="px-5 py-2 font-medium text-red-500 text-[11px] uppercase tracking-wide">{r.disqualified_reason}</td>
-                                <td className="px-5 py-2 text-right font-bold text-slate-800 text-sm">{r.average}%</td>
+                                <td className="px-4 py-2 font-semibold text-slate-700 text-sm">{r.student_name} <span className="text-[10px] text-slate-400 uppercase ml-2">{r.class_arm_name}</span></td>
+                                <td className="px-4 py-2 font-medium text-red-500 text-[10px] uppercase tracking-wide">{r.disqualified_reason}</td>
+                                <td className="px-4 py-2 text-right font-bold text-slate-800 text-sm">{Number(r.average).toFixed(1)}%</td>
                              </tr>
                           ))}
                        </tbody>
@@ -709,58 +694,56 @@ export default function PrizeArchivePage() {
           {/* === RENDER: GROUP RANKINGS === */}
           {groupReport && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Form Teacher Awards */}
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden print-shadow-none print-break-avoid">
-                 <div className="bg-gradient-to-r from-slate-900 to-indigo-950 px-5 py-3 flex items-center gap-2 print:bg-slate-100 border-b border-slate-200">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden print-shadow-none print-break-avoid h-fit">
+                 <div className="bg-gradient-to-r from-slate-800 to-indigo-900 px-4 py-2.5 flex items-center gap-2 print:bg-slate-100 border-b border-slate-200">
                     <Trophy className="w-4 h-4 text-amber-400 print:text-slate-600"/>
                     <h3 className="font-bold text-white print:text-slate-900 uppercase tracking-wider text-xs">Top Performing Classes</h3>
                  </div>
                  <table className="w-full text-left">
                     <thead className="bg-slate-50 border-b border-slate-200">
                        <tr>
-                          <th className="px-5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-12">Rnk</th>
-                          <th className="px-5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Class & Form Teacher</th>
-                          <th className="px-5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right w-24">Class Avg</th>
+                          <th className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-10">Rnk</th>
+                          <th className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Class & Form Teacher</th>
+                          <th className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right w-20">Class Avg</th>
                        </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                        {groupReport.topClasses.map((c: any) => (
                           <tr key={c.name} className="hover:bg-slate-50/50">
-                             <td className="px-5 py-3 font-bold text-slate-900 text-sm">{c.rank}</td>
-                             <td className="px-5 py-3">
-                                <span className="font-bold text-slate-800 text-sm block">{c.name}</span>
-                                <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Teacher: <span className="text-emerald-600 font-bold">{c.teacher}</span></span>
+                             <td className="px-4 py-2.5 font-bold text-slate-900 text-sm">{c.rank}</td>
+                             <td className="px-4 py-2.5">
+                                <span className="font-bold text-slate-800 text-sm block leading-tight">{c.name}</span>
+                                <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider leading-tight">Teacher: <span className="text-emerald-600 font-bold">{c.teacher}</span></span>
                              </td>
-                             <td className="px-5 py-3 text-right font-bold text-slate-900 text-base">{c.average}%</td>
+                             <td className="px-4 py-2.5 text-right font-bold text-slate-900 text-sm">{Number(c.average).toFixed(1)}%</td>
                           </tr>
                        ))}
                     </tbody>
                  </table>
               </div>
 
-              {/* Subject Teacher Awards */}
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden print-shadow-none print-break-avoid">
-                 <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 flex items-center gap-2">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden print-shadow-none print-break-avoid h-fit">
+                 <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center gap-2">
                     <BookOpen className="w-4 h-4 text-blue-600 print:text-slate-600"/>
                     <h3 className="font-bold text-slate-800 uppercase tracking-wider text-xs">Top Subject Performance</h3>
                  </div>
                  <table className="w-full text-left">
                     <thead className="bg-slate-50 border-b border-slate-200">
                        <tr>
-                          <th className="px-5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-12">Rnk</th>
-                          <th className="px-5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Subject & Teacher</th>
-                          <th className="px-5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right w-24">Subj Avg</th>
+                          <th className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-10">Rnk</th>
+                          <th className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Subject & Teacher</th>
+                          <th className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right w-20">Subj Avg</th>
                        </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                        {groupReport.topSubjects.map((s: any) => (
                           <tr key={s.name+s.classArm} className="hover:bg-slate-50/50">
-                             <td className="px-5 py-3 font-bold text-slate-900 text-sm">{s.rank}</td>
-                             <td className="px-5 py-3">
-                                <span className="font-bold text-slate-800 text-sm block uppercase">{s.name} <span className="text-[10px] text-slate-400 tracking-wider ml-1">{s.classArm}</span></span>
-                                <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Teacher: <span className="text-blue-600 font-bold">{s.teacher}</span></span>
+                             <td className="px-4 py-2.5 font-bold text-slate-900 text-sm">{s.rank}</td>
+                             <td className="px-4 py-2.5">
+                                <span className="font-bold text-slate-800 text-sm block uppercase leading-tight">{s.name} <span className="text-[10px] text-slate-400 tracking-wider ml-1">{s.classArm}</span></span>
+                                <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider leading-tight">Teacher: <span className="text-blue-600 font-bold">{s.teacher}</span></span>
                              </td>
-                             <td className="px-5 py-3 text-right font-bold text-slate-900 text-base">{s.average}%</td>
+                             <td className="px-4 py-2.5 text-right font-bold text-slate-900 text-sm">{Number(s.average).toFixed(1)}%</td>
                           </tr>
                        ))}
                     </tbody>
@@ -775,37 +758,37 @@ export default function PrizeArchivePage() {
       {showLayoutDrawer && (
          <div className="fixed inset-0 z-[60] flex justify-end print-hidden">
             <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowLayoutDrawer(false)}></div>
-            <div className="relative w-full max-w-sm bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right">
-               <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                  <h3 className="font-bold text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2"><LayoutGrid className="w-4 h-4"/> Layout Editor</h3>
+            <div className="relative w-full max-w-xs bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right">
+               <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                  <h3 className="font-bold text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2"><LayoutGrid className="w-3.5 h-3.5"/> Layout Editor</h3>
                   <button onClick={() => setShowLayoutDrawer(false)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4"/></button>
                </div>
-               <div className="flex-1 overflow-y-auto p-5 space-y-6">
+               <div className="flex-1 overflow-y-auto p-4 space-y-5">
                   <div>
-                     <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Classes (Drag to Reorder)</h4>
-                     <div className="space-y-2">
+                     <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Classes (Drag to Reorder)</h4>
+                     <div className="space-y-1.5">
                         {layoutConfig.classOrder.map((cls, idx) => (
-                           <div key={cls} draggable onDragStart={e => handleDragStart(e, idx, 'class')} onDragOver={handleDragOver} onDrop={e => handleDrop(e, idx, 'class')} className="flex items-center gap-3 p-2.5 bg-white border border-slate-200 rounded-lg shadow-sm cursor-grab active:cursor-grabbing hover:border-slate-300">
-                              <input type="checkbox" checked={layoutConfig.visibleClasses[cls]} onChange={e => setLayoutConfig(p => ({...p, visibleClasses: {...p.visibleClasses, [cls]: e.target.checked}}))} className="w-4 h-4 accent-blue-600" />
-                              <span className={`text-xs font-semibold flex-1 ${!layoutConfig.visibleClasses[cls] ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{cls}</span>
+                           <div key={cls} draggable onDragStart={e => handleDragStart(e, idx, 'class')} onDragOver={handleDragOver} onDrop={e => handleDrop(e, idx, 'class')} className="flex items-center gap-2.5 p-2 bg-white border border-slate-200 rounded shadow-sm cursor-grab active:cursor-grabbing hover:border-slate-300">
+                              <input type="checkbox" checked={layoutConfig.visibleClasses[cls]} onChange={e => setLayoutConfig(p => ({...p, visibleClasses: {...p.visibleClasses, [cls]: e.target.checked}}))} className="w-3.5 h-3.5 accent-blue-600" />
+                              <span className={`text-[11px] font-semibold flex-1 ${!layoutConfig.visibleClasses[cls] ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{cls}</span>
                            </div>
                         ))}
                      </div>
                   </div>
                   <div>
-                     <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Subjects (Drag to Reorder)</h4>
-                     <div className="space-y-2">
+                     <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Subjects (Drag to Reorder)</h4>
+                     <div className="space-y-1.5">
                         {layoutConfig.subjectOrder.map((sub, idx) => (
-                           <div key={sub} draggable onDragStart={e => handleDragStart(e, idx, 'subject')} onDragOver={handleDragOver} onDrop={e => handleDrop(e, idx, 'subject')} className="flex items-center gap-3 p-2.5 bg-white border border-slate-200 rounded-lg shadow-sm cursor-grab active:cursor-grabbing hover:border-slate-300">
-                              <input type="checkbox" checked={layoutConfig.visibleSubjects[sub]} onChange={e => setLayoutConfig(p => ({...p, visibleSubjects: {...p.visibleSubjects, [sub]: e.target.checked}}))} className="w-4 h-4 accent-blue-600" />
-                              <span className={`text-xs font-semibold flex-1 ${!layoutConfig.visibleSubjects[sub] ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{sub}</span>
+                           <div key={sub} draggable onDragStart={e => handleDragStart(e, idx, 'subject')} onDragOver={handleDragOver} onDrop={e => handleDrop(e, idx, 'subject')} className="flex items-center gap-2.5 p-2 bg-white border border-slate-200 rounded shadow-sm cursor-grab active:cursor-grabbing hover:border-slate-300">
+                              <input type="checkbox" checked={layoutConfig.visibleSubjects[sub]} onChange={e => setLayoutConfig(p => ({...p, visibleSubjects: {...p.visibleSubjects, [sub]: e.target.checked}}))} className="w-3.5 h-3.5 accent-blue-600" />
+                              <span className={`text-[11px] font-semibold flex-1 ${!layoutConfig.visibleSubjects[sub] ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{sub}</span>
                            </div>
                         ))}
                      </div>
                   </div>
                </div>
-               <div className="p-5 border-t border-slate-100 bg-slate-50">
-                  <button onClick={() => setShowLayoutDrawer(false)} className="w-full py-2.5 bg-slate-900 text-white font-bold uppercase tracking-wider text-xs rounded-lg hover:bg-slate-800 shadow-sm">Apply Layout</button>
+               <div className="p-4 border-t border-slate-100 bg-slate-50">
+                  <button onClick={() => setShowLayoutDrawer(false)} className="w-full py-2 bg-slate-900 text-white font-bold uppercase tracking-wider text-[11px] rounded-lg hover:bg-slate-800 shadow-sm">Apply Layout</button>
                </div>
             </div>
          </div>
