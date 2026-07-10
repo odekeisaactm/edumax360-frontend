@@ -93,7 +93,9 @@ export default function PrizeArchivePage() {
   const [schoolInfo, setSchoolInfo] = useState<any>(null);
 
   const [rules, setRules] = useState({
-    termType: 'end_of_term', minSubjects: 7, ignoreAbandoned: true, strictSubjectEligibility: true, tieBreaker: 'share'
+    termType: 'end_of_term', minSubjects: 7, ignoreAbandoned: true, strictSubjectEligibility: true, tieBreaker: 'share',
+    // Only used when no specific term is selected (session-cumulative mode)
+    averagingMethod: 'weighted_total', minTerms: 2
   });
 
   const [filters, setFilters] = useState({
@@ -106,6 +108,8 @@ export default function PrizeArchivePage() {
   const [rawData, setRawData] = useState<{cumulative: any[], subject_scores: any[]}>({ cumulative: [], subject_scores: [] });
   const [pivotMode, setPivotMode] = useState<'subject_first' | 'class_first'>('subject_first');
   const [layoutConfig, setLayoutConfig] = useState({ visibleClasses: {} as Record<string, boolean>, visibleSubjects: {} as Record<string, boolean>, classOrder: [] as string[], subjectOrder: [] as string[] });
+
+  const isCumulativeMode = !filters.periodId;
 
   useEffect(() => {
     const loadDefaults = async () => {
@@ -135,20 +139,39 @@ export default function PrizeArchivePage() {
     if (filters.sessionId) academicCalendarAPI.listSessionPeriods({ session_id: Number(filters.sessionId) }).then(pers => setOptions(prev => ({ ...prev, periods: pers })));
   }, [filters.sessionId]);
 
+  // Keep Min. Qualifying Terms within bounds of however many periods the selected session actually has
+  useEffect(() => {
+    if (options.periods.length && rules.minTerms > options.periods.length) {
+      setRules(prev => ({ ...prev, minTerms: options.periods.length }));
+    }
+  }, [options.periods]);
+
   const filteredLevels = useMemo(() => filters.schoolSectionId ? options.classLevels.filter(l => String(l.school_section) === filters.schoolSectionId) : options.classLevels, [options.classLevels, filters.schoolSectionId]);
   const filteredArms = useMemo(() => filters.studentClassId ? options.classConfigs.filter(c => String(c.student_class) === filters.studentClassId) : options.classConfigs, [options.classConfigs, filters.studentClassId]);
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!filters.sessionId || !filters.periodId) return showToast('warn', "Session and Term are required.");
+    if (!filters.sessionId) return showToast('warn', "Session is required.");
+
+    if (isCumulativeMode && options.periods.length && rules.minTerms > options.periods.length) {
+      return showToast('warn', `Min. Qualifying Terms (${rules.minTerms}) cannot exceed the number of terms in this session (${options.periods.length}).`);
+    }
 
     setLoading(true);
     try {
-      const params = {
-        session_id: filters.sessionId, period_id: filters.periodId, school_section_id: filters.schoolSectionId || undefined,
+      const params: Record<string, any> = {
+        session_id: filters.sessionId, school_section_id: filters.schoolSectionId || undefined,
         student_class_id: filters.studentClassId || undefined, class_config_id: filters.classConfigId || undefined,
         min_subjects: rules.minSubjects, ignore_abandoned: rules.ignoreAbandoned, term_type: rules.termType
       };
+
+      if (filters.periodId) {
+        params.period_id = filters.periodId;
+      } else {
+        // Session-cumulative mode
+        params.averaging_method = rules.averagingMethod;
+        params.min_terms = rules.minTerms;
+      }
 
       // TIMEOUT FIX: Ensure massive datasets don't kill the request
       const res = await api.get('/api/result/archive/prizes/', {
@@ -377,7 +400,7 @@ export default function PrizeArchivePage() {
             <div>
               <label className={labelCls}>
                 Min. Subjects Threshold
-                <button type="button" onClick={() => setHelpTopic({title: 'Minimum Subjects', content: <p>Students must complete at least this many subjects to be eligible for Overall Rankings.</p>})}><HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-blue-500"/></button>
+                <button type="button" onClick={() => setHelpTopic({title: 'Minimum Subjects', content: <p>Students must complete at least this many subjects <b>in a given term</b> for that term to count. In Whole-Session mode, a term that misses this threshold doesn't contribute to the student's cumulative average at all.</p>})}><HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-blue-500"/></button>
               </label>
               <div className="flex items-center gap-4 bg-white border border-slate-200 rounded-lg px-3 py-1.5">
                 <input type="range" min="1" max="15" value={rules.minSubjects} onChange={e => setRules({...rules, minSubjects: Number(e.target.value)})} className="flex-1 accent-blue-600" />
@@ -465,13 +488,46 @@ export default function PrizeArchivePage() {
               </select>
             </div>
             <div>
-              <label className={labelCls}>Term / Period</label>
-              <select required value={filters.periodId} onChange={e => setFilters({...filters, periodId: e.target.value})} className={inputCls}>
-                <option value="">Select Term...</option>
+              <label className={labelCls}>
+                Term / Period
+                <button type="button" onClick={() => setHelpTopic({title: 'Term / Period', content: <><p>Select a specific term to rank students on that term only.</p><p>Leave this as <b>Whole Session</b> to rank students on their cumulative performance across all qualifying terms in the session — useful for end-of-session "Best Student" awards.</p></>})}><HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-blue-500"/></button>
+              </label>
+              <select value={filters.periodId} onChange={e => setFilters({...filters, periodId: e.target.value})} className={inputCls}>
+                <option value="">Whole Session (Cumulative)</option>
                 {options.periods?.map(p => <option key={p.id} value={p.id}>{p.period?.name || p.name}</option>)}
               </select>
             </div>
           </div>
+
+          {isCumulativeMode && (
+            <div className="mb-5 border border-indigo-100 bg-indigo-50/50 rounded-lg p-4 animate-in fade-in slide-in-from-top-2">
+              <p className="text-[10px] font-bold text-indigo-700 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5" /> Session Cumulative Settings
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>
+                    Averaging Method
+                    <button type="button" onClick={() => setHelpTopic({title: 'Averaging Method', content: <><p><b>Weighted Total:</b> Sums each student's scores and subject counts across all their qualifying terms, then divides. Terms with more subjects sat carry proportionally more weight.</p><p><b>Average of Term Averages:</b> Averages each qualifying term's average equally, regardless of how many subjects were sat in each.</p></>})}><HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-blue-500"/></button>
+                  </label>
+                  <select value={rules.averagingMethod} onChange={e => setRules({...rules, averagingMethod: e.target.value})} className={inputCls}>
+                    <option value="weighted_total">Weighted Total (Recommended)</option>
+                    <option value="average_of_averages">Average of Term Averages</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>
+                    Min. Qualifying Terms
+                    <button type="button" onClick={() => setHelpTopic({title: 'Minimum Qualifying Terms', content: <p>A term only "qualifies" if the student met the <b>Min. Subjects Threshold</b> in that term (Step 1). Students need at least this many qualifying terms to be eligible for the session-cumulative award. Capped at the number of terms in the selected session.</p>})}><HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-blue-500"/></button>
+                  </label>
+                  <div className="flex items-center gap-4 bg-white border border-slate-200 rounded-lg px-3 py-1.5">
+                    <input type="range" min="1" max={Math.max(options.periods.length, 1)} value={rules.minTerms} onChange={e => setRules({...rules, minTerms: Number(e.target.value)})} className="flex-1 accent-indigo-600" />
+                    <span className="font-bold text-slate-700 text-sm">{rules.minTerms} / {options.periods.length || '—'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-4 mb-5">
             <div>
@@ -549,7 +605,10 @@ export default function PrizeArchivePage() {
              <h2 className="text-base font-bold uppercase tracking-widest text-slate-800 mt-2">
                {filters.analysisTarget === 'groups' ? 'Group Performance Roster' : 'Official Prize Roster'}
              </h2>
-             <p className="text-[10px] font-bold text-slate-500 mt-1 uppercase">Top {filters.topNLimit === 'custom' ? filters.customTopN : filters.topNLimit} Ranking | Session: {options.sessions.find(s=>s.id===Number(filters.sessionId))?.name}</p>
+             <p className="text-[10px] font-bold text-slate-500 mt-1 uppercase">
+               Top {filters.topNLimit === 'custom' ? filters.customTopN : filters.topNLimit} Ranking | Session: {options.sessions.find(s=>s.id===Number(filters.sessionId))?.name}
+               {' '}| {filters.periodId ? (options.periods.find(p=>p.id===Number(filters.periodId))?.period?.name || options.periods.find(p=>p.id===Number(filters.periodId))?.name) : 'Cumulative (Whole Session)'}
+             </p>
           </div>
 
           {/* === RENDER: STUDENT RANKINGS === */}
@@ -579,6 +638,7 @@ export default function PrizeArchivePage() {
                                    <th className="px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-16">Rnk</th>
                                    <th className="px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Student</th>
                                    <th className="px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center w-20">Subj</th>
+                                   {isCumulativeMode && <th className="px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center w-16">Terms</th>}
                                    <th className="px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right w-20">Total</th>
                                    <th className="px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right w-20">Avg</th>
                                 </tr>
@@ -592,6 +652,7 @@ export default function PrizeArchivePage() {
                                          <span className="text-[9px] text-slate-400 uppercase tracking-wider leading-tight">{r.reg_number} • <span className="text-blue-500 print:text-slate-500">{r.class_arm_name}</span></span>
                                       </td>
                                       <td className="px-4 py-2 text-center font-medium text-slate-600 text-sm">{r.subject_count}</td>
+                                      {isCumulativeMode && <td className="px-4 py-2 text-center font-medium text-slate-600 text-sm">{r.qualifying_terms}</td>}
                                       <td className="px-4 py-2 text-right font-medium text-slate-600 text-sm">{Number(r.total_score).toFixed(1)}</td>
                                       <td className="px-4 py-2 text-right font-bold text-slate-900 text-sm">{Number(r.average).toFixed(1)}%</td>
                                    </tr>
