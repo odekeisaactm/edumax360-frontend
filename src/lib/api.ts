@@ -2138,16 +2138,28 @@ export const feeAPI = {
   getFeeStructure: newFeeAPI.structures.get,
   createFeeStructure: newFeeAPI.structures.create,
   updateFeeStructure: newFeeAPI.structures.update,
+  deleteFeeStructure: newFeeAPI.structures.delete,
   setPeriodAmounts: newFeeAPI.structures.setPeriodAmounts,
+  simulateFee: newFeeAPI.structures.simulate,
   getSettings: newFeeAPI.settings.get,
 
   // Discounts
   getDiscounts: newFeeAPI.discounts.list,
   createDiscount: newFeeAPI.discounts.create,
   updateDiscount: newFeeAPI.discounts.update,
+  deleteDiscount: newFeeAPI.discounts.delete,
   getDiscountApplications: async (p?: any) => [], // Temporary stubs for UI compatibility
   createDiscountApplication: async (d?: any) => ({}),
   getAppliedDiscounts: async (p?: any) => [],
+  // Enrollments
+  getDiscountEnrollments: newFeeAPI.discountEnrollments.list,
+  createDiscountEnrollment: newFeeAPI.discountEnrollments.create,
+  deleteDiscountEnrollment: newFeeAPI.discountEnrollments.delete,
+
+  getPendingStudents: newFeeAPI.invoices.getPendingStudents,
+  generateSingleInvoice: newFeeAPI.invoices.generateSingle,
+
+  getBillingLedger: newFeeAPI.billingLedger.get,
 
   // Banks & Gateways (UI calls Fee, but we route to Finance backend)
   getBankAccounts: financeAPI.bankDetails.list,
@@ -2170,11 +2182,15 @@ export const feeAPI = {
   getStudentDashboard: newFeeAPI.studentDashboard.get,
 
   // Payments
-  recordPayment: newFeeAPI.payments.record,
-  confirmPayment: newFeeAPI.payments.confirm,
-  revertPayment: newFeeAPI.payments.revert,
-  recordFamilyPayment: newFeeAPI.familyPayments.record,
-  confirmFamilyPayment: newFeeAPI.familyPayments.confirm,
+  createOtherPayment: newFeeAPI.otherPayments.create,
+  createWaiver: newFeeAPI.waivers.create,
+  // Master Checkouts & Receipts
+  getPosTerms: newFeeAPI.receipts.getPosTerms,
+  checkout: newFeeAPI.receipts.checkout,
+  confirmReceipt: newFeeAPI.receipts.confirm,
+  revertReceipt: newFeeAPI.receipts.revert,
+  getReceipts: newFeeAPI.receipts.list,
+  getPendingReceipts: newFeeAPI.receipts.listPending,
 
   // Wallets (UI calls Fee, but we route to Finance backend)
   getWalletTransactions: async (p?: any) => financeAPI.auditLedgers?.getStudentWalletLedger(p) || [],

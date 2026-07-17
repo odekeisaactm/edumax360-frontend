@@ -813,6 +813,19 @@ export const onlinePaymentAPI = {
   },
 };
 
+// Add this to your api.ts file (e.g., inside financeAPI or as a standalone export)
+export const walletAdminAPI = {
+  withdrawFunds: async (payload: { student_id: number; amount: string; wallet_type: string; bank_account_id: number; reason: string; }) => {
+    const res = await api.post('/api/finance/wallets/withdraw/', payload);
+    return res.data;
+  },
+  reconcileBalance: async (payload: { student_id: number; amount: string; wallet_type: string; action: string; reason: string; }) => {
+    const res = await api.post('/api/finance/wallets/reconcile/', payload);
+    return res.data;
+  }
+};
+
+
 // ============================================================
 // Export all finance APIs as a single object (optional)
 // ============================================================

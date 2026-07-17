@@ -17,12 +17,11 @@ import type {
   Invoice,
   InvoiceItem,
   FamilyInvoice,
-  FeePayment,
-  FamilyFeePayment,
   OtherPayment,
-  OtherPaymentClearance,
+  PaymentReceipt , FundingSource, Allocation,InvoicePaymentSummary,
   InvoiceGenerationJob,
   StudentFinancialDashboard,
+  PaginatedLedgerResponse
 } from '@/lib/fee.types';
 
 // ============================================================
@@ -75,13 +74,9 @@ export interface InvoiceListFilters {
   page?: number;
 }
 
-export interface PaymentListFilters {
-  invoice?: number;
+export interface ReceiptListFilters {
   status?: string;
-  payment_mode?: string;
-  date?: string;
-  start_date?: string;
-  end_date?: string;
+  external_payment_mode?: string;
   search?: string;
   page?: number;
 }
@@ -211,6 +206,14 @@ export const feeStructuresAPI = {
   setPeriodAmounts: async (id: number, amounts: { period: number; amount: string | number }[]): Promise<PeriodFeeAmount[]> => {
     try {
       const response = await api.post(`${FEE_API_BASE}/structures/${id}/set-period-amounts/`, amounts);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+  simulate: async (data: { class_id: number; period_id: number; section_id?: number; discount_ids?: number[] }): Promise<any> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/structures/simulate/`, data);
       return response.data;
     } catch (error: any) {
       throw new Error(getDrfError(error));
@@ -419,6 +422,11 @@ export const invoicesAPI = {
     }
   },
 
+  getPendingStudents: async (params: { session_id: number; period_id: number }): Promise<{ count: number; students: any[] }> => {
+    const response = await api.get(`${FEE_API_BASE}/invoices/pending-students/`, { params });
+    return response.data;
+  },
+
   delete: async (id: number): Promise<void> => {
     try {
       await api.delete(`${FEE_API_BASE}/invoices/${id}/`);
@@ -466,62 +474,31 @@ export const familyInvoicesAPI = {
   },
 };
 
+
 // ============================================================
-// 8. PAYMENTS (STUDENT & FAMILY)
+// 8. MASTER CHECKOUTS & RECEIPTS
 // ============================================================
 
-export const feePaymentsAPI = {
-  list: async (filters?: PaymentListFilters): Promise<any> => {
-    const response = await api.get(`${FEE_API_BASE}/payments/`, { params: filters });
+export const receiptsAPI = {
+  list: async (filters?: ReceiptListFilters): Promise<any> => {
+    const response = await api.get(`${FEE_API_BASE}/checkouts/`, { params: filters });
     return response.data;
   },
 
-  listPending: async (): Promise<FeePayment[]> => {
-    const response = await api.get(`${FEE_API_BASE}/payments/pending/`);
+  listPending: async (): Promise<PaymentReceipt[]> => {
+    const response = await api.get(`${FEE_API_BASE}/checkouts/pending/`);
     return response.data?.results || response.data || [];
   },
 
-  record: async (data: FormData | any): Promise<FeePayment> => {
-    const isFormData = data instanceof FormData;
-    try {
-      const response = await api.post(`${FEE_API_BASE}/payments/record/`, data, {
-        headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
-      });
-      return response.data;
-    } catch (error: any) {
-      throw new Error(getDrfError(error));
-    }
-  },
-
-  confirm: async (id: number, item_breakdown?: { invoice_item_id: number; amount: string | number }[]): Promise<FeePayment> => {
-    try {
-      const response = await api.post(`${FEE_API_BASE}/payments/${id}/confirm/`, { item_breakdown });
-      return response.data;
-    } catch (error: any) {
-      throw new Error(getDrfError(error));
-    }
-  },
-
-  revert: async (id: number, reason: string): Promise<FeePayment> => {
-    try {
-      const response = await api.post(`${FEE_API_BASE}/payments/${id}/revert/`, { reason });
-      return response.data;
-    } catch (error: any) {
-      throw new Error(getDrfError(error));
-    }
-  },
-};
-
-export const familyPaymentsAPI = {
-  list: async (filters?: PaymentListFilters): Promise<any> => {
-    const response = await api.get(`${FEE_API_BASE}/family-payments/`, { params: filters });
+  getPosTerms: async (params: { parent_id?: number; student_id?: number }): Promise<any> => {
+    const response = await api.get(`${FEE_API_BASE}/checkouts/pos-terms/`, { params });
     return response.data;
   },
 
-  record: async (data: FormData | any): Promise<FamilyFeePayment> => {
+  checkout: async (data: FormData | any): Promise<PaymentReceipt> => {
     const isFormData = data instanceof FormData;
     try {
-      const response = await api.post(`${FEE_API_BASE}/family-payments/record/`, data, {
+      const response = await api.post(`${FEE_API_BASE}/checkouts/checkout/`, data, {
         headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
       });
       return response.data;
@@ -530,24 +507,25 @@ export const familyPaymentsAPI = {
     }
   },
 
-  confirm: async (id: number, item_breakdown?: { family_invoice_item_id: number; amount: string | number }[]): Promise<FamilyFeePayment> => {
+  confirm: async (id: number, allocations: Allocation[]): Promise<PaymentReceipt> => {
     try {
-      const response = await api.post(`${FEE_API_BASE}/family-payments/${id}/confirm/`, { item_breakdown });
+      const response = await api.post(`${FEE_API_BASE}/checkouts/${id}/confirm/`, { allocations });
       return response.data;
     } catch (error: any) {
       throw new Error(getDrfError(error));
     }
   },
 
-  revert: async (id: number, reason: string): Promise<FamilyFeePayment> => {
+  revert: async (id: number, reason: string): Promise<PaymentReceipt> => {
     try {
-      const response = await api.post(`${FEE_API_BASE}/family-payments/${id}/revert/`, { reason });
+      const response = await api.post(`${FEE_API_BASE}/checkouts/${id}/revert/`, { reason });
       return response.data;
     } catch (error: any) {
       throw new Error(getDrfError(error));
     }
   },
 };
+
 
 // ============================================================
 // 9. ANCILLARY DEBTS & CLEARANCES
@@ -582,39 +560,17 @@ export const otherPaymentsAPI = {
   },
 };
 
-export const otherPaymentClearancesAPI = {
-  list: async (params?: { other_payment?: number; status?: string }): Promise<OtherPaymentClearance[]> => {
-    const response = await api.get(`${FEE_API_BASE}/other-payment-clearances/`, { params });
-    return response.data?.results || response.data || [];
-  },
-
-  create: async (data: { other_payment: number; amount: string | number; payment_mode: string; bank_account?: number; date?: string; reference?: string; notes?: string }): Promise<OtherPaymentClearance> => {
-    try {
-      const response = await api.post(`${FEE_API_BASE}/other-payment-clearances/`, data);
-      return response.data;
-    } catch (error: any) {
-      throw new Error(getDrfError(error));
-    }
-  },
-
-  reverse: async (id: number, reason: string): Promise<OtherPaymentClearance> => {
-    try {
-      const response = await api.post(`${FEE_API_BASE}/other-payment-clearances/${id}/reverse/`, { reason });
-      return response.data;
-    } catch (error: any) {
-      throw new Error(getDrfError(error));
-    }
-  },
-};
 
 // ============================================================
 // 10. GENERATION JOBS & DASHBOARD
 // ============================================================
 
 export const generationJobsAPI = {
-  list: async (): Promise<InvoiceGenerationJob[]> => {
-    const response = await api.get(`${FEE_API_BASE}/generation-jobs/`);
-    return response.data?.results || response.data || [];
+  list: async (params?: any): Promise<any> => {
+    // 2. Pass the params in the Axios config object
+    const response = await api.get(`${FEE_API_BASE}/generation-jobs/`, { params });
+    // 3. Return the raw data so the UI can access response.data.results AND response.data.count
+    return response.data;
   },
 
   start: async (data: { session_id: number; period_id: number; class_ids: number[] }): Promise<InvoiceGenerationJob> => {
@@ -643,6 +599,29 @@ export const studentDashboardAPI = {
   },
 };
 
+
+// ============================================================
+// 11. BILLING LEDGER (STATEMENT OF ACCOUNT)
+// ============================================================
+
+export const billingLedgerAPI = {
+ get: async (params: { session_id: number | string; period_id: number | string; mode?: string; page?: number; q?: string; parent_id?: number | string; student_id?: number | string; }): Promise<PaginatedLedgerResponse> => {
+    const response = await api.get(`${FEE_API_BASE}/ledger/`, { params });
+    return response.data;
+  },
+
+  bulkAction: async (payload: {
+    action: 'send_reminders' | 'send_summaries';
+    target_type: 'parent' | 'student';
+    target_ids: number[];
+    session_id: number;
+    period_id: number;
+  }): Promise<{ detail: string }> => {
+    const response = await api.post(`${FEE_API_BASE}/ledger/`, payload);
+    return response.data;
+  }
+};
+
 // ============================================================
 // EXPORT ALL API SERVICES AS A SINGLE OBJECT
 // ============================================================
@@ -658,12 +637,12 @@ export const feeAPI = {
   waivers: feeWaiversAPI,
   invoices: invoicesAPI,
   familyInvoices: familyInvoicesAPI,
-  payments: feePaymentsAPI,
-  familyPayments: familyPaymentsAPI,
+  receipts: receiptsAPI,
   otherPayments: otherPaymentsAPI,
-  otherPaymentClearances: otherPaymentClearancesAPI,
+  billingLedger: billingLedgerAPI,
   generationJobs: generationJobsAPI,
   studentDashboard: studentDashboardAPI,
+
 };
 
 // ============================================================

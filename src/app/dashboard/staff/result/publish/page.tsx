@@ -4,12 +4,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { resultPublishAPI } from '@/lib/result.service';
+import { api } from '@/lib/api';
 import { ResultPublish, PublishStats } from '@/lib/result.types';
 import {
   CheckCircle2, AlertCircle, Loader2, Globe, Layers,
-  ArrowLeft, Info, Send, XCircle, ChevronRight, BarChart3,
-  ExternalLink, AlertTriangle, RefreshCcw, MoreVertical,
-  History, Calendar, Users, Eye
+  ArrowLeft, Info, Send, XCircle, BarChart3,
+  ExternalLink, AlertTriangle, RefreshCcw,
+  History, Calendar, Users, Eye, Mail
 } from 'lucide-react';
 
 const formatDate = (dateStr: string) => {
@@ -27,18 +28,12 @@ const formatDate = (dateStr: string) => {
   }
 };
 
-// ─── Error Modal ──────────────────────────────────────────────────────────────
-function ErrorModal({
-  message,
-  onClose
-}: {
-  message: string;
-  onClose: () => void;
-}) {
+// ─── Modals ──────────────────────────────────────────────────────────────
+
+function ErrorModal({ message, onClose }: { message: string; onClose: () => void; }) {
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-        {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
           <div className="w-10 h-10 bg-red-50 text-red-600 rounded-xl flex items-center justify-center">
             <AlertCircle className="h-5 w-5" />
@@ -48,18 +43,11 @@ function ErrorModal({
             <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Action could not be completed</p>
           </div>
         </div>
-
-        {/* Body */}
         <div className="p-6">
           <p className="text-sm text-slate-600 leading-relaxed">{message}</p>
         </div>
-
-        {/* Footer */}
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 shadow-lg shadow-red-200 transition-all"
-          >
+          <button onClick={onClose} className="px-6 py-2 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 shadow-lg shadow-red-200 transition-all">
             Dismiss
           </button>
         </div>
@@ -68,19 +56,78 @@ function ErrorModal({
   );
 }
 
-// ─── Progress Modal ───────────────────────────────────────────────────────────
+function SuccessModal({ message, onClose }: { message: string; onClose: () => void; }) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+          <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+            <CheckCircle2 className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Success</h3>
+            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Action completed</p>
+          </div>
+        </div>
+        <div className="p-6">
+          <p className="text-sm text-slate-600 leading-relaxed">{message}</p>
+        </div>
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
+          <button onClick={onClose} className="px-6 py-2 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PublisherModal({ record, onClose }: { record: ResultPublish; onClose: () => void; }) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+          <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+            <Users className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Publisher Details</h3>
+            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Result Visibility</p>
+          </div>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Published By</p>
+            <p className="text-sm font-bold text-slate-700">{record.published_by_name || 'System'}</p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Date & Time</p>
+            <p className="text-sm font-bold text-slate-700">{record.published_at ? formatDate(record.published_at) : '—'}</p>
+          </div>
+        </div>
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
+          <button onClick={onClose} className="px-6 py-2 rounded-xl text-sm font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PublishProgressModal({
   record,
   onConfirm,
   onClose
 }: {
   record: ResultPublish;
-  onConfirm: () => Promise<void>;
+  onConfirm: (sendEmail: boolean) => Promise<void>;
   onClose: () => void;
 }) {
   const [stats, setStats] = useState<PublishStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
+  const [sendEmail, setSendEmail] = useState(false);
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
@@ -103,7 +150,7 @@ function PublishProgressModal({
   const handlePublish = async () => {
     setPublishing(true);
     try {
-      await onConfirm();
+      await onConfirm(sendEmail);
       onClose();
     } finally {
       setPublishing(false);
@@ -114,9 +161,9 @@ function PublishProgressModal({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
               <Send className="h-5 w-5" />
@@ -133,7 +180,8 @@ function PublishProgressModal({
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        {/* Scrollable Body */}
+        <div className="p-6 space-y-6 overflow-y-auto max-h-[55vh]">
           {loading ? (
             <div className="py-12 flex flex-col items-center justify-center gap-3">
               <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
@@ -200,6 +248,20 @@ function PublishProgressModal({
                 </div>
               )}
 
+              {/* Email Option */}
+              <div className="flex items-center gap-3 p-4 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+                <input
+                  type="checkbox"
+                  id="sendEmail"
+                  checked={sendEmail}
+                  onChange={(e) => setSendEmail(e.target.checked)}
+                  className="w-5 h-5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer flex-shrink-0"
+                />
+                <label htmlFor="sendEmail" className="text-sm font-semibold text-indigo-900 cursor-pointer select-none leading-snug">
+                  ✉️ Also email result PDFs to parents upon publishing
+                </label>
+              </div>
+
               {/* Link to Tracking */}
               <button
                 onClick={() => window.open('/dashboard/staff/result/tracking', '_blank')}
@@ -212,7 +274,7 @@ function PublishProgressModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3 flex-shrink-0">
           <button onClick={onClose} disabled={publishing} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-800">
             Cancel
           </button>
@@ -232,6 +294,7 @@ function PublishProgressModal({
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
+
 export default function ResultPublishPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -239,8 +302,12 @@ export default function ResultPublishPage() {
   const [records, setRecords] = useState<ResultPublish[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [activeModal, setActiveModal] = useState<{ type: 'publish' | 'split' | 'merge', record: ResultPublish } | null>(null);
   const [errorModalMessage, setErrorModalMessage] = useState<string | null>(null);
+  const [successModalMessage, setSuccessModalMessage] = useState<string | null>(null);
+  const [publisherModalRecord, setPublisherModalRecord] = useState<ResultPublish | null>(null);
+  const [resendingId, setResendingId] = useState<number | null>(null);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -256,9 +323,9 @@ export default function ResultPublishPage() {
 
   useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
-  const handleToggle = async (id: number) => {
+  const handleToggle = async (id: number, sendEmail: boolean = false) => {
     try {
-      await resultPublishAPI.toggle(id);
+      await api.post(`/api/result/publish/${id}/toggle-publish/`, { send_email: sendEmail });
       fetchRecords();
     } catch (err: any) {
       setErrorModalMessage(err.response?.data?.detail || 'Failed to update status');
@@ -280,6 +347,18 @@ export default function ResultPublishPage() {
       fetchRecords();
     } catch (err: any) {
       setErrorModalMessage(err.response?.data?.detail || 'Failed to merge sections');
+    }
+  };
+
+  const handleResendEmails = async (id: number) => {
+    setResendingId(id);
+    try {
+      await api.post(`/api/result/publish/${id}/resend-emails/`);
+      setSuccessModalMessage("Bulk email dispatch has been queued and is running in the background.");
+    } catch (err: any) {
+      setErrorModalMessage(err.response?.data?.detail || 'Failed to resend emails');
+    } finally {
+      setResendingId(null);
     }
   };
 
@@ -335,16 +414,16 @@ export default function ResultPublishPage() {
               <p className="text-slate-500 max-w-sm mx-auto">Publishing is only available for active academic sessions. Please check your school configuration.</p>
             </div>
           ) : (
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
               <table className="w-full text-left">
                 <thead>
                   <tr className="bg-slate-50/50 border-b border-slate-100">
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Term / Session</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 w-56">Result Type</th>
+                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 min-w-[240px]">Term / Session</th>
+                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Result Type</th>
                     <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">School Section</th>
                     <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Status</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Published By</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Action</th>
+                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Published By</th>
+                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -397,32 +476,42 @@ export default function ResultPublishPage() {
                              {rec.is_published ? 'Published' : 'Hidden'}
                            </div>
                         </td>
-                        <td className="px-6 py-5">
+                        <td className="px-6 py-5 text-center">
                            {rec.is_published ? (
-                             <div className="space-y-0.5">
-                               <p className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
-                                 <Users className="h-3.5 w-3.5 text-slate-400" /> {rec.published_by_name}
-                               </p>
-                               <p className="text-[10px] text-slate-400 font-medium italic">
-                                 {rec.published_at ? formatDate(rec.published_at) : '—'}
-                               </p>
-                             </div>
-                           ) : <span className="text-slate-300 text-xs italic">—</span>}
+                             <button
+                               onClick={() => setPublisherModalRecord(rec)}
+                               className="p-2 bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors"
+                               title="View Publisher Details"
+                             >
+                               <Users className="h-4 w-4" />
+                             </button>
+                           ) : (
+                             <span className="text-slate-300 text-xs italic">—</span>
+                           )}
                         </td>
                         <td className="px-6 py-5">
-                           <button
-                             onClick={() => rec.is_published ? handleToggle(rec.id) : setActiveModal({ type: 'publish', record: rec })}
-                             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all
-                               ${rec.is_published
-                                 ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                                 : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-100'}`}
-                           >
-                             {rec.is_published ? (
-                               <><XCircle className="h-3.5 w-3.5" /> Unpublish</>
-                             ) : (
-                               <><Send className="h-3.5 w-3.5" /> Publish</>
+                           <div className="flex items-center justify-end gap-2">
+                             {rec.is_published && (
+                               <button
+                                 onClick={() => handleResendEmails(rec.id)}
+                                 disabled={resendingId === rec.id}
+                                 className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors disabled:opacity-50"
+                                 title="Resend Emails"
+                               >
+                                 {resendingId === rec.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                               </button>
                              )}
-                           </button>
+                             <button
+                               onClick={() => rec.is_published ? handleToggle(rec.id, false) : setActiveModal({ type: 'publish', record: rec })}
+                               className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-sm
+                                 ${rec.is_published
+                                   ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-100'
+                                   : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'}`}
+                               title={rec.is_published ? "Unpublish Results" : "Publish Results"}
+                             >
+                               {rec.is_published ? <XCircle className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                             </button>
+                           </div>
                         </td>
                       </tr>
                     );
@@ -438,8 +527,15 @@ export default function ResultPublishPage() {
       {activeModal && activeModal.type === 'publish' && (
         <PublishProgressModal
           record={activeModal.record}
-          onConfirm={() => handleToggle(activeModal.record.id)}
+          onConfirm={(sendEmail) => handleToggle(activeModal.record.id, sendEmail)}
           onClose={() => setActiveModal(null)}
+        />
+      )}
+
+      {publisherModalRecord && (
+        <PublisherModal
+          record={publisherModalRecord}
+          onClose={() => setPublisherModalRecord(null)}
         />
       )}
 
@@ -447,6 +543,13 @@ export default function ResultPublishPage() {
         <ErrorModal
           message={errorModalMessage}
           onClose={() => setErrorModalMessage(null)}
+        />
+      )}
+
+      {successModalMessage && (
+        <SuccessModal
+          message={successModalMessage}
+          onClose={() => setSuccessModalMessage(null)}
         />
       )}
 

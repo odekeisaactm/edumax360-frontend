@@ -14,7 +14,7 @@ import {
   HelpCircle, Tags, Database, List, CheckSquare, Video, BarChart, Store,
   BarChart2, Archive, Edit, Send, Info, Smartphone, Cpu, Sliders, SlidersHorizontal,
   ArrowRight, Award, Printer, Shield, Upload, Download, CalendarDays,
-  FileSearch, Package, User, Zap, MapPin, Gift, TrendingDown, Wallet,
+  FileSearch, Package, User, Zap, MapPin, Gift, TrendingDown, Wallet, History
 } from 'lucide-react';
 
 interface NavItem {
@@ -494,19 +494,13 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           icon: <FileText className="h-4 w-4" />,
           children: [
             {
-              name: 'Student Invoices',
+              name: 'View Invoices',
               href: '/dashboard/staff/fee/invoices',
               icon: <FileText className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/fee/invoices'),
               requiredPermissions: ['fee_management.manage_fees'],
             },
-            {
-              name: 'Family Invoices',
-              href: '/dashboard/staff/fee/family-invoices',
-              icon: <Users className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/fee/family-invoices'),
-              requiredPermissions: ['fee_management.manage_fees'],
-            },
+
             {
               name: 'Bulk Billing Jobs',
               href: '/dashboard/staff/fee/generation-jobs',
@@ -566,13 +560,13 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             },
           ],
         },
-        // ==================== PRICING & CONCESSIONS ====================
+        // ==================== PRICING ARCHITECTURE ====================
         {
-          name: 'Pricing & Concessions',
+          name: 'Pricing Architecture',
           href: '#',
-          icon: <Tag className="h-4 w-4" />,
+          icon: <Layers className="h-4 w-4" />,
           children: [
-            {
+              {
               name: 'Fee Structures',
               href: '/dashboard/staff/fee/fee-structures',
               icon: <Layers className="h-4 w-4" />,
@@ -593,29 +587,46 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               current: isCurrentPath('/dashboard/staff/fee/groups'),
               requiredPermissions: ['fee_management.manage_fees'],
             },
-            {
-              name: 'Master Discounts',
-              href: '/dashboard/staff/fee/discounts',
-              icon: <Tag className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/fee/discounts'),
-              requiredPermissions: ['fee_management.manage_fees'],
-            },
-            {
-              name: 'Concession Tiers',
-              href: '/dashboard/staff/fee/discount-tiers',
-              icon: <TrendingUp className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/fee/discount-tiers'),
-              requiredPermissions: ['fee_management.manage_fees'],
-            },
-            {
-              name: 'Discount Enrollments',
-              href: '/dashboard/staff/fee/discount-enrollments',
-              icon: <UserCheck className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/fee/discount-enrollments'),
-              requiredPermissions: ['fee_management.manage_fees'],
-            },
+
           ],
         },
+       // ==================== DISCOUNTS & CONCESSIONS ====================
+    {
+      name: 'Discounts & Concessions',
+      href: '#',
+      icon: <Tag className="h-4 w-4" />,
+      children: [
+        {
+          name: 'New Enrollment',
+          href: '/dashboard/staff/fee/discount-enrollment',
+          icon: <UserCheck className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/fee/discount-enrollment'),
+          requiredPermissions: ['fee_management.manage_fees'],
+        },
+        {
+          name: 'Student Enrollments',
+          href: '/dashboard/staff/fee/discount-enrollments',
+          icon: <UserCheck className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/fee/discount-enrollments'),
+          requiredPermissions: ['fee_management.manage_fees'],
+        },
+
+        {
+          name: 'Discount Configurations',
+          href: '/dashboard/staff/fee/discounts',
+          icon: <Settings className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/fee/discounts'),
+          requiredPermissions: ['fee_management.manage_fees'],
+        },
+        {
+          name: 'Application History',
+          href: '/dashboard/staff/fee/discount-history',
+          icon: <History className="h-4 w-4" />, // Make sure to import History from lucide-react
+          current: isCurrentPath('/dashboard/staff/fee/discount-history'),
+          requiredPermissions: ['fee_management.manage_fees'],
+        },
+      ],
+    },
         // ==================== CONFIGURATION ====================
         {
           name: 'Configuration',

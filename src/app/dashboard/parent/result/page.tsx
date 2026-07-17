@@ -1,216 +1,330 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useWard } from '@/context/WardContext';
-import { resultViewAPI, api } from '@/lib/api';
-import { 
-  FileText, Award, AlertCircle, Loader2, Download, Printer, 
-  ChevronRight, BookOpen, UserCheck, ShieldCheck, CheckCircle2
+import { academicCalendarAPI, api } from '@/lib/api';
+import {
+  Award, Calendar, Clock, Layers, Loader2,
+  Search, GraduationCap, UserCircle, ArrowRight,
+  X, CheckCircle2, AlertTriangle, AlertCircle
 } from 'lucide-react';
 
-export default function CurrentResultPage() {
+// ─── Toasts & Error Handling ──────────────────────────────────────────────────
+let _toastId = 0;
+interface ToastItem { id: number; type: 'success' | 'error' | 'warn'; message: string; }
+
+function extractError(err: any): string {
+  const d = err?.response?.data;
+  if (d) {
+    if (typeof d === 'string') return d;
+    if (d.detail) return String(d.detail);
+    if (d.message) return String(d.message);
+  }
+  return err?.message || 'Results have not been published for this term yet.';
+}
+
+function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
+  return (
+    <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
+      {toasts.map(t => (
+        <div key={t.id} className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border max-w-sm
+          ${t.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+          : t.type === 'warn' ? 'bg-amber-50 border-amber-200 text-amber-900'
+          : 'bg-red-50 border-red-200 text-red-900'}`}>
+          {t.type === 'success' ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5 text-emerald-600" />
+          : t.type === 'warn' ? <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5 text-amber-500" />
+          : <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-red-500" />}
+          <p className="text-sm font-medium flex-1 leading-snug">{t.message}</p>
+          <button onClick={() => onDismiss(t.id)} className="opacity-50 hover:opacity-100 ml-2 flex-shrink-0">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function ParentResultSelectionPage() {
+  const router = useRouter();
   const { selectedWard, loading: wardLoading } = useWard();
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
 
+  // ── Data States ──
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [periods, setPeriods] = useState<any[]>([]);
+  const [loadingInitial, setLoadingInitial] = useState(true);
+  const [loadingPeriods, setLoadingPeriods] = useState(false);
+  const [checkingResult, setCheckingResult] = useState(false);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  // ── Form States ──
+  const [selectedSessionId, setSelectedSessionId] = useState<string>('');
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string>('');
+  const [termType, setTermType] = useState<'midterm' | 'end_of_term'>('end_of_term');
+
+  const showToast = (type: 'success' | 'error' | 'warn', message: string) => {
+    const id = ++_toastId;
+    setToasts(prev => [...prev, { id, type, message }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+  };
+
+  // 1. Initial Load: Fetch Sessions & Current Session
   useEffect(() => {
-    if (selectedWard) {
-      fetchCurrentResult();
+    const fetchDefaults = async () => {
+      setLoadingInitial(true);
+      try {
+        const [sessData, currentSess] = await Promise.all([
+          academicCalendarAPI.listSessions(),
+          academicCalendarAPI.getCurrentSession()
+        ]);
+
+        setSessions(sessData || []);
+
+        if (currentSess?.id) {
+          setSelectedSessionId(String(currentSess.id));
+        }
+      } catch (err) {
+        console.error("Failed to load sessions", err);
+      } finally {
+        setLoadingInitial(false);
+      }
+    };
+
+    fetchDefaults();
+  }, []);
+
+  // 2. Load Periods whenever Session changes
+  useEffect(() => {
+    if (!selectedSessionId) {
+      setPeriods([]);
+      return;
     }
-  }, [selectedWard]);
 
-  const fetchCurrentResult = async () => {
-    setLoading(true);
-    setError(null);
-    setResult(null);
+    const fetchPeriods = async () => {
+      setLoadingPeriods(true);
+      try {
+        const pers = await academicCalendarAPI.listSessionPeriods({ session_id: Number(selectedSessionId) });
+        setPeriods(pers || []);
+
+        // Find the period flagged as current in the returned data
+        const currentPeriod = pers.find((p: any) => p.is_current === true);
+
+        if (currentPeriod) {
+          setSelectedPeriodId(String(currentPeriod.id));
+        } else if (pers.length > 0) {
+          setSelectedPeriodId(String(pers[pers.length - 1].id));
+        }
+
+      } catch (err) {
+        console.error("Failed to load periods", err);
+      } finally {
+        setLoadingPeriods(false);
+      }
+    };
+
+    fetchPeriods();
+  }, [selectedSessionId]);
+
+  // 3. Handle View Result (Pre-check publication status)
+  const handleViewResult = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPeriodId || !selectedWard) return;
+
+    setCheckingResult(true);
     try {
-      // 1. Find the current period for the ward's section
-      // We need ward's section. Let's assume the selectedWard object has it or we fetch it.
-      // If missing, we'll try to find any active period.
-      const periodRes = await api.get('/api/school/session-periods/current/');
-      const periodId = periodRes.data.data?.id;
-
-      if (!periodId) {
-        setError("No active academic term found.");
-        return;
-      }
-
-      // 2. Fetch the result
-      const res = await resultViewAPI.studentSheet({
-        student_id: selectedWard!.id,
-        period_id: periodId
+      // We ping the print-data endpoint. If it is unpublished, the backend will block it and throw an error.
+      await api.get('/api/result/detail/print-data/', {
+        params: {
+          student_id: selectedWard.id,
+          period_id: selectedPeriodId,
+          comment_type: termType,
+        },
       });
-      setResult(res);
+
+      // If the request succeeds, it means it's published and accessible. Route to the view page!
+      router.push(`/dashboard/parent/result/view?period=${selectedPeriodId}&type=${termType}`);
     } catch (err: any) {
-      if (err.response?.status === 404) {
-        setError("Result not yet available. Your child's result hasn't been published for the current term.");
-      } else {
-        setError("Failed to load result. Please try again later.");
-      }
+      // The backend blocked it (e.g. 403 Forbidden or 400 Validation Error)
+      showToast('error', extractError(err));
     } finally {
-      setLoading(false);
+      setCheckingResult(false);
     }
   };
 
-  if (wardLoading) return <div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
-  if (!selectedWard) return <div className="p-8 text-center text-slate-500 bg-white rounded-3xl border border-dashed">Select a child to view results.</div>;
+  if (wardLoading || loadingInitial) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3">
+        <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+        <p className="text-sm font-medium text-slate-500">Preparing result gateway...</p>
+      </div>
+    );
+  }
+
+  if (!selectedWard) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center bg-white rounded-3xl border border-dashed border-slate-200 p-8 text-center">
+        <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+          <GraduationCap className="w-8 h-8 text-slate-300" />
+        </div>
+        <h3 className="text-xl font-black text-slate-800">No Ward Selected</h3>
+        <p className="text-slate-500 max-w-xs mt-2">Please select a child from the top menu to view results.</p>
+      </div>
+    );
+  }
+
+  const wardName = selectedWard.full_name || `${selectedWard.first_name || ''} ${selectedWard.last_name || ''}`.trim();
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-20">
-      
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Current Term Result</h1>
-          <p className="text-sm text-slate-500 font-medium">Academic performance for the active term</p>
+    <div className="max-w-3xl mx-auto space-y-6 pb-10">
+      <ToastStack toasts={toasts} onDismiss={(id) => setToasts(prev => prev.filter(t => t.id !== id))} />
+
+      {/* ── Page Header ── */}
+      <div className="bg-gradient-to-r from-slate-900 to-indigo-950 rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200 flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
+        <div className="w-20 h-20 bg-white/10 rounded-2xl flex items-center justify-center border border-white/20 shadow-inner flex-shrink-0">
+          <Award className="h-10 w-10 text-amber-400" />
         </div>
-        {result && (
-          <button 
-            onClick={() => window.print()}
-            className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-100 transition-all"
-          >
-            <Printer className="w-4 h-4" /> Print / Download PDF
-          </button>
-        )}
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Academic Results</h1>
+          <p className="text-indigo-200 mt-1 font-medium">Check terminal performance, grades, and teacher remarks.</p>
+        </div>
       </div>
 
-      {loading ? (
-        <div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>
-      ) : error ? (
-        <div className="bg-white p-12 rounded-[2.5rem] border border-slate-100 shadow-sm text-center">
-          <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-slate-800">Result Status</h3>
-          <p className="text-slate-500 max-w-sm mx-auto mt-2 leading-relaxed">
-            {error}
+      {/* ── Selection Form Card ── */}
+      <form onSubmit={handleViewResult} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden relative">
+        {/* Accent Top Border */}
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-600" />
+
+        <div className="p-6 sm:p-8">
+
+          {/* Target Student Identity */}
+          <div className="flex items-center gap-4 p-4 bg-slate-50 border border-slate-100 rounded-2xl mb-8">
+            <div className="w-12 h-12 rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden flex-shrink-0">
+              {selectedWard.image_url ? (
+                <img src={selectedWard.image_url} alt={wardName} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-indigo-50 font-bold text-indigo-400 text-lg">
+                  {wardName[0]?.toUpperCase()}
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Checking results for</p>
+              <p className="text-sm font-black text-slate-800 capitalize">{wardName}</p>
+              <p className="text-xs font-semibold text-slate-500 mt-0.5">
+                {selectedWard.current_class_name} {selectedWard.current_class_section_name ? `· ${selectedWard.current_class_section_name}` : ''} • {selectedWard.registration_number}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+
+            {/* Session & Term Selection */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5" /> Academic Session
+                </label>
+                <select
+                  required
+                  value={selectedSessionId}
+                  onChange={e => setSelectedSessionId(e.target.value)}
+                  className="w-full px-4 py-3 text-sm font-semibold border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white text-slate-700"
+                >
+                  <option value="">Select Session...</option>
+                  {sessions.map(s => (
+                    <option key={s.id} value={s.id}>{s.name || `${s.start_year}/${s.end_year}`}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" /> Term / Period
+                </label>
+                <select
+                  required
+                  disabled={!selectedSessionId || loadingPeriods}
+                  value={selectedPeriodId}
+                  onChange={e => setSelectedPeriodId(e.target.value)}
+                  className="w-full px-4 py-3 text-sm font-semibold border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white text-slate-700 disabled:opacity-50 disabled:bg-slate-50"
+                >
+                  <option value="">{loadingPeriods ? 'Loading terms...' : 'Select Term...'}</option>
+                  {periods.map(p => (
+                    <option key={p.id} value={p.id}>{p.period?.name || p.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Term Type Toggles */}
+            <div className="pt-2">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5" /> Assessment Type
+              </label>
+              <div className="flex gap-4">
+                <label
+                  className={`flex items-center gap-3 p-4 border-2 rounded-2xl cursor-pointer transition-all flex-1 ${
+                    termType === 'end_of_term'
+                      ? 'border-indigo-600 bg-indigo-50/50 shadow-sm'
+                      : 'border-slate-100 hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="termType"
+                    value="end_of_term"
+                    checked={termType === 'end_of_term'}
+                    onChange={() => setTermType('end_of_term')}
+                    className="w-4 h-4 text-indigo-600 focus:ring-indigo-600 accent-indigo-600"
+                  />
+                  <div>
+                    <p className={`text-sm font-bold ${termType === 'end_of_term' ? 'text-indigo-900' : 'text-slate-700'}`}>End of Term</p>
+                    <p className={`text-xs mt-0.5 ${termType === 'end_of_term' ? 'text-indigo-600/70' : 'text-slate-400'}`}>Full continuous assessment & exams</p>
+                  </div>
+                </label>
+
+                <label
+                  className={`flex items-center gap-3 p-4 border-2 rounded-2xl cursor-pointer transition-all flex-1 ${
+                    termType === 'midterm'
+                      ? 'border-indigo-600 bg-indigo-50/50 shadow-sm'
+                      : 'border-slate-100 hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="termType"
+                    value="midterm"
+                    checked={termType === 'midterm'}
+                    onChange={() => setTermType('midterm')}
+                    className="w-4 h-4 text-indigo-600 focus:ring-indigo-600 accent-indigo-600"
+                  />
+                  <div>
+                    <p className={`text-sm font-bold ${termType === 'midterm' ? 'text-indigo-900' : 'text-slate-700'}`}>Midterm</p>
+                    <p className={`text-xs mt-0.5 ${termType === 'midterm' ? 'text-indigo-600/70' : 'text-slate-400'}`}>Half-term continuous assessment only</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {/* ── Footer Actions ── */}
+        <div className="px-6 sm:px-8 py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+          <p className="text-xs font-medium text-slate-500 hidden sm:block">
+            Results are published securely.
           </p>
+          <button
+            type="submit"
+            disabled={!selectedPeriodId || checkingResult}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 shadow-lg shadow-indigo-200"
+          >
+            {checkingResult ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            {checkingResult ? 'Verifying...' : 'Check Result'}
+            {!checkingResult && <ArrowRight className="w-4 h-4 ml-1" />}
+          </button>
         </div>
-      ) : result ? (
-        <div className="space-y-6">
-          
-          {/* Summary Cards (Mobile First) */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-indigo-600 p-5 rounded-3xl text-white shadow-lg shadow-indigo-100">
-              <p className="text-[10px] font-black opacity-60 uppercase tracking-widest mb-1">Average</p>
-              <p className="text-2xl font-black">{result.average_score}%</p>
-            </div>
-            <div className="bg-slate-900 p-5 rounded-3xl text-white shadow-lg shadow-slate-200">
-              <p className="text-[10px] font-black opacity-60 uppercase tracking-widest mb-1">Position</p>
-              <p className="text-2xl font-black">{result.position || '—'}</p>
-            </div>
-            <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Score</p>
-              <p className="text-2xl font-black text-slate-900">{result.total_score}</p>
-            </div>
-            <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Class Avg</p>
-              <p className="text-2xl font-black text-slate-900">{result.class_average || '—'}%</p>
-            </div>
-          </div>
-
-          {/* Scores - Card Layout on Mobile */}
-          <div className="space-y-4 md:hidden">
-            <h3 className="font-bold text-slate-800 px-2 flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-indigo-500" /> Subject Breakdown
-            </h3>
-            {result.subjects?.map((s: any, idx: number) => (
-              <div key={idx} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-3">
-                <div className="flex justify-between items-start">
-                  <h4 className="font-bold text-slate-800">{s.name}</h4>
-                  <div className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-lg text-xs font-black">
-                    {s.grade}
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-4 border-t border-slate-50 pt-3">
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Score</p>
-                    <p className="font-bold text-slate-700">{s.total}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Avg</p>
-                    <p className="font-bold text-slate-700">{s.average || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pos</p>
-                    <p className="font-bold text-slate-700">{s.position || '—'}</p>
-                  </div>
-                </div>
-                <div className="bg-slate-50 p-2.5 rounded-xl">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Remark</p>
-                  <p className="text-xs text-slate-600 font-medium italic">"{s.remark || 'N/A'}"</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Desktop Table View */}
-          <div className="hidden md:block bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500">
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest">Subject</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-center">Score</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-center">Grade</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-center">Position</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest">Remark</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {result.subjects?.map((s: any, idx: number) => (
-                  <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4 font-bold text-slate-800">{s.name}</td>
-                    <td className="px-6 py-4 text-center font-black text-indigo-600">{s.total}</td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-lg text-xs font-black">
-                        {s.grade}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center font-bold text-slate-500">{s.position || '—'}</td>
-                    <td className="px-6 py-4 text-xs text-slate-500 font-medium italic">"{s.remark || 'N/A'}"</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Behaviors & Traits Section */}
-          {result.behaviors && result.behaviors.length > 0 && (
-            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-              <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-3">
-                <ShieldCheck className="w-5 h-5 text-emerald-500" /> Behavioral Assessment & Traits
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
-                {result.behaviors.map((b: any, idx: number) => (
-                  <div key={idx} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
-                    <span className="text-sm font-bold text-slate-600">{b.name}</span>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map(star => (
-                        <div 
-                          key={star} 
-                          className={`w-4 h-4 rounded-sm ${star <= b.score ? 'bg-amber-400' : 'bg-slate-100'}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Teacher & Principal Remarks */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-             <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Teacher's Remark</p>
-                <p className="text-sm text-slate-700 font-medium leading-relaxed italic">"{result.teacher_remark || 'No remark provided.'}"</p>
-             </div>
-             <div className="bg-indigo-50 p-6 rounded-[2rem] border border-indigo-100">
-                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-3">Principal's Remark</p>
-                <p className="text-sm text-indigo-900 font-bold leading-relaxed italic">"{result.principal_remark || 'No remark provided.'}"</p>
-             </div>
-          </div>
-
-        </div>
-      ) : null}
+      </form>
 
     </div>
   );

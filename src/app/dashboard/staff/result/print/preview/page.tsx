@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import {
   Loader2, AlertCircle, ArrowLeft, ChevronLeft, ChevronRight,
-  Download, Printer, X, CheckCircle2, AlertTriangle,
+  Download, Printer, X, CheckCircle2, AlertTriangle, Mail,
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -95,14 +95,18 @@ const templateComponents: Record<string, any> = {
     loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
     ssr: false,
   }),
+  'score_2_modern': nextDynamic(() => import('@/components/result/templates/score/2_modern/preview'), {
+    loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
+    ssr: false,
+  }),
+  'score_3_minimal': nextDynamic(() => import('@/components/result/templates/score/3_minimal/preview'), {
+    loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
+    ssr: false,
+  }),
 'text_1_default': nextDynamic(() => import('@/components/result/templates/text/1_default/preview'), {
     loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
     ssr: false,
   }),
-  // Add more templates here as they are created
-  // 'score_2_classic': dynamic(() => import('@/components/result/templates/score/2_classic/preview')),
-  // 'text_1_default': dynamic(() => import('@/components/result/templates/text/1_default/preview')),
-  // 'combined_1_default': dynamic(() => import('@/components/result/templates/combined/1_default/preview')),
 };
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
@@ -122,6 +126,7 @@ export default function ResultPreviewPage() {
   const [data, setData] = useState<PrintData | null>(null);
   const [activeTemplates, setActiveTemplates] = useState<ActiveTemplates | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isEmailing, setIsEmailing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
@@ -193,6 +198,23 @@ export default function ResultPreviewPage() {
     }
   };
 
+  const handleSendEmail = async () => {
+    if (!studentId || !periodId) return;
+    setIsEmailing(true);
+    try {
+      await api.post('/api/result/detail/send-email/', {
+        student_id: parseInt(studentId),
+        period_id: parseInt(periodId),
+        comment_type: termType,
+      });
+      showToast('success', 'Result emailed to parent successfully!');
+    } catch (err) {
+      showToast('error', extractError(err));
+    } finally {
+      setIsEmailing(false);
+    }
+  };
+
   const handleNext = () => {
     if (currentIndex < studentIds.length - 1 && studentIds.length > 0) {
       const nextStudentId = studentIds[currentIndex + 1];
@@ -254,8 +276,6 @@ export default function ResultPreviewPage() {
     );
   }
 
-
-
   return (
     <div className="space-y-6 pb-10 print:space-y-0">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
@@ -299,6 +319,14 @@ export default function ResultPreviewPage() {
         <div className="flex items-center gap-2">
           {TemplateComponent && (
             <>
+              <button
+                onClick={handleSendEmail}
+                disabled={isEmailing}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+              >
+                {isEmailing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                {isEmailing ? 'Sending...' : 'Send Email'}
+              </button>
               <button
                 onClick={handleDownloadPDF}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"

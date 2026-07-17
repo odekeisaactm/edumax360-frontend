@@ -1,8 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { api } from '@/lib/api';
-import { useRouter } from 'next/navigation';
 
 export interface Ward {
   id: number;
@@ -12,6 +11,7 @@ export interface Ward {
   image?: string;
   current_class_name?: string;
   current_class_section_name?: string;
+  gender?: string;
 }
 
 interface WardContextType {
@@ -28,42 +28,44 @@ export function WardProvider({ children }: { children: ReactNode }) {
   const [wards, setWards] = useState<Ward[]>([]);
   const [selectedWard, setSelectedWardState] = useState<Ward | null>(null);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
 
-  const refreshWards = async () => {
+  const refreshWards = useCallback(async () => {
     setLoading(true);
     try {
+      // Use your exact endpoint
       const response = await api.get('/api/student/parents/my-wards/');
-      const wardsList = response.data.data || [];
+      const wardsList = response.data?.data || response.data || [];
       setWards(wardsList);
-      
-      // Try to restore from localStorage
+
       const savedWardId = localStorage.getItem('selectedWardId');
-      if (savedWardId) {
+
+      if (wardsList.length === 1) {
+        // EXACTLY 1 WARD: Auto-select and bypass selection screen
+        setSelectedWardState(wardsList[0]);
+        localStorage.setItem('selectedWardId', String(wardsList[0].id));
+      } else if (savedWardId) {
+        // MULTIPLE WARDS: Try to restore previously selected
         const found = wardsList.find((w: Ward) => w.id === Number(savedWardId));
-        if (found) {
-          setSelectedWardState(found);
-        } else if (wardsList.length > 0) {
-          setSelectedWard(wardsList[0]);
-        }
-      } else if (wardsList.length > 0) {
-        setSelectedWard(wardsList[0]);
+        setSelectedWardState(found || null);
+      } else {
+        // MULTIPLE WARDS & NO SAVED STATE: Force selection
+        setSelectedWardState(null);
       }
     } catch (err) {
       console.error("Failed to fetch wards", err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    refreshWards();
+  }, [refreshWards]);
 
   const setSelectedWard = (ward: Ward) => {
     setSelectedWardState(ward);
     localStorage.setItem('selectedWardId', String(ward.id));
   };
-
-  useEffect(() => {
-    refreshWards();
-  }, []);
 
   return (
     <WardContext.Provider value={{ wards, selectedWard, setSelectedWard, loading, refreshWards }}>

@@ -1,0 +1,60 @@
+src/app/dashboard/parent/layout.tsx(15,37): error TS2339: Property 'full_name' does not exist on type 'Ward'.
+src/app/dashboard/parent/layout.tsx(46,37): error TS2339: Property 'full_name' does not exist on type 'Ward'.
+src/app/dashboard/parent/page.tsx(103,33): error TS2339: Property 'full_name' does not exist on type 'Ward'.
+src/app/dashboard/parent/page.tsx(104,35): error TS2339: Property 'parent_name' does not exist on type 'Ward'.
+src/app/dashboard/parent/page.tsx(156,31): error TS2339: Property 'image_url' does not exist on type 'Ward'.
+src/app/dashboard/parent/page.tsx(157,42): error TS2339: Property 'image_url' does not exist on type 'Ward'.
+src/app/dashboard/parent/page.tsx(164,167): error TS2339: Property 'status' does not exist on type 'Ward'.
+src/app/dashboard/parent/page.tsx(165,31): error TS2339: Property 'status' does not exist on type 'Ward'.
+src/app/dashboard/parent/page.tsx(187,31): error TS2339: Property 'is_special_need' does not exist on type 'Ward'.
+src/app/dashboard/parent/page.tsx(214,53): error TS2339: Property 'fee_balance' does not exist on type 'Ward'.
+src/app/dashboard/parent/page.tsx(224,53): error TS2339: Property 'canteen_balance' does not exist on type 'Ward'.
+src/app/dashboard/parent/page.tsx(234,31): error TS2339: Property 'status' does not exist on type 'Ward'.
+src/app/dashboard/parent/page.tsx(235,36): error TS2339: Property 'status' does not exist on type 'Ward'.
+src/app/dashboard/parent/result/page.tsx(175,33): error TS2339: Property 'full_name' does not exist on type 'Ward'.
+src/app/dashboard/parent/result/page.tsx(202,29): error TS2339: Property 'image_url' does not exist on type 'Ward'.
+src/app/dashboard/parent/result/page.tsx(203,40): error TS2339: Property 'image_url' does not exist on type 'Ward'.
+src/app/dashboard/parent/select-ward/page.tsx(24,17): error TS2339: Property 'full_name' does not exist on type 'Ward'.
+src/app/dashboard/parent/select-ward/page.tsx(93,29): error TS2339: Property 'image_url' does not exist on type 'Ward'.
+src/app/dashboard/parent/select-ward/page.tsx(94,40): error TS2339: Property 'image_url' does not exist on type 'Ward'.
+src/app/dashboard/staff/fee/discounts/page.tsx(121,50): error TS2353: Object literal may only specify known properties, and 'is_current' does not exist in type '{ session_id?: number | undefined; period_id?: number | undefined; school_section_id?: number | undefined; }'.
+src/app/dashboard/staff/fee/discounts/page.tsx(579,76): error TS2345: Argument of type 'string | null | undefined' is not assignable to parameter of type 'string | number | undefined'.
+  Type 'null' is not assignable to type 'string | number | undefined'.
+src/app/dashboard/staff/fee/discounts/page.tsx(579,92): error TS2345: Argument of type 'string | null | undefined' is not assignable to parameter of type 'string | number | undefined'.
+  Type 'null' is not assignable to type 'string | number | undefined'.
+src/app/dashboard/staff/fee/discounts/page.tsx(582,118): error TS2345: Argument of type 'string | null | undefined' is not assignable to parameter of type 'string | number | undefined'.
+  Type 'null' is not assignable to type 'string | number | undefined'.
+src/app/dashboard/staff/fee/discounts/page.tsx(582,134): error TS2345: Argument of type 'string | null | undefined' is not assignable to parameter of type 'string | number | undefined'.
+  Type 'null' is not assignable to type 'string | number | undefined'.
+src/app/dashboard/staff/fee/fee-structures/page.tsx(138,50): error TS2353: Object literal may only specify known properties, and 'is_current' does not exist in type '{ session_id?: number | undefined; period_id?: number | undefined; school_section_id?: number | undefined; }'.
+src/app/dashboard/staff/fee/fee-structures/page.tsx(388,19): error TS2322: Type 'boolean | undefined' is not assignable to type 'boolean'.
+  Type 'undefined' is not assignable to type 'boolean'.
+src/app/dashboard/staff/fee/generation-jobs/page.tsx(131,37): error TS2339: Property 'data' does not exist on type 'Session'.
+src/app/dashboard/staff/fee/generation-jobs/page.tsx(131,63): error TS2339: Property 'data' does not exist on type 'Session'.
+src/app/dashboard/staff/fee/generation-jobs/page.tsx(221,42): error TS2367: This comparison appears to be unintentional because the types 'string' and 'number' have no overlap.
+src/app/dashboard/staff/fee/generation-jobs/page.tsx(418,22): error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'SetStateAction<number | null>'.
+  Type 'string' is not assignable to type 'SetStateAction<number | null>'.
+src/app/dashboard/staff/fee/generation-jobs/page.tsx(537,82): error TS2339: Property 'session_display' does not exist on type 'InvoiceGenerationJob'.
+src/app/dashboard/staff/fee/generation-jobs/page.tsx(538,88): error TS2339: Property 'period_display' does not exist on type 'InvoiceGenerationJob'.
+src/app/dashboard/staff/fee/generation-jobs/page.tsx(573,103): error TS2339: Property 'generated_count' does not exist on type 'InvoiceGenerationJob'.
+src/app/dashboard/staff/fee/generation-jobs/page.tsx(574,130): error TS2339: Property 'skipped_count' does not exist on type 'InvoiceGenerationJob'.
+src/app/dashboard/staff/fee/invoices/page.tsx(135,37): error TS2339: Property 'data' does not exist on type 'Session'.
+src/app/dashboard/staff/fee/invoices/page.tsx(135,63): error TS2339: Property 'data' does not exist on type 'Session'.
+src/app/dashboard/staff/fee/invoices/page.tsx(694,70): error TS2339: Property 'name' does not exist on type 'AcademicSessionPeriod'.
+src/app/dashboard/staff/fee/invoices/page.tsx(1130,76): error TS2339: Property 'name' does not exist on type 'AcademicSessionPeriod'.
+src/app/dashboard/staff/fee/payments/new/page.tsx(180,37): error TS2339: Property 'data' does not exist on type 'Session'.
+src/app/dashboard/staff/fee/payments/new/page.tsx(180,63): error TS2339: Property 'data' does not exist on type 'Session'.
+src/app/dashboard/staff/fee/payments/new/page.tsx(637,17): error TS7006: Parameter 'o' implicitly has an 'any' type.
+src/app/dashboard/staff/fee/payments/new/page.tsx(638,14): error TS7006: Parameter 'o' implicitly has an 'any' type.
+src/app/dashboard/staff/fee/payments/new/page.tsx(889,49): error TS7006: Parameter 'o' implicitly has an 'any' type.
+src/app/dashboard/staff/fee/students/[id]/dashboard/page.tsx(10,3): error TS2305: Module '"@/lib/types"' has no exported member 'FeePayment'.
+src/app/dashboard/staff/fee/students/[id]/dashboard/page.tsx(883,20): error TS2339: Property 'recordFamilyPayment' does not exist on type '{ getFeeGroups: (search?: string | undefined) => Promise<FeeGroup[]>; createFeeGroup: (data: { name: string; description?: string | undefined; }) => Promise<FeeGroup>; ... 54 more ...; transferWalletSibling: (d?: any) => Promise<...>; }'.
+src/app/dashboard/staff/fee/students/[id]/dashboard/page.tsx(885,20): error TS2339: Property 'recordPayment' does not exist on type '{ getFeeGroups: (search?: string | undefined) => Promise<FeeGroup[]>; createFeeGroup: (data: { name: string; description?: string | undefined; }) => Promise<FeeGroup>; ... 54 more ...; transferWalletSibling: (d?: any) => Promise<...>; }'.
+src/app/dashboard/staff/fee/students/[id]/dashboard/page.tsx(895,34): error TS2339: Property 'confirmFamilyPayment' does not exist on type '{ getFeeGroups: (search?: string | undefined) => Promise<FeeGroup[]>; createFeeGroup: (data: { name: string; description?: string | undefined; }) => Promise<FeeGroup>; ... 54 more ...; transferWalletSibling: (d?: any) => Promise<...>; }'.
+src/app/dashboard/staff/fee/students/[id]/dashboard/page.tsx(896,25): error TS2339: Property 'confirmPayment' does not exist on type '{ getFeeGroups: (search?: string | undefined) => Promise<FeeGroup[]>; createFeeGroup: (data: { name: string; description?: string | undefined; }) => Promise<FeeGroup>; ... 54 more ...; transferWalletSibling: (d?: any) => Promise<...>; }'.
+src/app/dashboard/staff/fee/students/[id]/dashboard/page.tsx(910,20): error TS2339: Property 'revertPayment' does not exist on type '{ getFeeGroups: (search?: string | undefined) => Promise<FeeGroup[]>; createFeeGroup: (data: { name: string; description?: string | undefined; }) => Promise<FeeGroup>; ... 54 more ...; transferWalletSibling: (d?: any) => Promise<...>; }'.
+npm notice
+npm notice New minor version of npm available! 11.6.2 -> 11.18.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.18.0
+npm notice To update run: npm install -g npm@11.18.0
+npm notice

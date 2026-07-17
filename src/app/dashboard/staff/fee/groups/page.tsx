@@ -78,7 +78,7 @@ function HelperModal({ onClose }: { onClose: () => void }) {
             {[
               {
                 title: 'Name',
-                color: 'bg-orange-100 text-orange-700',
+                color: 'bg-blue-100 text-blue-700',
                 desc: 'A clear label for the group, e.g. "New Student Package", "JSS Fees", "SS Boarding Fees". Should reflect the category of students or fees it covers.',
               },
               {
@@ -170,7 +170,7 @@ function FeeGroupModal({ editing, isSaving, onSave, onClose }: {
     catch (err) { setFormError(extractError(err)); }
   };
 
-  const inputCls = "w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition bg-white";
+  const inputCls = "w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition bg-white";
   const labelCls = "block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5";
 
   return (
@@ -178,7 +178,7 @@ function FeeGroupModal({ editing, isSaving, onSave, onClose }: {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" style={{ maxHeight: '92vh' }}>
 
         {/* Header */}
-        <div className="bg-gradient-to-r from-orange-500 to-pink-500 px-6 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
             <FolderOpen className="h-4 w-4" />
             {editing ? 'Edit Fee Group' : 'New Fee Group'}
@@ -227,7 +227,7 @@ function FeeGroupModal({ editing, isSaving, onSave, onClose }: {
             Cancel
           </button>
           <button type="submit" form="fee-group-form" disabled={isSaving}
-            className="px-5 py-2 text-sm bg-gradient-to-r from-orange-500 to-pink-500 text-white font-semibold rounded-xl hover:opacity-90 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-orange-200">
+            className="px-5 py-2 text-sm bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:opacity-90 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-blue-200">
             {isSaving
               ? <><Loader2 className="h-4 w-4 animate-spin" />{editing ? 'Updating...' : 'Creating...'}</>
               : <><Check className="h-4 w-4" />{editing ? 'Update Group' : 'Create Group'}</>}
@@ -333,7 +333,7 @@ export default function FeeGroupsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-orange-500 to-pink-500 rounded-xl flex items-center justify-center shadow-md shadow-orange-200">
+            <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
               <FolderOpen className="h-5 w-5 text-white" />
             </div>
             Fee Groups
@@ -347,7 +347,7 @@ export default function FeeGroupsPage() {
           </button>
           {canManage && (
             <button onClick={openCreate}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-500 to-pink-500 text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-all shadow-md shadow-orange-200">
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-all shadow-md shadow-blue-200">
               <Plus className="h-4 w-4" /> Add Group
             </button>
           )}
@@ -357,7 +357,7 @@ export default function FeeGroupsPage() {
       {/* ── Stat Chips ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Total Groups',      value: groups.length,                                    color: 'from-orange-400 to-pink-500'   },
+          { label: 'Total Groups',      value: groups.length,                                    color: 'from-blue-500 to-blue-600'   },
           { label: 'With Description',  value: groups.filter(g => g.description).length,         color: 'from-violet-500 to-purple-600' },
           { label: 'Added This Month',  value: groups.filter(g => {
               const d = new Date(g.created_at);
@@ -387,7 +387,7 @@ export default function FeeGroupsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input type="text" placeholder="Search fee groups..." value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none" />
+              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
           </div>
           <button onClick={fetchData}
             className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors" title="Refresh">
@@ -398,7 +398,7 @@ export default function FeeGroupsPage() {
         {/* States */}
         {loading ? (
           <div className="p-16 text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto" />
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto" />
             <p className="mt-2 text-sm text-slate-400">Loading fee groups...</p>
           </div>
         ) : pageError ? (
@@ -411,8 +411,8 @@ export default function FeeGroupsPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="p-16 text-center">
-            <div className="w-14 h-14 bg-orange-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <FolderOpen className="h-7 w-7 text-orange-300" />
+            <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <FolderOpen className="h-7 w-7 text-blue-300" />
             </div>
             <h3 className="font-semibold text-slate-700 mb-1">
               {search ? 'No groups match your search' : 'No fee groups yet'}
@@ -422,7 +422,7 @@ export default function FeeGroupsPage() {
             </p>
             {!search && canManage && (
               <button onClick={openCreate}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-500 to-pink-500 text-white text-sm font-semibold rounded-xl hover:opacity-90 shadow-md shadow-orange-200">
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-xl hover:opacity-90 shadow-md shadow-blue-200">
                 <Plus className="h-4 w-4" /> Add Group
               </button>
             )}
@@ -443,8 +443,8 @@ export default function FeeGroupsPage() {
 
                   {/* Name */}
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center flex-shrink-0">
-                      <FolderOpen className="h-4 w-4 text-orange-500" />
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0">
+                      <FolderOpen className="h-4 w-4 text-blue-600" />
                     </div>
                     <div className="min-w-0">
                       <p className="font-semibold text-slate-900 truncate">{g.name}</p>

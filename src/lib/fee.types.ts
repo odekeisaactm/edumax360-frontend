@@ -25,7 +25,6 @@ export type DiscountOccurrence = 'periodic' | 'annually' | 'one_time';
 export type WaiverStatus = 'pending' | 'approved' | 'rejected';
 export type OtherPaymentCategory = 'historical' | 'fine' | 'damage' | 'other';
 export type OtherPaymentStatus = 'unpaid' | 'partially_paid' | 'paid';
-export type ClearanceStatus = 'confirmed' | 'reverted';
 
 // ==================== WALLET SNAPSHOTS ====================
 
@@ -73,14 +72,19 @@ export interface PeriodFeeAmount {
   amount: string;
 }
 
+export interface FeeMasterScope {
+  id?: number;
+  student_class: number;
+  class_section: number | null;
+}
+
 export interface FeeStructure {
   id: number;
   group: number;
   group_name?: string;
   fee: number;
   fee_name?: string;
-  student_classes: number[];
-  class_sections: number[];
+  scopes: FeeMasterScope[];
   period_amounts: PeriodFeeAmount[];
   is_active: boolean;
   created_at?: string;
@@ -107,6 +111,8 @@ export interface Discount {
   amount?: string | null;
   occurrence: DiscountOccurrence;
   occurrence_display?: string;
+  payment_period?: number | null;
+  payment_period_name?: string;
   applicable_fees: number[];
   applicable_classes: number[];
   class_tiers?: ClassDiscountTier[];
@@ -210,6 +216,13 @@ export interface FamilyInvoiceItem {
   balance: string;
 }
 
+// Tiny interface for the new JSON history on invoices
+export interface InvoicePaymentSummary {
+  reference: string;
+  date: string;
+  total_amount: string;
+}
+
 export interface Invoice {
   id: number;
   student: number;
@@ -224,7 +237,7 @@ export interface Invoice {
   status: InvoiceStatus;
   status_display?: string;
   items: InvoiceItem[];
-  payments?: FeePayment[];
+  payments?: InvoicePaymentSummary[];
   total_amount: string;
   total_discount: string;
   total_waived: string;
@@ -251,7 +264,7 @@ export interface FamilyInvoice {
   status: InvoiceStatus;
   status_display?: string;
   items: FamilyInvoiceItem[];
-  payments?: FamilyFeePayment[];
+  payments?: InvoicePaymentSummary[];
   total_amount: string;
   total_discount: string;
   total_waived: string;
@@ -264,65 +277,43 @@ export interface FamilyInvoice {
   created_at?: string;
 }
 
-// ==================== PAYMENTS ====================
+// ==================== MASTER PAYMENTS (NEW ARCHITECTURE) ====================
 
-export interface ItemBreakdownEntry {
-  invoice_item_id: number;
+export interface FundingSource {
+  source_type: 'wallet' | 'external';
+  wallet_student_id?: number | null;
+  wallet_type?: 'fee' | null;
   amount: string;
 }
 
-export interface FamilyItemBreakdownEntry {
-  family_invoice_item_id: number;
+export interface Allocation {
+  target_type: 'invoice' | 'family_invoice' | 'ancillary_debt' | 'wallet_funding';
+  target_id?: number | null;
   amount: string;
 }
 
-export interface FeePayment {
+export interface PaymentReceipt {
   id: number;
-  invoice: number;
+  parent?: number | null;
+  parent_name?: string;
+  student?: number | null;
+  student_name?: string;
+  total_amount: string;
+  external_payment_mode?: string | null;
+  external_amount: string;
   bank_account?: number | null;
   bank_account_detail?: MiniBankAccount;
-  amount: string;
-  payment_mode: PaymentMode;
-  payment_mode_display?: string;
-  foreign_currency_amount?: string | null;
-  foreign_currency?: string | null;
-  exchange_rate?: string | null;
-  date: string;
-  reference: string;
-  description?: string;
-  notes?: string | null;
   proof_of_payment?: string | null;
-  status: PaymentStatus;
-  status_display?: string;
-  item_breakdown: ItemBreakdownEntry[];
-  confirmed_by?: number | null;
-  confirmed_by_name?: string;
-  confirmed_at?: string | null;
-  reverted_by?: number | null;
-  reverted_at?: string | null;
-  reversal_reason?: string | null;
-  created_at: string;
-}
 
-export interface FamilyFeePayment {
-  id: number;
-  invoice: number;
-  bank_account?: number | null;
-  bank_account_detail?: MiniBankAccount;
-  amount: string;
-  payment_mode: PaymentMode;
-  payment_mode_display?: string;
-  foreign_currency_amount?: string | null;
-  foreign_currency?: string | null;
-  exchange_rate?: string | null;
+  funding_sources: FundingSource[];
+  allocations: Allocation[];
+
   date: string;
   reference: string;
-  description?: string;
-  notes?: string | null;
-  proof_of_payment?: string | null;
   status: PaymentStatus;
   status_display?: string;
-  item_breakdown: FamilyItemBreakdownEntry[];
+  notes?: string | null;
+
   confirmed_by?: number | null;
   confirmed_by_name?: string;
   confirmed_at?: string | null;
@@ -350,27 +341,7 @@ export interface OtherPayment {
   notes?: string | null;
   created_at: string;
 }
-
-export interface OtherPaymentClearance {
-  id: number;
-  other_payment: number;
-  amount: string;
-  payment_mode: PaymentMode;
-  payment_mode_display?: string;
-  bank_account?: number | null;
-  bank_account_detail?: MiniBankAccount;
-  foreign_currency_amount?: string | null;
-  foreign_currency?: string | null;
-  exchange_rate?: string | null;
-  date: string;
-  reference: string;
-  notes?: string | null;
-  status: ClearanceStatus;
-  status_display?: string;
-  reversal_reason?: string | null;
-  confirmed_by?: number | null;
-  created_at: string;
-}
+// Note: OtherPaymentClearance was deleted, as debts are now cleared via the Master Receipt Cart.
 
 // ==================== DASHBOARD & JOBS ====================
 
@@ -430,4 +401,32 @@ export interface FeeSetting {
   bot_allow_proof_upload: boolean;
   bot_send_receipt: boolean;
   updated_at?: string;
+}
+
+// ==================== BILLING LEDGER (STATEMENT OF ACCOUNT) ====================
+
+export interface LedgerStudent {
+  student_id: number;
+  student_name: string;
+  registration_number: string;
+  class_name: string;
+  invoice: Invoice | null;
+  other_payments: OtherPayment[];
+  student_total_outstanding: string;
+}
+
+export interface LedgerParent {
+  parent_id: number;
+  parent_name: string;
+  phone: string;
+  family_invoice: FamilyInvoice | null;
+  students: LedgerStudent[];
+  grand_total_outstanding: string;
+}
+
+export interface PaginatedLedgerResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: LedgerParent[];
 }
