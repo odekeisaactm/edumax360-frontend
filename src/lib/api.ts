@@ -37,7 +37,7 @@ const API_BASE_URL = typeof window !== 'undefined' ? getApiUrl() : (process.env.
 // Create axios instance with default configuration
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 12000, // 10 seconds timeout
+  timeout: 30000, // 10 seconds timeout
   headers: {
     'Content-Type': 'application/json',
   },
