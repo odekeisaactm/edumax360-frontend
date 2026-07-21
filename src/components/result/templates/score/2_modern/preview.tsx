@@ -347,8 +347,8 @@ export default function ModernScoreTemplate({
                       <td key={col.id} style={tdBase}>{getScore(col.name, s)}</td>
                     ))}
                     <td style={{ ...tdBase, fontWeight: 700 }}>{s?.total ?? '—'}</td>
-                    <td style={{ ...tdBase, fontWeight: 700, color: scoreColor }}>{s?.grade ?? '—'}</td>
-                    <td style={{ ...tdBase, fontWeight: 600, color: scoreColor }}>{s?.remark ?? '—'}</td>
+                    <td style={{ ...tdBase, fontWeight: 700, color: scoreColor }}>{s?.grade?.toUpperCase() ?? '—'}</td>
+                    <td style={{ ...tdBase, fontWeight: 600, color: scoreColor }}>{s?.remark?.toUpperCase() ?? '—'}</td>
                   </tr>
                 );
               })}
