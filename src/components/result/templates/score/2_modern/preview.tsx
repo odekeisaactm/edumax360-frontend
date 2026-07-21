@@ -274,7 +274,8 @@ export default function ModernScoreTemplate({
         <tbody>
           <tr>
             <td style={{ border: '1px solid #cbd5e1', padding: '4px 8px', fontWeight: 700, width: '34%' }}>
-              {`${student.first_name ?? ''} ${student.last_name ?? ''}`.trim() || student.full_name}
+              {/* Handles blank middle name cleanly without double spaces */}
+              {`${student.first_name ?? ''} ${student.middle_name ? student.middle_name + ' ' : ''}${student.last_name ?? ''}`.replace(/\s+/g, ' ').trim() || student.full_name}
             </td>
             <td style={{ border: '1px solid #cbd5e1', padding: '4px 8px', fontWeight: 700, width: '33%' }}>
               CLASS: {`${student.current_class?.name ?? ''} ${student.class_section ?? ''}`.trim()}
@@ -295,14 +296,15 @@ export default function ModernScoreTemplate({
             </td>
           </tr>
           <tr>
+            {/* Restructured Row 3 */}
             <td style={{ border: '1px solid #cbd5e1', padding: '4px 8px', fontWeight: 700 }}>
-              NO. OF TIMES SCHOOL OPENED: {attendance.total}
+              ATTENDANCE: {attendance.present} / {attendance.total}
             </td>
             <td style={{ border: '1px solid #cbd5e1', padding: '4px 8px', fontWeight: 700 }}>
-              NO. OF TIMES PRESENT: {attendance.present}
+              RESUMPTION DATE: {result.resumption_date ?? '—'}
             </td>
             <td style={{ border: '1px solid #cbd5e1', padding: '4px 8px', fontWeight: 700 }}>
-              {showPosition ? `POSITION: ${ordinal(position)}` : `RESUMPTION DATE: ${dummyPeriod.next_term_open ?? '—'}`}
+              {showPosition ? `POSITION: ${ordinal(position)}` : ''}
             </td>
           </tr>
         </tbody>
@@ -317,13 +319,18 @@ export default function ModernScoreTemplate({
             <thead>
               <tr>
                 <th style={{ ...thLeft, width: 150 }}>Subjects</th>
-                {scoreCols.map((col: any) => (
-                  <th key={col.id} style={thStyle} title={col.name}>
-                    {headerDensity === 'vertical' ? col.name : (
-                      <>{col.name}<br /><span style={{ fontSize: 8.5, fontWeight: 400, opacity: 0.75 }}>({col.max_mark})</span></>
-                    )}
-                  </th>
-                ))}
+                {scoreCols.map((col: any) => {
+                  // Display rule: <= 5 is UPPERCASE, else Title Case
+                  const displayName = col.name?.length <= 5 ? col.name.toUpperCase() : toTitleCase(col.name);
+
+                  return (
+                    <th key={col.id} style={thStyle} title={col.name}>
+                      {headerDensity === 'vertical' ? displayName : (
+                        <>{displayName}<br /><span style={{ fontSize: 8.5, fontWeight: 400, opacity: 0.75 }}>({col.max_mark})</span></>
+                      )}
+                    </th>
+                  );
+                })}
                 <th style={thStyle}>Total<br /><span style={{ fontSize: 8.5, fontWeight: 400, opacity: 0.75 }}>(100)</span></th>
                 <th style={thStyle}>Grade</th>
                 <th style={thStyle}>Remark</th>
