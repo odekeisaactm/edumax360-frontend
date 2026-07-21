@@ -376,10 +376,10 @@ export default function SubjectGroupsPage() {
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canView = user?.is_superuser || hasPermission('academic.view_subjectgroupmodel');
-  const canCreate = user?.is_superuser || hasPermission('academic.add_subjectgroupmodel');
-  const canEdit = user?.is_superuser || hasPermission('academic.change_subjectgroupmodel');
-  const canDelete = user?.is_superuser || hasPermission('academic.delete_subjectgroupmodel');
+  const canView = user?.is_superuser || hasPermission('academic_structure.view_subject_groups');
+  const canCreate = user?.is_superuser || hasPermission('academic_structure.manage_subject_groups');
+  const canEdit = user?.is_superuser || hasPermission('academic_structure.manage_subject_groups');
+  const canDelete = user?.is_superuser || hasPermission('academic_structure.manage_subject_groups');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

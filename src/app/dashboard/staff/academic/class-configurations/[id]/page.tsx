@@ -1148,12 +1148,12 @@ export default function ClassConfigDetailPage() {
   const [deletingTimetable, setDeletingTimetable] = useState<Timetable | null>(null);
   const [isDeletingTimetable, setIsDeletingTimetable] = useState(false);
 
-  const canView   = user?.is_superuser || hasPermission('academic.view_classconfigurationmodel');
-  const canEdit   = user?.is_superuser || hasPermission('academic.change_classconfigurationmodel');
-  const canAddSub = user?.is_superuser || hasPermission('academic.add_classsubjectconfigurationmodel');
-  const canDelSub = user?.is_superuser || hasPermission('academic.delete_classsubjectconfigurationmodel');
-  const canEditTT = user?.is_superuser || hasPermission('academic.add_timetablemodel');
-  const canDelTT  = user?.is_superuser || hasPermission('academic.delete_timetablemodel');
+  const canView   = user?.is_superuser || hasPermission('academic_structure.view_academic_setup');
+  const canEdit   = user?.is_superuser || hasPermission('academic_structure.manage_academic_setup');
+  const canAddSub = user?.is_superuser || hasPermission('academic_structure.manage_academic_setup');
+  const canDelSub = user?.is_superuser || hasPermission('academic_structure.manage_academic_setup');
+  const canEditTT = user?.is_superuser || hasPermission('academic_structure.manage_timetable');
+  const canDelTT  = user?.is_superuser || hasPermission('academic_structure.manage_timetable');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

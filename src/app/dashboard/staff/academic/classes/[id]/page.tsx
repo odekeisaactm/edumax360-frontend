@@ -952,8 +952,8 @@ export default function ClassDetailPage() {
   const [selectedSubjectIds, setSelectedSubjectIds] = useState<number[]>([]);
   const [savingSubjects, setSavingSubjects] = useState(false);
 
-  const canEdit = user?.is_superuser || hasPermission('academic.change_classmodel');
-  const canDeleteConfig = user?.is_superuser || hasPermission('academic.delete_classconfigurationmodel');
+  const canEdit = user?.is_superuser || hasPermission('academic_structure.manage_academic_setup');
+  const canDeleteConfig = user?.is_superuser || hasPermission('academic_structure.manage_academic_setup');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

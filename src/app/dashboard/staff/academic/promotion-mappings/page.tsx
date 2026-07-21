@@ -46,8 +46,8 @@ export default function PromotionMappingsPage() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [autoSaveAttempted, setAutoSaveAttempted] = useState(false);
 
-  const canView = user?.is_superuser || hasPermission('academic.view_promotionmappingmodel');
-  const canEdit = user?.is_superuser || hasPermission('academic.change_promotionmappingmodel');
+  const canView = user?.is_superuser || hasPermission('academic_structure.view_promotions');
+  const canEdit = user?.is_superuser || hasPermission('academic_structure.manage_promotions');
 
   useEffect(() => {
     if (canView) {

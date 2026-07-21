@@ -457,10 +457,10 @@ export default function LeadershipRolesPage() {
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canView   = user?.is_superuser || hasPermission('academic.view_leadershiprolemodel');
-  const canCreate = user?.is_superuser || hasPermission('academic.add_leadershiprolemodel');
-  const canEdit   = user?.is_superuser || hasPermission('academic.change_leadershiprolemodel');
-  const canDelete = user?.is_superuser || hasPermission('academic.delete_leadershiprolemodel');
+  const canView   = user?.is_superuser || hasPermission('academic_structure.view_leadership_roles');
+  const canCreate = user?.is_superuser || hasPermission('academic_structure.manage_leadership_roles');
+  const canEdit   = user?.is_superuser || hasPermission('academic_structure.manage_leadership_roles');
+  const canDelete = user?.is_superuser || hasPermission('academic_structure.manage_leadership_roles');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

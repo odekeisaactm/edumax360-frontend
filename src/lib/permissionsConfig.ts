@@ -96,66 +96,66 @@ export const MODULES: ModuleDef[] = [
     ],
   },
   {
-    key: 'academic',
-    label: 'Academic Structure',
-    description: 'Classes, subjects, timetable, and academic setup',
-    areas: [
-      {
-        key: 'academic_settings',
-        label: 'Academic Settings',
-        description: 'Global academic rules and grading configurations',
-        permissions: [
-          { codename: 'view_academicsettingmodel',  label: 'View Settings',   desc: 'Read academic settings' },
-          { codename: 'manage_academic_settings',   label: 'Manage Settings', desc: 'Update academic rules and configurations' },
-        ],
-      },
-      {
-        key: 'class_management',
-        label: 'Class Management',
-        description: 'Classes, sections, and their configurations',
-        permissions: [
-          { codename: 'view_classmodel', label: 'View Classes',   desc: 'Read classes, sections, and configurations' },
-          { codename: 'manage_classes',  label: 'Manage Classes', desc: 'Create, edit, and delete classes and sections' },
-        ],
-      },
-      {
-        key: 'subject_management',
-        label: 'Subject Management',
-        description: 'Subjects, subject groups, and class assignments',
-        permissions: [
-          { codename: 'view_subjectmodel', label: 'View Subjects',   desc: 'Read subjects and class assignments' },
-          { codename: 'manage_subjects',   label: 'Manage Subjects', desc: 'Create, edit, and delete subjects and assignments' },
-        ],
-      },
-      {
-        key: 'timetable_management',
-        label: 'Timetable',
-        description: 'Class schedules and break times',
-        permissions: [
-          { codename: 'view_timetablemodel', label: 'View Timetable',   desc: 'Read class schedules' },
-          { codename: 'manage_timetable',    label: 'Manage Timetable', desc: 'Create, edit, and delete timetable entries' },
-        ],
-      },
-      {
-        key: 'promotions_management',
-        label: 'Promotions',
-        description: 'Class promotion mappings and student academic history',
-        permissions: [
-          { codename: 'view_promotionmappingmodel', label: 'View Promotions',   desc: 'Read promotion rules and student history' },
-          { codename: 'manage_promotions',          label: 'Manage Promotions', desc: 'Create, edit, and delete promotion mappings' },
-        ],
-      },
-      {
-        key: 'leadership_roles',
-        label: 'Leadership Roles',
-        description: 'Academic leadership positions (e.g., Head Teacher, Principal)',
-        permissions: [
-          { codename: 'view_leadershiprolemodel',  label: 'View Leadership Roles',   desc: 'Read leadership assignments' },
-          { codename: 'manage_leadership_roles',   label: 'Manage Leadership Roles', desc: 'Assign, edit, and remove leadership roles' },
-        ],
-      },
-    ],
-  },
+  key: 'academic',
+  label: 'Academic Structure',
+  description: 'Classes, subjects, timetable, and academic setup',
+  areas: [
+    {
+      key: 'academic_settings',
+      label: 'Academic Settings',
+      description: 'Global academic rules and grading configurations',
+      permissions: [
+        { codename: 'view_academic_settings',  label: 'View Settings',   desc: 'Read academic settings' },
+        { codename: 'manage_academic_settings',   label: 'Manage Settings', desc: 'Update academic rules and configurations' },
+      ],
+    },
+    {
+      key: 'academic_setup',
+      label: 'Academic Setup',
+      description: 'Classes, sections, configurations, and core subjects',
+      permissions: [
+        { codename: 'view_academic_setup', label: 'View Academic Setup',   desc: 'Read classes, subjects, and configs' },
+        { codename: 'manage_academic_setup',  label: 'Manage Academic Setup', desc: 'Create, edit, and delete classes, sections, and core subjects' },
+      ],
+    },
+    {
+      key: 'subject_groups',
+      label: 'Subject Groups',
+      description: 'Elective groups and subject combinations',
+      permissions: [
+        { codename: 'view_subject_groups', label: 'View Subject Groups',   desc: 'Read subject groups' },
+        { codename: 'manage_subject_groups',   label: 'Manage Subject Groups', desc: 'Create and manage elective subject groups' },
+      ],
+    },
+    {
+      key: 'timetable_management',
+      label: 'Timetable',
+      description: 'Class schedules and break times',
+      permissions: [
+        { codename: 'view_timetable', label: 'View Timetable',   desc: 'Read class schedules' },
+        { codename: 'manage_timetable',    label: 'Manage Timetable', desc: 'Create, edit, and delete timetable entries' },
+      ],
+    },
+    {
+      key: 'promotions_management',
+      label: 'Promotions',
+      description: 'Class promotion mappings moving students to next class',
+      permissions: [
+        { codename: 'view_promotions', label: 'View Promotions',   desc: 'Read promotion rules' },
+        { codename: 'manage_promotions',          label: 'Manage Promotions', desc: 'Configure end-of-session promotion mappings' },
+      ],
+    },
+    {
+      key: 'leadership_roles',
+      label: 'Leadership Roles',
+      description: 'Academic leadership positions (e.g., Head Teacher, Principal)',
+      permissions: [
+        { codename: 'view_leadership_roles',  label: 'View Leadership Roles',   desc: 'Read leadership assignments' },
+        { codename: 'manage_leadership_roles',   label: 'Manage Leadership Roles', desc: 'Assign, edit, and remove leadership roles' },
+      ],
+    },
+  ],
+},
 
      {
     key: 'student',

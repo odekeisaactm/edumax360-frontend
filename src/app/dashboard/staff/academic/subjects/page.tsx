@@ -274,10 +274,10 @@ export default function SubjectsPage() {
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canView = user?.is_superuser || hasPermission('academic.view_subjectmodel');
-  const canCreate = user?.is_superuser || hasPermission('academic.add_subjectmodel');
-  const canEdit = user?.is_superuser || hasPermission('academic.change_subjectmodel');
-  const canDelete = user?.is_superuser || hasPermission('academic.delete_subjectmodel');
+  const canView = user?.is_superuser || hasPermission('academic_structure.view_academic_setup');
+  const canCreate = user?.is_superuser || hasPermission('academic_structure.manage_academic_setup');
+  const canEdit = user?.is_superuser || hasPermission('academic_structure.manage_academic_setup');
+  const canDelete = user?.is_superuser || hasPermission('academic_structure.manage_academic_setup');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

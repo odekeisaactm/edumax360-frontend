@@ -282,7 +282,7 @@ export default function AcademicSettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  const canEdit = user?.is_superuser || hasPermission('academic.change_academicsettingmodel');
+  const canEdit = user?.is_superuser || hasPermission('academic_structure.manage_academic_settings');
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
