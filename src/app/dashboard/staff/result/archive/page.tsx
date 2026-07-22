@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Archive, History, FileText, UserCheck, Columns, Award, ArrowRight } from 'lucide-react';
+import { Archive, History, FileText, UserCheck, Columns, Award, ArrowRight, Layers } from 'lucide-react';
 
 export default function ResultArchiveLandingPage() {
   const cards = [
@@ -37,14 +37,24 @@ export default function ResultArchiveLandingPage() {
       badgeBg: 'bg-amber-50 text-amber-600 border-amber-100',
     },
     {
-      title: 'Broadsheet & Cumulative',
-      description: 'Generate class broadsheets for a term or full session, and view student cumulative results.',
+      title: 'Class Broadsheet',
+      description: 'Generate and download full class broadsheets for a specific term or entire session.',
       href: '/dashboard/staff/result/archive/broadsheet',
       icon: Columns,
       iconBg: 'bg-blue-100',
       iconColor: 'text-blue-600',
       badge: 'Download',
       badgeBg: 'bg-blue-50 text-blue-600 border-blue-100',
+    },
+    {
+      title: 'Cumulative Results',
+      description: 'View and analyze aggregated student performance across multiple terms in a session.',
+      href: '/dashboard/staff/result/archive/cumulative',
+      icon: Layers,
+      iconBg: 'bg-teal-100',
+      iconColor: 'text-teal-600',
+      badge: 'Analytics',
+      badgeBg: 'bg-teal-50 text-teal-600 border-teal-100',
     },
     {
       title: 'Prize & Award List',

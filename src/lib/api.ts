@@ -1027,17 +1027,17 @@ updateSessionPeriod: async (id: number, data: Partial<AcademicSessionPeriod>): P
     }
   },
 
-  getCurrentPeriod: async (schoolSectionId: number): Promise<AcademicSessionPeriod> => {
-    if (!schoolSectionId) {
-      throw new Error('A schoolSectionId must be provided to get the current period.');
-    }
+  getCurrentPeriod: async (schoolSectionId?: number): Promise<AcademicSessionPeriod> => {
     try {
+      // Only attach the param if an ID was actually passed
+      const params = schoolSectionId ? { school_section_id: schoolSectionId } : {};
+
       const response = await api.get<ApiResponse<AcademicSessionPeriod>>('/api/school/session-periods/current/', {
-        params: { school_section_id: schoolSectionId },
+        params,
       });
       return response.data.data!;
     } catch (error: any) {
-      // The new backend view returns a 'message' key for errors.
+      // The backend view returns a 'message' key for errors.
       throw new Error(error.response?.data?.message || 'Failed to fetch current period');
     }
   },

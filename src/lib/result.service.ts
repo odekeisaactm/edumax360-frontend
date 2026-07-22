@@ -769,4 +769,8 @@ export const resultArchiveAPI = {
   getSpreadsheet: async (params: any) => api.get('/api/result/archive/get_spreadsheet/', { params }),
   prepareEdit: async (params: any) => api.get('/api/result/archive/prepare_edit/', { params }),
   updateRecord: async (data: any) => api.post('/api/result/archive/update_record/', data),
+  bulkUpdateRecords: async (data: any) => {
+    const r = await api.post('/api/result/archive/bulk_update_records/', data);
+    return r.data;
+  },
 };
