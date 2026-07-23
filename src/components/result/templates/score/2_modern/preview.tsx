@@ -457,7 +457,7 @@ export default function ModernScoreTemplate({
         ))}
         {[
           { label: 'Homeroom Teacher', name: toTitleCase(comments.form_teacher), commentLabel: "Teacher's Comment", comment: comments.form_teacher_comment, signature: comments.form_teacher_signature },
-          { label: comments.head_teacher_title ?? 'Principal', name: toTitleCase(comments.head_teacher), commentLabel: "Principal's Comment", comment: comments.head_teacher_comment, signature: comments.head_teacher_signature },
+          { label: comments.head_teacher_title ?? 'Principal', name: toTitleCase(comments.head_teacher), commentLabel: null, comment: null, signature: comments.head_teacher_signature },
         ].map((staff, si) => (
           <div key={si} style={{ display: 'grid', gridTemplateColumns: '1fr 130px', borderBottom: si === 0 ? '1px solid #e2e8f0' : 'none' }}>
             <div>
