@@ -47,12 +47,13 @@ export interface ResultSettings {
   // Graph
   show_end_of_term_graph: boolean;
   show_midterm_graph: boolean;
+  show_position_on_result: boolean;
   // WhatsApp
   send_result_via_whatsapp: boolean;
   whatsapp_result_bot_enabled: boolean;
   // Fee restriction
   fee_restriction_scope: 'total' | 'specific';
-  fee_restriction_type: 'none' | 'percentage' | 'balance';  // was missing 'none'
+  fee_restriction_type: 'none' | 'percentage' | 'balance';
   fee_restriction_value: string;                             // DecimalField → string
   fee_specific?: number | null;
   fee_specific_name?: string | null;                         // read-only from serializer

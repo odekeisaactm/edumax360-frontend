@@ -29,6 +29,7 @@ const DEFAULT_FORM: Partial<ResultSettings> = {
   show_behavior_on_score_result: true,
   show_behavior_on_text_result: false,
   show_behavior_on_combined_result: true,
+  show_position_on_result: true,
   text_rating_options: [],
   text_category_scope: 'fixed',
   score_template: null,
@@ -422,6 +423,9 @@ function SettingsModal({ settings, isSaving, onSave, onClose }: {
                   <Toggle checked={!!form.show_midterm_graph}
                     onChange={v => set('show_midterm_graph', v)}
                     label="Show Midterm Graph" description="Display midterm graph on result card" />
+                  <Toggle checked={!!form.show_position_on_result}
+                    onChange={v => set('show_position_on_result', v)}
+                    label="Show Student Position" description="Display 1st, 2nd, etc. on the result sheet" />
                 </div>
               </div>
             )}
@@ -1132,6 +1136,7 @@ export default function ResultSettingsPage() {
                 { label: 'Text Upload Permission', value: <span className="capitalize text-sm">{formatPermission(s.text_result_allowed_user)}</span>, desc: 'Who can upload text-based results' },
                 { label: 'Student View Result', value: <span className="capitalize text-sm">{s.student_view_result.replace(/_/g, ' ')}</span>, desc: 'When students can access their results' },
                 { label: 'Result Status', value: <StatusBadge value={s.result_status === 'published'} activeLabel="Published" inactiveLabel="Not Published" />, desc: 'Current publish state of results' },
+                { label: 'Show Student Position', value: <StatusBadge value={s.show_position_on_result} />, desc: 'Display student positions (1st, 2nd) on result sheet' },
                 { label: 'Comment Mode', value: <span className="capitalize text-sm">{s.default_comment_mode}</span>, desc: 'Auto-select comments or manual teacher input' },
                 { label: 'Custom Comment Fields', value: <span className="text-sm">{(s.custom_comment_fields || []).length} field(s)</span>, desc: 'Dynamic comment fields defined by school' },
                 { label: 'Midterm Enabled', value: <StatusBadge value={s.use_midterm} />, desc: 'Whether midterm result functionality is active' },
