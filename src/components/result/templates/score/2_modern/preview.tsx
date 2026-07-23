@@ -274,8 +274,10 @@ export default function ModernScoreTemplate({
         <tbody>
           <tr>
             <td style={{ border: '1px solid #cbd5e1', padding: '4px 8px', fontWeight: 700, width: '34%' }}>
-              {/* Handles blank middle name cleanly without double spaces */}
-              {`${student.first_name ?? ''} ${student.middle_name ? student.middle_name + ' ' : ''}${student.last_name ?? ''}`.replace(/\s+/g, ' ').trim() || student.full_name}
+              {/* Formats as Lastname, Firstname Middlename in Title Case */}
+              {student.last_name
+                ? toTitleCase(`${student.last_name}, ${student.first_name ?? ''} ${student.middle_name ?? ''}`.replace(/\s+/g, ' ').trim())
+                : toTitleCase(student.full_name ?? '—')}
             </td>
             <td style={{ border: '1px solid #cbd5e1', padding: '4px 8px', fontWeight: 700, width: '33%' }}>
               CLASS: {`${student.current_class?.name ?? ''} ${student.class_section ?? ''}`.trim()}
