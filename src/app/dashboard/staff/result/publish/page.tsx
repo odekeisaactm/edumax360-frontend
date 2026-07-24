@@ -542,75 +542,77 @@ export default function ResultPublishPage() {
             </div>
           ) : (
             <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="bg-slate-50/50 border-b border-slate-100">
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 min-w-[240px]">Term / Session</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Result Type</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">School Section</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Status</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Published By</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {records.map((rec) => {
-                    const isGlobal = rec.school_section === null;
-                    return (
-                      <tr key={rec.id} className="hover:bg-slate-50/50 transition-colors group">
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400"><Calendar className="h-4 w-4" /></div>
-                            <div>
-                              <p className="text-sm font-bold text-slate-700">{rec.period_name || 'Unknown Term'}</p>
-                              <p className="text-[11px] text-slate-400 font-bold">{rec.session_name || '—'}</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[1000px]">
+                  <thead>
+                    <tr className="bg-slate-50/50 border-b border-slate-100">
+                      <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 min-w-[240px]">Term / Session</th>
+                      <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Result Type</th>
+                      <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">School Section</th>
+                      <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Status</th>
+                      <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Published By</th>
+                      <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {records.map((rec) => {
+                      const isGlobal = rec.school_section === null;
+                      return (
+                        <tr key={rec.id} className="hover:bg-slate-50/50 transition-colors group">
+                          <td className="px-6 py-5">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400"><Calendar className="h-4 w-4" /></div>
+                              <div>
+                                <p className="text-sm font-bold text-slate-700">{rec.period_name || 'Unknown Term'}</p>
+                                <p className="text-[11px] text-slate-400 font-bold">{rec.session_name || '—'}</p>
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${rec.result_type === 'midterm' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                             {rec.result_type === 'midterm' ? 'Mid Term' : 'End of Term'}
-                           </span>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2">
-                             {isGlobal ? <Globe className="h-4 w-4 text-indigo-400" /> : <Layers className="h-4 w-4 text-slate-400" />}
-                             <span className={`text-sm font-semibold ${isGlobal ? 'text-indigo-600' : 'text-slate-600'}`}>{rec.section_name}</span>
-                             {!rec.is_published && (
-                               <button onClick={() => isGlobal ? handleSplit(rec.id) : handleMerge(rec.id)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white rounded-md border border-slate-100 text-[10px] font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1 ml-1">
-                                 <RefreshCcw className="h-3 w-3" /> {isGlobal ? 'Split' : 'Merge'}
+                          </td>
+                          <td className="px-6 py-5">
+                             <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${rec.result_type === 'midterm' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                               {rec.result_type === 'midterm' ? 'Mid Term' : 'End of Term'}
+                             </span>
+                          </td>
+                          <td className="px-6 py-5">
+                            <div className="flex items-center gap-2">
+                               {isGlobal ? <Globe className="h-4 w-4 text-indigo-400" /> : <Layers className="h-4 w-4 text-slate-400" />}
+                               <span className={`text-sm font-semibold ${isGlobal ? 'text-indigo-600' : 'text-slate-600'}`}>{rec.section_name}</span>
+                               {!rec.is_published && (
+                                 <button onClick={() => isGlobal ? handleSplit(rec.id) : handleMerge(rec.id)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white rounded-md border border-slate-100 text-[10px] font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1 ml-1">
+                                   <RefreshCcw className="h-3 w-3" /> {isGlobal ? 'Split' : 'Merge'}
+                                 </button>
+                               )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 text-center">
+                             <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-[11px] font-bold border-2 ${rec.is_published ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                               <div className={`w-1.5 h-1.5 rounded-full ${rec.is_published ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                               {rec.is_published ? 'Published' : 'Hidden'}
+                             </div>
+                          </td>
+                          <td className="px-6 py-5 text-center">
+                             {rec.is_published ? (
+                               <button onClick={() => setPublisherModalRecord(rec)} className="p-2 bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg"><Users className="h-4 w-4" /></button>
+                             ) : <span className="text-slate-300 text-xs italic">—</span>}
+                          </td>
+                          <td className="px-6 py-5">
+                             <div className="flex items-center justify-end gap-2">
+                               {rec.is_published && (
+                                 <button onClick={() => setResendModalRecord(rec)} className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-100 text-slate-600 hover:bg-slate-200" title="Resend Emails">
+                                   <Mail className="h-4 w-4" />
+                                 </button>
+                               )}
+                               <button onClick={() => rec.is_published ? setUnpublishModalRecord(rec) : setActiveModal({ type: 'publish', record: rec })} className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-sm ${rec.is_published ? 'bg-red-50 text-red-600 border border-red-100 hover:bg-red-100' : 'bg-indigo-600 text-white shadow-indigo-200 hover:bg-indigo-700'}`}>
+                                 {rec.is_published ? <XCircle className="h-4 w-4" /> : <Send className="h-4 w-4" />}
                                </button>
-                             )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-5 text-center">
-                           <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-[11px] font-bold border-2 ${rec.is_published ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-                             <div className={`w-1.5 h-1.5 rounded-full ${rec.is_published ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
-                             {rec.is_published ? 'Published' : 'Hidden'}
-                           </div>
-                        </td>
-                        <td className="px-6 py-5 text-center">
-                           {rec.is_published ? (
-                             <button onClick={() => setPublisherModalRecord(rec)} className="p-2 bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg"><Users className="h-4 w-4" /></button>
-                           ) : <span className="text-slate-300 text-xs italic">—</span>}
-                        </td>
-                        <td className="px-6 py-5">
-                           <div className="flex items-center justify-end gap-2">
-                             {rec.is_published && (
-                               <button onClick={() => setResendModalRecord(rec)} className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-100 text-slate-600 hover:bg-slate-200" title="Resend Emails">
-                                 <Mail className="h-4 w-4" />
-                               </button>
-                             )}
-                             <button onClick={() => rec.is_published ? setUnpublishModalRecord(rec) : setActiveModal({ type: 'publish', record: rec })} className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-sm ${rec.is_published ? 'bg-red-50 text-red-600 border border-red-100 hover:bg-red-100' : 'bg-indigo-600 text-white shadow-indigo-200 hover:bg-indigo-700'}`}>
-                               {rec.is_published ? <XCircle className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-                             </button>
-                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                             </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
