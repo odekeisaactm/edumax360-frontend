@@ -5,12 +5,7 @@
  * File: src/components/result/templates/score/1_default/preview.tsx
  *
  * CHANGE LOG (this revision):
- * 1. Student Name: Formatted as "Last Name, First Name Middle Name" in Title Case.
- * 2. Info Grid Compression: Labels and values are placed side-by-side to save vertical height.
- * 3. Total Signature Removal: All signature images, containers, and logic have been completely ripped out.
- * 4. Remarks & Comments List: Flattened into a strict top-to-bottom list.
- * 5. Two-Tone Comments Design: Left cell uses main background color (headerColor) with white text; right cell is pure white.
- * 6. Blank Fallbacks: Missing comments/names gracefully render as empty strings instead of placeholder text.
+ * - Fixed Vertical Headers: When columns are rotated vertically, `whiteSpace` is set to `normal` and `height` is clamped to `110px`. This forces long names like "Holiday Assignment" to wrap into two vertical lines, saving massive vertical height.
  */
 
 import React, { useMemo } from 'react';
@@ -99,7 +94,6 @@ export default function DefaultScoreTemplate({
   subjectList:        subjectListProp,
 }: ScoreTemplateProps) {
 
-  // ── Resolve with fallbacks ──────────────────────────────────────────────────
   const isPreview = !studentProp && !resultProp;
   const school   = schoolInfoProp  ?? dummySchool;
   const student  = studentProp     ?? dummyStudent;
@@ -111,13 +105,11 @@ export default function DefaultScoreTemplate({
   const grades   = gradeListProp?.length    ? gradeListProp    : dummyGradeList;
   const fields   = fieldListProp?.length    ? fieldListProp    : dummyFieldList;
 
-  // ── Colors from result settings ─────────────────────────────────────────────
   const headerColor    = hex(settings.header_color,    '#2c5f8d');
   const primaryColor   = hex(settings.primary_color,   '#2c5f8d');
   const secondaryColor = hex(settings.secondary_color, '#f0f4f8');
   const accentColor    = hex(settings.accent_color,    '#1890ff');
 
-  // ── Subject rows ─────────────────────────────────────────────────────────────
   const resultData: Record<string, any> = result.result_data ?? {};
 
   const subjectRows = useMemo(() => {
@@ -144,8 +136,8 @@ export default function DefaultScoreTemplate({
   const headerDensity = useMemo(() => {
     const totalChars = scoreCols.reduce((sum: number, c: any) => sum + (c.name?.length ?? 0), 0);
     const count = scoreCols.length;
-    if (count > 8 || totalChars > 70) return 'vertical';
-    if (count > 6 || totalChars > 50) return 'compact';
+    if (count > 5 || totalChars > 50) return 'vertical';
+    if (count > 4) return 'compact';
     return 'normal';
   }, [scoreCols]);
 
@@ -180,14 +172,12 @@ export default function DefaultScoreTemplate({
     })), [subjectRows]
   );
 
-  // ── Conditionals & Toggles ──────────────────────────────────────────────────
   const showGraph      = settings.show_end_of_term_graph !== false && termType !== 'midterm';
   const showBehaviour  = settings.show_behavior_on_score_result !== false;
   const showPosition   = settings.show_position_on_result !== false;
 
   const customFields: string[] = settings.enable_custom_comment_fields ? (settings.custom_comment_fields ?? []) : [];
 
-  // ── Summary Metrics ─────────────────────────────────────────────────────────
   const totalScore     = result.total_score     ?? (isPreview ? dummyScoreResult.summary.total_score : 0);
   const studentAverage = result.average_score   ?? result.student_average ?? (isPreview ? dummyScoreResult.summary.student_average : 0);
   const classAverage   = result.class_average   ?? (isPreview ? dummyScoreResult.summary.class_average : 0);
@@ -204,7 +194,6 @@ export default function DefaultScoreTemplate({
   const vendorSite  = school.vendor_website || 'balabalutech.com';
   const vendorPhone = school.vendor_phone   || '08163550192';
 
-  // ── Flat List of Comment Rows ───────────────────────────────────────────────
   const commentRows = [
     ...customFields.map((fieldName: string) => ({
       label: fieldName,
@@ -233,21 +222,35 @@ export default function DefaultScoreTemplate({
     }
   ];
 
-  // ── Shared styles ─────────────────────────────────────────────────────────────
   const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 12 };
 
+  // ─── THE WRAPPING FIX IS HERE ───
   const thStyle: React.CSSProperties = {
     backgroundColor: headerColor, color: '#fff',
     padding: headerDensity === 'normal' ? '5px 6px' : '4px 3px',
-    textAlign: 'center', fontSize: headerDensity === 'normal' ? 11 : headerDensity === 'compact' ? 9.5 : 9,
-    fontWeight: 700, border: `1px solid ${headerColor}`,
-    whiteSpace: 'nowrap',
+    textAlign: 'center',
+    fontSize: headerDensity === 'normal' ? 11 : headerDensity === 'compact' ? 9.5 : 9,
+    fontWeight: 700,
+    border: `1px solid ${headerColor}`,
+    // Set whiteSpace to normal so text can wrap when rotated!
+    whiteSpace: headerDensity === 'vertical' ? 'normal' : 'nowrap',
     writingMode: headerDensity === 'vertical' ? 'vertical-rl' : 'horizontal-tb',
     transform: headerDensity === 'vertical' ? 'rotate(180deg)' : 'none',
-    height: headerDensity === 'vertical' ? 70 : undefined,
-    maxWidth: headerDensity === 'vertical' ? 26 : undefined,
+    // Lock the height so long phrases hit the wall and wrap to 2 vertical lines
+    height: headerDensity === 'vertical' ? 110 : undefined,
+    lineHeight: 1.1,
   };
-  const thLeft: React.CSSProperties = { ...thStyle, textAlign: 'left', writingMode: 'horizontal-tb', transform: 'none', height: undefined, width: '26%', minWidth: 180 };
+
+  const thLeft: React.CSSProperties = {
+    ...thStyle,
+    textAlign: 'left',
+    writingMode: 'horizontal-tb',
+    transform: 'none',
+    height: undefined,
+    width: '26%',
+    minWidth: 180,
+    whiteSpace: 'nowrap'
+  };
 
   const tdBase: React.CSSProperties = { padding: '4px 6px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: 12, color: '#1e293b' };
   const tdLeft: React.CSSProperties = { ...tdBase, textAlign: 'left', fontWeight: 600 };
@@ -305,10 +308,8 @@ export default function DefaultScoreTemplate({
         </div>
       </div>
 
-      {/* ══ STUDENT INFO GRID (3 Rows - Space Efficient) ═══════════════════════ */}
+      {/* ══ STUDENT INFO GRID ══════════════════════════════════════════════════ */}
       <div style={{ margin: '8px 10px', border: `1px solid #e2e8f0`, borderRadius: 5, overflow: 'hidden' }}>
-
-        {/* Row 1 */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', borderBottom: '1px solid #e2e8f0', backgroundColor: secondaryColor }}>
           <div style={{ padding: '6px 10px', borderRight: '1px solid #e2e8f0', display: 'flex', alignItems: 'center' }}>
             <span style={{ fontWeight: 800, fontSize: 14 }}>
@@ -326,8 +327,6 @@ export default function DefaultScoreTemplate({
             <span style={{ fontWeight: 600 }}>{`${student.current_class?.name ?? ''} ${student.class_section ?? ''}`.trim() || '—'}</span>
           </div>
         </div>
-
-        {/* Row 2 */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', borderBottom: '1px solid #e2e8f0', backgroundColor: '#fff' }}>
           {[
             ['Gender', toTitleCase(student.gender)],
@@ -340,8 +339,6 @@ export default function DefaultScoreTemplate({
             </div>
           ))}
         </div>
-
-        {/* Row 3 */}
         <div style={{ display: 'grid', gridTemplateColumns: showPosition ? '1.4fr 1fr 1fr 1fr' : '1.4fr 1fr 1fr', backgroundColor: secondaryColor }}>
           {[
             ['Cum. Total', totalScore],
@@ -365,9 +362,8 @@ export default function DefaultScoreTemplate({
               <th style={thLeft}>Subject</th>
               {scoreCols.map((col: any) => (
                 <th key={col.id} style={thStyle} title={col.name}>
-                  {headerDensity === 'vertical' ? col.name : (
-                    <>{col.name}<br /><span style={{ fontSize: 9, fontWeight: 400, opacity: 0.75 }}>/{col.max_mark}</span></>
-                  )}
+                  {/* React will naturally wrap this because whiteSpace is normal */}
+                  {col.name}<br /><span style={{ fontSize: 9, fontWeight: 400, opacity: 0.75 }}>/{col.max_mark}</span>
                 </th>
               ))}
               <th style={thStyle}>Total<br /><span style={{ fontSize: 9, fontWeight: 400, opacity: 0.75 }}>/100</span></th>
@@ -416,10 +412,7 @@ export default function DefaultScoreTemplate({
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} />
               <YAxis domain={[0, 100]} tick={{ fontSize: 8, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={24} />
-              <Tooltip
-                formatter={(val: any, _: any, props: any) => [val, props.payload.fullName]}
-                contentStyle={{ fontSize: 11, borderRadius: 8, border: `1px solid ${accentColor}` }}
-              />
+              <Tooltip formatter={(val: any, _: any, props: any) => [val, props.payload.fullName]} contentStyle={{ fontSize: 11, borderRadius: 8, border: `1px solid ${accentColor}` }} />
               <Bar dataKey="score" radius={[3, 3, 0, 0]} maxBarSize={40}>
                 {chartData.map((entry: any, i: number) => (
                   <Cell key={i} fill={getScoreColor(entry.score)} />
@@ -442,8 +435,8 @@ export default function DefaultScoreTemplate({
                 <table style={tableStyle}>
                   <thead>
                     <tr>
-                      <th style={{ ...thLeft, fontSize: 9, padding: '3px 5px' }}>{cat.name?.toUpperCase()}</th>
-                      <th style={{ ...thStyle, width: 36, fontSize: 9, padding: '3px 5px' }}>Score</th>
+                      <th style={{ ...thLeft, fontSize: 9, padding: '3px 5px', height: undefined, transform: 'none', writingMode: 'horizontal-tb' }}>{cat.name?.toUpperCase()}</th>
+                      <th style={{ ...thStyle, width: 36, fontSize: 9, padding: '3px 5px', height: undefined, transform: 'none', writingMode: 'horizontal-tb' }}>Score</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -475,15 +468,8 @@ export default function DefaultScoreTemplate({
       <div style={{ margin: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
         <div style={{ ...sectionHeader, padding: '3px 10px' }}>Grading Scale</div>
         <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          flexWrap: 'nowrap',
-          overflowX: 'auto',
-          padding: '5px 10px',
-          gap: 16,
-          fontSize: 11,
-          backgroundColor: secondaryColor,
-          whiteSpace: 'nowrap',
+          display: 'flex', justifyContent: 'center', flexWrap: 'nowrap', overflowX: 'auto',
+          padding: '5px 10px', gap: 16, fontSize: 11, backgroundColor: secondaryColor, whiteSpace: 'nowrap',
         }}>
           {grades.map((g: any, i: number) => {
             const min = Math.round(g.min_score ?? g.end_of_term_min_mark ?? 0);
@@ -499,41 +485,25 @@ export default function DefaultScoreTemplate({
         </div>
       </div>
 
-      {/* ══ REMARKS & COMMENTS (Two-Tone, Flat List, No Signatures) ══════════════ */}
+      {/* ══ REMARKS & COMMENTS ═══════════════════════════════════════════════════ */}
       <div style={{ margin: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
         <div style={{ ...sectionHeader, padding: '3px 10px' }}>Remarks &amp; Comments</div>
         <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>
           {commentRows.map((row, i) => (
             <div key={i} style={{ display: 'flex', borderBottom: i < commentRows.length - 1 ? '1px solid rgba(255, 255, 255, 0.2)' : 'none' }}>
-
-              {/* Left Column: Label (Main Background Color) */}
               <div style={{ width: '28%', backgroundColor: headerColor, padding: '6px 12px', borderRight: '1px solid #e2e8f0', display: 'flex', alignItems: 'center' }}>
                 <strong style={{ color: '#ffffff', textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.04em' }}>{row.label}</strong>
               </div>
-
-              {/* Right Column: Value/Comment Text (White Background) */}
               <div style={{ flex: 1, backgroundColor: '#fff', padding: '6px 12px', color: '#334155', fontStyle: row.isComment ? 'italic' : 'normal', fontWeight: row.isComment ? 400 : 600, borderBottom: i < commentRows.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
                 {row.value ? (row.isComment ? `"${row.value}"` : row.value) : ''}
               </div>
-
             </div>
           ))}
         </div>
       </div>
 
-      {/* ══ FOOTER — dynamic, white-label per school/vendor ═══════════════════════ */}
-      <div style={{
-        backgroundColor: '#f8fafc',
-        color: '#64748b',
-        textAlign: 'center',
-        padding: '6px 8px',
-        fontSize: 10,
-        marginTop: 8,
-        borderTop: '1px solid #e2e8f0'
-      }}>
-        Powered by&nbsp;
-        <span style={{ color: '#334155', fontWeight: 700 }}>{vendorName}</span>
-        &nbsp;|&nbsp;{vendorSite}&nbsp;|&nbsp;{vendorPhone}
+      <div style={{ backgroundColor: '#f8fafc', color: '#64748b', textAlign: 'center', padding: '6px 8px', fontSize: 10, marginTop: 8, borderTop: '1px solid #e2e8f0' }}>
+        Powered by&nbsp;<span style={{ color: '#334155', fontWeight: 700 }}>{vendorName}</span>&nbsp;|&nbsp;{vendorSite}&nbsp;|&nbsp;{vendorPhone}
       </div>
 
     </div>
