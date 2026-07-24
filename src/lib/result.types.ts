@@ -48,6 +48,10 @@ export interface ResultSettings {
   show_end_of_term_graph: boolean;
   show_midterm_graph: boolean;
   show_position_on_result: boolean;
+  // Cumulative
+  show_cumulative_graph: boolean;
+  cumulative_format: 'summary' | 'detailed';
+  cumulative_avg_mode: 'all_terms' | 'active_terms';
   // WhatsApp
   send_result_via_whatsapp: boolean;
   whatsapp_result_bot_enabled: boolean;

@@ -10,7 +10,7 @@ import {
   Award, Eye, EyeOff, Palette, Bell, CreditCard, FileText,
   ToggleLeft, Hash, Star, MessageSquare, Layout, ChevronUp,
   ChevronDown, Plus, Trash2, GripVertical, Users, Shield,
-  BookOpen, Sliders, Zap, Globe, Lock, CheckCircle2, Unlock
+  BookOpen, Sliders, Zap, Globe, Lock, CheckCircle2, Unlock, Layers
 } from 'lucide-react';
 
 // ─── Default form ──────────────────────────────────────────────────────────────
@@ -30,9 +30,13 @@ const DEFAULT_FORM: Partial<ResultSettings> = {
   show_behavior_on_text_result: false,
   show_behavior_on_combined_result: true,
   show_position_on_result: true,
+  show_cumulative_graph: true,
+  cumulative_format: 'summary',
+  cumulative_avg_mode: 'active_terms',
   text_rating_options: [],
   text_category_scope: 'fixed',
   score_template: null,
+
   text_template: null,
   combined_template: null,
   primary_color: '#2c5f8d',
@@ -232,7 +236,7 @@ function SettingsModal({ settings, isSaving, onSave, onClose }: {
   onSave: (f: Partial<ResultSettings>) => Promise<void>;
   onClose: () => void;
 }) {
-  type Tab = 'general' | 'upload' | 'midterm' | 'behavior' | 'text' | 'templates' | 'colors' | 'fee' | 'notifications';
+  type Tab = 'general' | 'upload' | 'midterm' | 'cumulative' | 'behavior' | 'text' | 'templates' | 'colors' | 'fee' | 'notifications';
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [form, setForm] = useState<Partial<ResultSettings>>(
     settings ? settingsToForm(settings) : DEFAULT_FORM
@@ -296,6 +300,7 @@ function SettingsModal({ settings, isSaving, onSave, onClose }: {
     { id: 'general', label: 'General', icon: Settings },
     { id: 'upload', label: 'Upload Restrictions', icon: Unlock },
     { id: 'midterm', label: 'Midterm', icon: BookOpen },
+    { id: 'cumulative', label: 'Cumulative', icon: Layers },
     { id: 'behavior', label: 'Behavior', icon: Star },
     { id: 'text', label: 'Text Results', icon: FileText },
     { id: 'templates', label: 'Templates', icon: Layout },
@@ -515,6 +520,36 @@ function SettingsModal({ settings, isSaving, onSave, onClose }: {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ── Cumulative ── */}
+            {activeTab === 'cumulative' && (
+              <div className="space-y-4">
+                <p className="text-xs text-slate-400">Configure how cumulative (end-of-session) results are calculated and displayed.</p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelCls}>Cumulative Format</label>
+                    <select value={form.cumulative_format} onChange={e => set('cumulative_format', e.target.value as any)} className={selectCls}>
+                      <option value="summary">Summary (Averages Only)</option>
+                      <option value="detailed">Detailed (Term-by-Term Breakdown)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Average Calculation Mode</label>
+                    <select value={form.cumulative_avg_mode} onChange={e => set('cumulative_avg_mode', e.target.value as any)} className={selectCls}>
+                      <option value="active_terms">Divide only by terms with non-zero results</option>
+                      <option value="all_terms">Divide by all terms in session</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 pt-2">
+                  <Toggle checked={!!form.show_cumulative_graph}
+                    onChange={v => set('show_cumulative_graph', v)}
+                    label="Show Cumulative Graph" description="Display performance graph on cumulative result cards" />
+                </div>
               </div>
             )}
 
@@ -1142,6 +1177,9 @@ export default function ResultSettingsPage() {
                 { label: 'Midterm Enabled', value: <StatusBadge value={s.use_midterm} />, desc: 'Whether midterm result functionality is active' },
                 { label: 'Midterm Max Score', value: <span className="text-sm">{s.midterm_max_score}</span>, desc: 'Maximum achievable midterm score' },
                 { label: 'Convert Midterm to 100', value: <StatusBadge value={s.convert_midterm_to_100} />, desc: 'Display midterm on 100-point scale' },
+                { label: 'Cumulative Format', value: <span className="capitalize text-sm">{s.cumulative_format}</span>, desc: 'Display mode for end-of-session results' },
+                { label: 'Cumulative Avg Mode', value: <span className="capitalize text-sm">{s.cumulative_avg_mode.replace(/_/g, ' ')}</span>, desc: 'How cumulative averages are calculated' },
+                { label: 'Show Cumulative Graph', value: <StatusBadge value={s.show_cumulative_graph} />, desc: 'Display performance graph on cumulative result cards' },
                 { label: 'Behavior Max Rating', value: <span className="text-sm">1 – {s.behavior_max_rating}</span>, desc: 'Scale for behavior field ratings' },
                 { label: 'Behavior on Score Results', value: <StatusBadge value={s.show_behavior_on_score_result} />, desc: 'Show behavior section on score-based cards' },
                 { label: 'Behavior on Text Results', value: <StatusBadge value={s.show_behavior_on_text_result} />, desc: 'Show behavior section on text-based cards' },
