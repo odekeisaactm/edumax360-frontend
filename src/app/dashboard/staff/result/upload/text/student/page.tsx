@@ -7,7 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { textResultUploadAPI } from '@/lib/api';
 import {
   Save, ArrowLeft, Loader2, AlertCircle, FileText, Star,
-  CheckCircle2, AlertTriangle, X, User, BookOpen,
+  CheckCircle2, AlertTriangle, X,
   Mic, MicOff, MessageSquare
 } from 'lucide-react';
 import { resultVoiceAPI } from '@/lib/result.service';
@@ -75,6 +75,11 @@ function extractError(err: any): string {
   return err?.message || 'An unexpected error occurred.';
 }
 
+function toTitleCase(str: string) {
+  if (!str) return '';
+  return str.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+}
+
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
     <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
@@ -124,14 +129,20 @@ function TextFieldInput({ field, ratingOptions, value, onChange, disabled, onFoc
     onChange(localRating, comment);
   };
 
+  // Capitalize ONLY the first letter of the entire string (Sentence Case)
+  const formattedFieldName = field.name
+    ? field.name.charAt(0).toUpperCase() + field.name.slice(1)
+    : '';
+
   return (
     <div className="grid grid-cols-12 gap-2 py-2 border-b border-slate-100">
       <div className="col-span-5 sm:col-span-4">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-slate-700">{field.name}</span>
-          {field.student_type !== 'all' && (
+          <span className="text-sm font-medium text-slate-700">{formattedFieldName}</span>
+
+          {field.student_type !== 'combined' && (
             <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">
-              {field.student_type === 'regular' ? 'Reg' : 'Spec'}
+              {field.student_type === 'normal' ? 'Reg' : 'Spec'}
             </span>
           )}
         </div>
@@ -144,12 +155,11 @@ function TextFieldInput({ field, ratingOptions, value, onChange, disabled, onFoc
           onFocus={() => onFocus && onFocus('rating', field.id)}
           disabled={disabled}
           className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white disabled:opacity-50 disabled:bg-slate-50"
-          required
         >
           <option value="">Select</option>
           {ratingOptions.map(opt => (
             <option key={opt.value} value={opt.value}>
-              {opt.label}
+              {opt.label.toUpperCase()}
             </option>
           ))}
         </select>
@@ -187,6 +197,10 @@ export default function TextStudentUploadPage() {
 
   const [data, setData] = useState<PrepareData | null>(null);
   const [fieldData, setFieldData] = useState<Record<number, FieldData>>({});
+
+  // Track initial state to know what was explicitly cleared vs what was just never touched
+  const [initialFieldData, setInitialFieldData] = useState<Record<number, FieldData>>({});
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -199,7 +213,7 @@ export default function TextStudentUploadPage() {
   const [voiceError, setVoiceError] = useState<string|null>(null);
   const [activeInput, setActiveInput] = useState<{ type: 'rating' | 'comment', fieldId: number } | null>(null);
   const [correctingFieldId, setCorrectingFieldId] = useState<number | null>(null);
-  
+
   const recognitionRef = React.useRef<any>(null);
   const commentTimeoutRef = React.useRef<NodeJS.Timeout | undefined>(undefined);
 
@@ -213,7 +227,7 @@ export default function TextStudentUploadPage() {
   // Speech Recognition Hook
   useEffect(() => {
     const SpeechRecognition = typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
-    
+
     if (!SpeechRecognition) {
       setVoiceError("Browser does not support Web Speech API");
       return;
@@ -240,7 +254,7 @@ export default function TextStudentUploadPage() {
     };
 
     recognition.onend = () => {
-      if (destroyed) return;        // cleanup triggered this — do nothing
+      if (destroyed) return;
       setIsListening(false);
       if (!isVoicePaused && !voiceError) {
         try { recognition.start(); } catch(e) {}
@@ -257,21 +271,19 @@ export default function TextStudentUploadPage() {
 
       if (activeInput?.type === 'comment') {
         const fieldId = activeInput.fieldId;
-        
+
         setFieldData(prev => {
           const current = prev[fieldId]?.comment || '';
           const newText = current ? `${current} ${transcript}` : transcript;
 
           clearTimeout(commentTimeoutRef.current);
-          
-          // Only correct if there's a pause of 1.5 seconds
+
           commentTimeoutRef.current = setTimeout(async () => {
             setCorrectingFieldId(fieldId);
             try {
-              // We fetch the LATEST text from the DOM just in case the user typed too
               const inputEl = document.getElementById(`comment-${fieldId}`) as HTMLInputElement;
               const textToCorrect = inputEl ? inputEl.value : newText;
-              
+
               const res = await resultVoiceAPI.correctComment({ text: textToCorrect });
               if (res.corrected_text) {
                 setFieldData(p => ({
@@ -288,14 +300,14 @@ export default function TextStudentUploadPage() {
 
           return { ...prev, [fieldId]: { ...prev[fieldId], comment: newText } };
         });
-        
+
         setVoiceLogs(prev => [{ id: logId, transcript, intent: 'dictation' }, ...prev].slice(0, 5));
 
       } else {
         setVoiceLogs(prev => [{ id: logId, transcript }, ...prev].slice(0, 5));
 
         const flatFields = data.categories.flatMap(c => c.fields.map(f => ({ id: f.id, name: f.name })));
-        
+
         const context = {
           fields: flatFields,
           rating_options: data.rating_options.map(r => r.value),
@@ -304,8 +316,8 @@ export default function TextStudentUploadPage() {
 
         try {
           const response = await resultVoiceAPI.interpret({ transcript, context });
-          
-          setVoiceLogs(prev => prev.map(log => 
+
+          setVoiceLogs(prev => prev.map(log =>
             log.id === logId ? { ...log, intent: response.intent, action: response.intent } : log
           ));
 
@@ -317,13 +329,13 @@ export default function TextStudentUploadPage() {
     };
 
     recognitionRef.current = recognition;
-    
+
     if (!isVoicePaused) {
       try { recognition.start(); } catch(e) {}
     }
 
     return () => {
-      destroyed = true;             // silence onend/onerror before stopping
+      destroyed = true;
       recognition.stop();
     };
   }, [isVoicePaused, voiceError, data, activeInput]);
@@ -347,7 +359,6 @@ export default function TextStudentUploadPage() {
         const matchedRating = data.rating_options.find(r => r.value.toLowerCase() === intentData.rating.toLowerCase() || r.label.toLowerCase() === intentData.rating.toLowerCase());
         if (matchedRating) {
           handleFieldChange(activeInput.fieldId, matchedRating.value, fieldData[activeInput.fieldId]?.comment || '');
-          // Move to next field automatically
           const currentIndex = flatFields.findIndex(f => f.id === activeInput.fieldId);
           if (currentIndex !== -1 && currentIndex < flatFields.length - 1) {
             const nextField = flatFields[currentIndex + 1];
@@ -403,7 +414,6 @@ export default function TextStudentUploadPage() {
       const prepareData = response as PrepareData;
       setData(prepareData);
 
-      // Initialize field data from existing values
       const initialData: Record<number, FieldData> = {};
       prepareData.categories.forEach(category => {
         category.fields.forEach(field => {
@@ -413,7 +423,10 @@ export default function TextStudentUploadPage() {
           };
         });
       });
+
       setFieldData(initialData);
+      setInitialFieldData(initialData); // Capture the original state!
+
     } catch (err) {
       setPageError(extractError(err));
     } finally {
@@ -436,10 +449,20 @@ export default function TextStudentUploadPage() {
     setSubmitting(true);
     try {
       const fieldDataPayload: Record<number, { rating: string; comment: string }> = {};
+
       Object.entries(fieldData).forEach(([id, value]) => {
-        // Only include fields that have a rating or a comment
-        if (value.rating || value.comment) {
-          fieldDataPayload[parseInt(id)] = {
+        const fieldId = parseInt(id);
+        const init = initialFieldData[fieldId];
+
+        // Does the field have a value NOW?
+        const hasValue = value.rating.trim() !== '' || value.comment.trim() !== '';
+        // Did the field have a value ORIGINALLY?
+        const hadValue = init ? (init.rating.trim() !== '' || init.comment.trim() !== '') : false;
+
+        // If it currently has a value, OR if it used to have one and was just cleared, send it!
+        // We ignore fields that were always empty to prevent backend validation errors.
+        if (hasValue || hadValue) {
+          fieldDataPayload[fieldId] = {
             rating: value.rating || '',
             comment: value.comment || '',
           };
@@ -447,7 +470,7 @@ export default function TextStudentUploadPage() {
       });
 
       if (Object.keys(fieldDataPayload).length === 0) {
-        showToast('warn', 'No data entered to save');
+        showToast('warn', 'No fields available to save');
         setSubmitting(false);
         return;
       }
@@ -460,7 +483,6 @@ export default function TextStudentUploadPage() {
       });
 
       showToast('success', 'Result saved successfully');
-      // Redirect to VIEW page for this student
       router.replace(`/dashboard/staff/result/view/text/student?student=${studentId}&class=${classId}&type=${type}`);
     } catch (err) {
       showToast('error', extractError(err));
@@ -541,11 +563,11 @@ export default function TextStudentUploadPage() {
       <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-3 flex items-center gap-3">
         <img
           src={getStudentImage()}
-          alt={data.student_name}
+          alt={toTitleCase(data.student_name)}
           className="w-10 h-10 rounded-full object-cover border border-slate-200"
         />
         <div>
-          <h2 className="text-sm font-semibold text-slate-800">{data.student_name}</h2>
+          <h2 className="text-sm font-semibold text-slate-800">{toTitleCase(data.student_name)}</h2>
           <p className="text-xs text-slate-400">{data.class_name}</p>
         </div>
       </div>
@@ -570,7 +592,7 @@ export default function TextStudentUploadPage() {
           <button
             onClick={() => setIsVoicePaused(!isVoicePaused)}
             className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-md ${
-              isVoicePaused ? 'bg-slate-100 text-slate-400 hover:bg-slate-200' 
+              isVoicePaused ? 'bg-slate-100 text-slate-400 hover:bg-slate-200'
               : voiceError ? 'bg-red-50 text-red-500 border border-red-200'
               : 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white animate-pulse shadow-blue-200'
             }`}
@@ -588,7 +610,7 @@ export default function TextStudentUploadPage() {
             </p>
           </div>
         </div>
-        
+
         <div className="flex-1 bg-slate-50 rounded-xl p-3 border border-slate-100 min-h-[60px] max-h-[80px] overflow-y-auto flex flex-col-reverse">
           {voiceLogs.length === 0 ? (
              <p className="text-xs text-slate-400 italic flex items-center gap-1"><MessageSquare className="h-3 w-3" /> Say a field name to select, or dictate a comment...</p>

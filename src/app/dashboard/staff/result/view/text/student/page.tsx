@@ -7,7 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { textResultUploadAPI } from '@/lib/api';
 import {
   ArrowLeft, Loader2, AlertCircle, FileText, Star,
-  CheckCircle2, AlertTriangle, X, User, BookOpen, Edit3,
+  CheckCircle2, AlertTriangle, X, Edit3,
   Printer, Users
 } from 'lucide-react';
 
@@ -41,6 +41,7 @@ interface PrepareData {
   period_name: string;
   rating_options: RatingOption[];
   categories: TextCategory[];
+  image?: string;
 }
 
 let _toastId = 0;
@@ -56,9 +57,14 @@ function extractError(err: any): string {
   return err?.message || 'An unexpected error occurred.';
 }
 
+function toTitleCase(str: string) {
+  if (!str) return '';
+  return str.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+}
+
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
-    <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
+    <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none print:hidden">
       {toasts.map(t => (
         <div key={t.id} className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border max-w-sm
           ${t.type === 'success' ? 'bg-green-50 border-green-200 text-green-900'
@@ -85,21 +91,44 @@ function ViewTextField({ field, ratingOptions, value }: {
 }) {
   const selectedRating = ratingOptions.find(r => r.value === value.rating);
 
+  // Capitalize ONLY the first letter of the entire string (Sentence Case)
+  const formattedFieldName = field.name
+    ? field.name.charAt(0).toUpperCase() + field.name.slice(1)
+    : '';
+
+  // Calculate dynamic colors based on score
+  let ratingColorClass = 'text-slate-500'; // Default if unrated
+
+  if (selectedRating && ratingOptions.length > 0) {
+    const scores = ratingOptions.map(r => r.score);
+    const maxScore = Math.max(...scores);
+    const minScore = Math.min(...scores);
+
+    if (selectedRating.score === maxScore) {
+      ratingColorClass = 'text-emerald-600 font-bold'; // Highest -> Green
+    } else if (selectedRating.score === minScore) {
+      ratingColorClass = 'text-red-600 font-bold';     // Lowest -> Red
+    } else {
+      ratingColorClass = 'text-slate-900 font-bold';   // In-between -> Black/Dark
+    }
+  }
+
   return (
     <div className="grid grid-cols-12 gap-2 py-2 border-b border-slate-100">
       <div className="col-span-5 sm:col-span-4">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-slate-700">{field.name}</span>
-          {field.student_type !== 'all' && (
+          <span className="text-sm font-medium text-slate-700">{formattedFieldName}</span>
+
+          {field.student_type !== 'combined' && (
             <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">
-              {field.student_type === 'regular' ? 'Reg' : 'Spec'}
+              {field.student_type === 'normal' ? 'Reg' : 'Spec'}
             </span>
           )}
         </div>
       </div>
       <div className="col-span-4 sm:col-span-3">
-        <span className="text-sm text-slate-600">
-          {selectedRating ? selectedRating.label : '-'}
+        <span className={`text-sm ${ratingColorClass}`}>
+          {selectedRating ? selectedRating.label.toUpperCase() : '-'}
         </span>
       </div>
       <div className="col-span-3 sm:col-span-5">
@@ -173,7 +202,7 @@ export default function ViewTextStudentPage() {
   };
 
   const getStudentImage = () => {
-    return '/images/default-avatar.png';
+    return data?.image || '/images/default-avatar.png';
   };
 
   const title = type === 'special' ? 'Special Needs Result' : 'Text Based Result';
@@ -288,7 +317,7 @@ export default function ViewTextStudentPage() {
           className="w-12 h-12 rounded-full object-cover border border-slate-200"
         />
         <div>
-          <h2 className="text-base font-bold text-slate-800">{data.student_name}</h2>
+          <h2 className="text-base font-bold text-slate-800">{toTitleCase(data.student_name)}</h2>
           <p className="text-xs text-slate-400">{data.class_name} · {data.period_name}</p>
         </div>
       </div>

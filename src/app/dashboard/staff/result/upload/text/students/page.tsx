@@ -10,6 +10,16 @@ import {
   FileText, Star, User, BookOpen, RefreshCw, X, CheckCircle2, AlertTriangle,
 } from 'lucide-react';
 
+// ─── Helper Functions ──────────────────────────────────────────────────────────
+function toTitleCase(str: string) {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface Student {
   id: number;
@@ -94,7 +104,6 @@ export default function TextStudentListPage() {
     setLoading(true);
     setPageError(null);
     try {
-      // API call to get students for this class
       const response = await api.get('/api/result/text-upload/student-list/', {
         params: {
           class_config_id: parseInt(classId),
@@ -118,13 +127,6 @@ export default function TextStudentListPage() {
 
   const handleView = (studentId: number) => {
     router.push(`/dashboard/staff/result/view/text/student?student=${studentId}&class=${classId}&type=${type}`);
-  };
-
-  const getStudentImage = (imageUrl: string | null | undefined) => {
-    if (imageUrl) {
-      return imageUrl;
-    }
-    return '/images/default-avatar.png';
   };
 
   const title = type === 'special' ? 'Special Needs Result Upload' : 'Text Based Result Upload';
@@ -159,6 +161,11 @@ export default function TextStudentListPage() {
       </div>
     );
   }
+
+  // FORCE STRICT ALPHABETICAL SORTING ON THE FRONTEND
+  const sortedStudents = [...data.students].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
 
   return (
     <div className="space-y-6 pb-10">
@@ -198,7 +205,7 @@ export default function TextStudentListPage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
           <p className="text-xs text-slate-400">Total Students</p>
-          <p className="text-2xl font-bold text-slate-800">{data.students.length}</p>
+          <p className="text-2xl font-bold text-slate-800">{sortedStudents.length}</p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
           <p className="text-xs text-slate-400">Result Type</p>
@@ -223,7 +230,7 @@ export default function TextStudentListPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {data.students.length === 0 ? (
+              {sortedStudents.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-5 py-12 text-center">
                     <div className="text-center">
@@ -238,7 +245,7 @@ export default function TextStudentListPage() {
                   </td>
                 </tr>
               ) : (
-                data.students.map((student, idx) => (
+                sortedStudents.map((student, idx) => (
                   <tr key={student.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-5 py-3 text-sm text-slate-500">{idx + 1}.</td>
                     <td className="px-5 py-3">
@@ -252,15 +259,17 @@ export default function TextStudentListPage() {
                           }}
                         />
                         <div className="min-w-0">
+                          {/* APPLY TITLE CASE HERE */}
                           <p className="text-sm font-bold text-slate-800 truncate">
-                            {student.name}
+                            {toTitleCase(student.name)}
                           </p>
                           <p className="text-[10px] font-mono text-slate-400 mt-0.5 truncate uppercase">
                             {student.reg_number}
                           </p>
                         </div>
                       </div>
-                    </td>                    <td className="px-5 py-3 text-sm text-slate-600 capitalize">{student.gender || '—'}</td>
+                    </td>
+                    <td className="px-5 py-3 text-sm text-slate-600 capitalize">{student.gender || '—'}</td>
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-center gap-2">
                         <button
@@ -289,7 +298,7 @@ export default function TextStudentListPage() {
         {/* Footer */}
         <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/40">
           <p className="text-xs text-slate-400">
-            Showing {data.students.length} student{data.students.length !== 1 ? 's' : ''}
+            Showing {sortedStudents.length} student{sortedStudents.length !== 1 ? 's' : ''}
           </p>
         </div>
       </div>
