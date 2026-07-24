@@ -32,7 +32,8 @@ export interface ResultSettings {
   show_behavior_on_text_result: boolean;
   show_behavior_on_combined_result: boolean;
   // Text rating
-  text_rating_options: TextRatingOption[];  // was Array<{label, value: number}> — wrong
+  show_text_result_comment: boolean;
+  text_rating_options: TextRatingOption[];
   // Text category scope
   text_category_scope: 'fixed' | 'per_session' | 'per_period';
   // Templates — nullable CharFields

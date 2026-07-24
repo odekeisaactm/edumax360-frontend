@@ -33,6 +33,7 @@ const DEFAULT_FORM: Partial<ResultSettings> = {
   show_cumulative_graph: true,
   cumulative_format: 'summary',
   cumulative_avg_mode: 'active_terms',
+  show_text_result_comment: true,
   text_rating_options: [],
   text_category_scope: 'fixed',
   score_template: null,
@@ -583,6 +584,12 @@ function SettingsModal({ settings, isSaving, onSave, onClose }: {
             {activeTab === 'text' && (
               <div className="space-y-5">
                 <p className="text-xs text-slate-400">Configure text-based result categories, scoping, and rating options.</p>
+                <div className="grid grid-cols-1 gap-3">
+                  <Toggle checked={!!form.show_text_result_comment}
+                    onChange={v => set('show_text_result_comment', v)}
+                    label="Show Comment Column"
+                    description="Display the teacher comment column on text-based result cards" />
+                </div>
                 <div>
                   <label className={labelCls}>Text Category Scope</label>
                   <select value={form.text_category_scope} onChange={e => set('text_category_scope', e.target.value as any)} className={selectCls}>
@@ -1185,6 +1192,7 @@ export default function ResultSettingsPage() {
                 { label: 'Behavior on Text Results', value: <StatusBadge value={s.show_behavior_on_text_result} />, desc: 'Show behavior section on text-based cards' },
                 { label: 'Behavior on Combined Results', value: <StatusBadge value={s.show_behavior_on_combined_result} />, desc: 'Show behavior section on combined cards' },
                 { label: 'Text Category Scope', value: <span className="capitalize text-sm">{s.text_category_scope.replace(/_/g, ' ')}</span>, desc: 'How text categories are managed across sessions' },
+                { label: 'Show Text Comments', value: <StatusBadge value={s.show_text_result_comment} />, desc: 'Show comment column on text-based cards' },
                 { label: 'Text Rating Options', value: <span className="text-sm">{(s.text_rating_options || []).length} option(s)</span>, desc: 'Rating scale for text-based results' },
                 { label: 'Score Template', value: <span className="font-mono text-xs">{s.score_template || 'None'}</span>, desc: 'Active frontend template for score results' },
                 { label: 'Text Template', value: <span className="font-mono text-xs">{s.text_template || 'None'}</span>, desc: 'Active frontend template for text results' },

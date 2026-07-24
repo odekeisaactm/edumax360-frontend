@@ -110,6 +110,10 @@ const templateComponents: Record<string, any> = {
     loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
     ssr: false,
   }),
+  'text_2_modern': nextDynamic(() => import('@/components/result/templates/text/2_modern/preview'), {
+    loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
+    ssr: false,
+  }),
 };
 
 type ReportMode = 'term' | 'cumulative' | 'both';
@@ -488,6 +492,7 @@ export default function ResultPreviewPage() {
               midtermGradeList={data.midterm_grade_list}
               schoolInfo={data.school_info}
               fieldList={data.field_list}
+              ratingOptions={data.rating_options}
             />
           </div>
         ) : (
