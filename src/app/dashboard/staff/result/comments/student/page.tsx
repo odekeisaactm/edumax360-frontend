@@ -306,7 +306,7 @@ export default function ComputeCommentsIndividualPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const isHeadTeacher = user?.is_superuser || hasPermission('result.add_head_teacher_comment');
+  const isHeadTeacher = true // user?.is_superuser || hasPermission('result.add_head_teacher_comment');
   const maxRating = settings?.behavior_max_rating || 5;
   const customFields = settings?.custom_comment_fields || [];
 
