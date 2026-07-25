@@ -1670,10 +1670,14 @@ downloadPasswordSheet: async (params?: { ward_class?: number; ward_class_section
       params,
       responseType: 'blob'
     });
+    const disposition = response.headers['content-disposition'] || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : 'parent_credentials.xlsx';
+
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', 'parent_credentials.xlsx');
+    link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1692,7 +1696,31 @@ downloadPasswordSheet: async (params?: { ward_class?: number; ward_class_section
     link.click();
     link.remove();
   },
+  previewCredentialsEmail: async (payload: {
+    mode: 'all' | 'filtered' | 'selected';
+    ids?: number[];
+    filters?: Record<string, any>;
+    skip_if_ever_emailed?: boolean;
+    skip_if_emailed_within_days?: number;
+  }): Promise<any> => {
+    const response = await api.post<ApiResponse<any>>(
+      '/api/student/parents/credentials/preview-email/', payload
+    );
+    return response.data.data ?? response.data;
+  },
 
+  sendCredentialsEmail: async (payload: {
+    mode: 'all' | 'filtered' | 'selected';
+    ids?: number[];
+    filters?: Record<string, any>;
+    skip_if_ever_emailed?: boolean;
+    skip_if_emailed_within_days?: number;
+  }): Promise<{ queued: boolean; recipient_count: number; message?: string }> => {
+    const response = await api.post<ApiResponse<any>>(
+      '/api/student/parents/credentials/send-email/', payload
+    );
+    return response.data.data ?? response.data;
+  },
 };
 
 export const studentsAPI = {

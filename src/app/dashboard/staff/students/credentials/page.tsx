@@ -8,8 +8,9 @@ import {
 import {
   KeyRound, Search, X, Check, AlertCircle, Loader2,
   RefreshCw, Download, FileSpreadsheet, FileText,
-  ChevronDown, ChevronLeft, ChevronRight,
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
   GraduationCap, UserCheck, ShieldOff, Settings,
+  Mail, Send, Clock, Users, CheckSquare, Square,
 } from 'lucide-react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -29,6 +30,28 @@ function extractError(err: any): string {
     if (d.message) return String(d.message);
   }
   return err?.message || 'An unexpected error occurred.';
+}
+
+function formatRelativeTime(iso: string | null | undefined): string {
+  if (!iso) return 'Never';
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 30) return `${diffDay}d ago`;
+  const diffMonth = Math.floor(diffDay / 30);
+  if (diffMonth < 12) return `${diffMonth}mo ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function formatExactTime(iso: string | null | undefined): string {
+  if (!iso) return 'Never emailed';
+  return new Date(iso).toLocaleString();
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
@@ -71,8 +94,8 @@ function FieldCheckbox({ label, checked, onChange, locked = false }: {
 }
 
 // ─── DownloadDropdown ─────────────────────────────────────────────────────────
-function DownloadDropdown({ onExcel, onPDF, downloading }: {
-  onExcel: () => void; onPDF: () => void; downloading: boolean;
+function DownloadDropdown({ onExcel, onPDF, downloading, label = 'Download' }: {
+  onExcel: () => void; onPDF: () => void; downloading: boolean; label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -91,7 +114,7 @@ function DownloadDropdown({ onExcel, onPDF, downloading }: {
         className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-blue-200 disabled:opacity-50"
       >
         {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-        Download
+        {label}
         <ChevronDown className="h-3.5 w-3.5 opacity-70" />
       </button>
       {open && (
@@ -124,26 +147,248 @@ function DownloadDropdown({ onExcel, onPDF, downloading }: {
   );
 }
 
+// ─── SendCredentialsDropdown ──────────────────────────────────────────────────
+function SendCredentialsDropdown({ onSendAll, onSendFiltered, onSendSelected, selectedCount, hasFilters }: {
+  onSendAll: () => void; onSendFiltered: () => void; onSendSelected: () => void;
+  selectedCount: number; hasFilters: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(p => !p)}
+        className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold bg-white text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all shadow-sm"
+      >
+        <Mail className="h-4 w-4 text-blue-600" />
+        Send Credentials
+        <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 w-64 bg-white rounded-2xl border border-slate-100 shadow-xl z-50 overflow-hidden">
+          <div className="p-1.5">
+            <button onClick={() => { onSendSelected(); setOpen(false); }}
+              disabled={selectedCount === 0}
+              className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed">
+              <div className="w-8 h-8 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <CheckSquare className="h-4 w-4 text-blue-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-slate-800 text-xs">Selected ({selectedCount})</p>
+                <p className="text-[11px] text-slate-400">Only checked rows</p>
+              </div>
+            </button>
+            <button onClick={() => { onSendFiltered(); setOpen(false); }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl transition-colors text-left">
+              <div className="w-8 h-8 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Search className="h-4 w-4 text-indigo-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-slate-800 text-xs">Filtered{hasFilters ? '' : ' (no filters set)'}</p>
+                <p className="text-[11px] text-slate-400">Everyone matching current search/filters</p>
+              </div>
+            </button>
+            <button onClick={() => { onSendAll(); setOpen(false); }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl transition-colors text-left">
+              <div className="w-8 h-8 bg-slate-100 border border-slate-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Users className="h-4 w-4 text-slate-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-slate-800 text-xs">All Parents</p>
+                <p className="text-[11px] text-slate-400">Entire database</p>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Skipped group accordion ──────────────────────────────────────────────────
+function SkippedGroup({ title, count, parents, expanded, onToggle, onDownload, downloading }: {
+  title: string; count: number; parents: any[]; expanded: boolean;
+  onToggle: () => void; onDownload: (fmt: 'excel' | 'pdf') => void; downloading: boolean;
+}) {
+  if (count === 0) return null;
+  return (
+    <div className="border border-slate-100 rounded-xl overflow-hidden">
+      <button onClick={onToggle} className="w-full flex items-center justify-between px-4 py-3 bg-slate-50/60 hover:bg-slate-100/60 transition-colors">
+        <span className="text-sm font-semibold text-slate-700">{title} <span className="text-slate-400 font-normal">({count})</span></span>
+        {expanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+      </button>
+      {expanded && (
+        <div className="p-4 space-y-3">
+          <div className="max-h-40 overflow-y-auto space-y-1">
+            {parents.map((p: any) => (
+              <div key={p.id} className="flex items-center justify-between text-xs text-slate-600 py-1">
+                <span>{toTitleCase(p.full_name)}</span>
+                <span className="font-mono text-slate-400">{p.parent_id}</span>
+              </div>
+            ))}
+            {count > parents.length && (
+              <p className="text-[11px] text-slate-400 pt-1">…and {count - parents.length} more</p>
+            )}
+          </div>
+          <div className="flex gap-2 pt-2 border-t border-slate-100">
+            <button onClick={() => onDownload('excel')} disabled={downloading}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg hover:bg-emerald-100 transition-colors disabled:opacity-50">
+              <FileSpreadsheet className="h-3.5 w-3.5" /> Download Excel
+            </button>
+            <button onClick={() => onDownload('pdf')} disabled={downloading}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold bg-red-50 text-red-600 border border-red-100 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50">
+              <FileText className="h-3.5 w-3.5" /> Download PDF
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Send Credentials Modal ────────────────────────────────────────────────────
+function SendCredentialsModal({
+  mode, onClose, preview, previewLoading, onRefreshPreview,
+  skipIfEverEmailed, setSkipIfEverEmailed,
+  useSkipDays, setUseSkipDays, skipDays, setSkipDays,
+  onConfirm, sending, onDownloadSkipped, downloadingSkipped,
+}: {
+  mode: 'all' | 'filtered' | 'selected';
+  onClose: () => void;
+  preview: any;
+  previewLoading: boolean;
+  onRefreshPreview: () => void;
+  skipIfEverEmailed: boolean; setSkipIfEverEmailed: (v: boolean) => void;
+  useSkipDays: boolean; setUseSkipDays: (v: boolean) => void;
+  skipDays: number | ''; setSkipDays: (v: number | '') => void;
+  onConfirm: () => void; sending: boolean;
+  onDownloadSkipped: (group: 'no_email' | 'already_emailed', fmt: 'excel' | 'pdf') => void;
+  downloadingSkipped: boolean;
+}) {
+  const [expandedGroup, setExpandedGroup] = useState<'no_email' | 'already_emailed' | null>(null);
+  const modeLabel = mode === 'all' ? 'all parents' : mode === 'selected' ? 'the selected parents' : 'the filtered parents';
+
+  const total = preview?.total_considered ?? 0;
+  const eligible = preview?.eligible_count ?? 0;
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
+              <Send className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-900 text-base">Send Login Credentials</h3>
+              <p className="text-xs text-slate-400">Sending to {modeLabel}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* skip options */}
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={skipIfEverEmailed}
+                onChange={e => setSkipIfEverEmailed(e.target.checked)}
+                className="rounded border-slate-300" />
+              <span className="text-sm text-slate-700">Skip parents who have ever been emailed</span>
+            </label>
+
+            {!skipIfEverEmailed && (
+              <label className="flex items-center gap-2 cursor-pointer pl-1">
+                <input type="checkbox" checked={useSkipDays}
+                  onChange={e => setUseSkipDays(e.target.checked)}
+                  className="rounded border-slate-300" />
+                <span className="text-sm text-slate-700">Skip if emailed within the last</span>
+                <input type="number" min={1} value={skipDays}
+                  disabled={!useSkipDays}
+                  onChange={e => setSkipDays(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-16 px-2 py-1 text-sm border border-slate-200 rounded-lg disabled:opacity-40" />
+                <span className="text-sm text-slate-700">days</span>
+              </label>
+            )}
+          </div>
+
+          {/* preview summary */}
+          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+            {previewLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+              </div>
+            ) : preview ? (
+              <>
+                <p className="text-sm font-semibold text-slate-800">
+                  Sending to <span className="text-blue-700">{eligible}</span> of {total} {mode === 'selected' ? 'selected' : ''}
+                </p>
+                {eligible === 0 && (
+                  <p className="text-xs text-amber-600 mt-1">No eligible recipients with the current filters — adjust the skip options above.</p>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-slate-400">Unable to load preview.</p>
+            )}
+          </div>
+
+          {/* skipped accordion */}
+          {preview && (preview.skipped?.no_email?.count > 0 || preview.skipped?.already_emailed?.count > 0) && (
+            <div className="space-y-2">
+              <SkippedGroup
+                title="No email on file"
+                count={preview.skipped.no_email.count}
+                parents={preview.skipped.no_email.parents}
+                expanded={expandedGroup === 'no_email'}
+                onToggle={() => setExpandedGroup(p => p === 'no_email' ? null : 'no_email')}
+                onDownload={(fmt) => onDownloadSkipped('no_email', fmt)}
+                downloading={downloadingSkipped}
+              />
+              <SkippedGroup
+                title="Already emailed"
+                count={preview.skipped.already_emailed.count}
+                parents={preview.skipped.already_emailed.parents}
+                expanded={expandedGroup === 'already_emailed'}
+                onToggle={() => setExpandedGroup(p => p === 'already_emailed' ? null : 'already_emailed')}
+                onDownload={(fmt) => onDownloadSkipped('already_emailed', fmt)}
+                downloading={downloadingSkipped}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 rounded-xl transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={sending || previewLoading || eligible === 0}
+            className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-blue-200 disabled:opacity-50"
+          >
+            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Send to {eligible}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Portal disabled banner ───────────────────────────────────────────────────
 function PortalDisabledBanner({ type }: { type: 'student' | 'parent' }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="w-16 h-16 bg-orange-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-orange-100">
-        <ShieldOff className="h-8 w-8 text-orange-400" />
-      </div>
-      <h3 className="font-bold text-slate-800 text-base mb-1">
-        {type === 'student' ? 'Student' : 'Parent'} Portal is Disabled
-      </h3>
-      <p className="text-sm text-slate-400 max-w-sm mb-4">
-        Credential downloads are unavailable while the {type === 'student' ? 'student' : 'parent'} portal is
-        turned off. Enable it in Student Settings to proceed.
-      </p>
-      <a
-        href="/dashboard/staff/students/settings"
-        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors"
-      >
-        <Settings className="h-3.5 w-3.5" /> Go to Student Settings
-      </a>
+
     </div>
   );
 }
@@ -160,7 +405,7 @@ function NoLoginsBanner({ type }: { type: 'student' | 'parent' }) {
         No {type === 'student' ? 'students' : 'parents'} have login accounts yet. Enable
         &quot;Auto Generate Logins&quot; in Student Settings and register new records.
       </p>
-      <a
+        <a
         href="/dashboard/staff/students/settings"
         className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors"
       >
@@ -194,19 +439,6 @@ const PARENT_STATUS_META: Record<string, { dot: string; text: string; bg: string
   suspended: { dot: 'bg-orange-500',  text: 'text-orange-700',  bg: 'bg-orange-50',  border: 'border-orange-100'  },
   inactive:  { dot: 'bg-slate-400',   text: 'text-slate-500',   bg: 'bg-slate-100',  border: 'border-slate-200'   },
 };
-
-// ─── api helpers (add to your lib/api.ts if not present) ─────────────────────
-// credentialsAPI is a thin wrapper — you can inline these calls or add them to
-// your existing studentsAPI / parentsAPI objects.
-
-async function fetchCredentials(type: 'students' | 'parents', params: Record<string, any>) {
-  // reuse your existing axios instance / api util
-  const qs = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => { if (v !== '' && v != null) qs.set(k, String(v)); });
-  // Using the same pattern as your existing API calls:
-  if (type === 'students') return (studentsAPI as any).get(`/students/credentials/?${qs}`);
-  return (parentsAPI as any).get(`/parents/credentials/?${qs}`);
-}
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function CredentialsPage() {
@@ -246,7 +478,24 @@ export default function CredentialsPage() {
 
   const [parentSearch, setParentSearch]             = useState('');
   const [parentStatus, setParentStatus]             = useState('');
+  const [parentClass, setParentClass]               = useState('');
+  const [parentClassSection, setParentClassSection] = useState('');
+  const [parentSections, setParentSections]         = useState<any[]>([]);
   const [parentOptionalFields, setParentOptionalFields] = useState<Set<string>>(new Set());
+
+  // ── parent selection (for send-credentials) ──
+  const [selectedParentIds, setSelectedParentIds] = useState<Set<number>>(new Set());
+
+  // ── send credentials modal ──
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailMode, setEmailMode] = useState<'all' | 'filtered' | 'selected'>('filtered');
+  const [skipIfEverEmailed, setSkipIfEverEmailed] = useState(false);
+  const [useSkipDays, setUseSkipDays] = useState(true);
+  const [skipDays, setSkipDays] = useState<number | ''>(7);
+  const [preview, setPreview] = useState<any>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [downloadingSkipped, setDownloadingSkipped] = useState(false);
 
   // ── shared ──
   const [downloading, setDownloading] = useState(false);
@@ -278,7 +527,7 @@ export default function CredentialsPage() {
       .catch(() => {});
   }, []);
 
-  // ── class → sections ──
+  // ── class → sections (student tab) ──
   const handleClassChange = (classId: string) => {
     setStudentClass(classId);
     setStudentSection('');
@@ -294,6 +543,32 @@ export default function CredentialsPage() {
       }
     }
     setSections(extracted);
+  };
+
+  // ── class → sections (parent tab) ──
+  const handleParentClassChange = (classId: string) => {
+    setParentClass(classId);
+    setParentClassSection('');
+    if (!classId) {
+      setParentSections([]);
+      fetchParents(1, { cls: '', section: '' });
+      return;
+    }
+    const cls = classes.find(c => String(c.id) === classId);
+    if (!cls?.configurations?.length) {
+      setParentSections([]);
+    } else {
+      const seen = new Set<number>();
+      const extracted: any[] = [];
+      for (const config of cls.configurations) {
+        if (config.is_active && !seen.has(config.class_section)) {
+          seen.add(config.class_section);
+          extracted.push({ id: config.class_section, name: config.class_section_name });
+        }
+      }
+      setParentSections(extracted);
+    }
+    fetchParents(1, { cls: classId, section: '' });
   };
 
   // ── fetch students ──
@@ -325,14 +600,20 @@ export default function CredentialsPage() {
   }, [studentSearch, studentClass, studentSection, studentGender]);
 
   // ── fetch parents ──
-  const fetchParents = useCallback(async (pg = 1, opts?: { search?: string; status?: string }) => {
+  const fetchParents = useCallback(async (pg = 1, opts?: {
+    search?: string; status?: string; cls?: string; section?: string;
+  }) => {
     setParentLoading(true); setParentError(null);
     try {
       const params: Record<string, any> = { page: pg, page_size: PAGE_SIZE };
-      const s  = opts?.search ?? parentSearch;
-      const st = opts?.status ?? parentStatus;
-      if (s)  params.search = s;
-      if (st) params.status = st;
+      const s  = opts?.search  ?? parentSearch;
+      const st = opts?.status  ?? parentStatus;
+      const c  = opts?.cls     ?? parentClass;
+      const sc = opts?.section ?? parentClassSection;
+      if (s)  params.search                = s;
+      if (st) params.status                = st;
+      if (c)  params.current_class         = c;
+      if (sc) params.current_class_section = sc;
 
       const data = await (parentsAPI as any).getCredentials(params);
       const results = data?.results ?? data?.data ?? data ?? [];
@@ -344,7 +625,7 @@ export default function CredentialsPage() {
     } finally {
       setParentLoading(false);
     }
-  }, [parentSearch, parentStatus]);
+  }, [parentSearch, parentStatus, parentClass, parentClassSection]);
 
   // ── initial load ──
   useEffect(() => { fetchStudents(1); }, []);
@@ -371,6 +652,23 @@ export default function CredentialsPage() {
   const toggleParentField = (key: string) =>
     setParentOptionalFields(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
+  // ── parent row selection ──
+  const toggleParentSelected = (id: number) =>
+    setSelectedParentIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const allOnPageSelected = parents.length > 0 && parents.every(p => selectedParentIds.has(p.id));
+  const toggleSelectAllOnPage = () => {
+    setSelectedParentIds(prev => {
+      const n = new Set(prev);
+      if (allOnPageSelected) {
+        parents.forEach(p => n.delete(p.id));
+      } else {
+        parents.forEach(p => n.add(p.id));
+      }
+      return n;
+    });
+  };
+
   // ── download helpers ──
   const buildStudentDownloadParams = () => {
     const p: Record<string, any> = {};
@@ -384,8 +682,10 @@ export default function CredentialsPage() {
 
   const buildParentDownloadParams = () => {
     const p: Record<string, any> = {};
-    if (parentSearch) p.search = parentSearch;
-    if (parentStatus) p.status = parentStatus;
+    if (parentSearch)         p.search                = parentSearch;
+    if (parentStatus)         p.status                = parentStatus;
+    if (parentClass)          p.current_class         = parentClass;
+    if (parentClassSection)   p.current_class_section = parentClassSection;
     if (parentOptionalFields.size > 0) p.fields = Array.from(parentOptionalFields).join(',');
     return p;
   };
@@ -416,6 +716,89 @@ export default function CredentialsPage() {
     try { await (parentsAPI as any).downloadCredentialsPDF(buildParentDownloadParams()); }
     catch { showToast('error', 'Failed to download PDF file'); }
     finally { setDownloading(false); }
+  };
+
+  // ── send-credentials: build request payload ──
+  const buildEmailPayload = (mode: 'all' | 'filtered' | 'selected') => {
+    const payload: any = { mode };
+    if (mode === 'selected') {
+      payload.ids = Array.from(selectedParentIds);
+    } else if (mode === 'filtered') {
+      payload.filters = {
+        search: parentSearch || undefined,
+        status: parentStatus || undefined,
+        current_class: parentClass || undefined,
+        current_class_section: parentClassSection || undefined,
+      };
+    }
+    if (skipIfEverEmailed) {
+      payload.skip_if_ever_emailed = true;
+    } else if (useSkipDays && skipDays) {
+      payload.skip_if_emailed_within_days = Number(skipDays);
+    }
+    return payload;
+  };
+
+  const hasActiveParentFilters = !!(parentSearch || parentStatus || parentClass || parentClassSection);
+
+  // ── send-credentials: preview ──
+  const fetchPreview = useCallback(async (mode: 'all' | 'filtered' | 'selected') => {
+    setPreviewLoading(true);
+    try {
+      const payload = buildEmailPayload(mode);
+      const data = await parentsAPI.previewCredentialsEmail(payload);      setPreview(data);
+    } catch (err) {
+      showToast('error', extractError(err));
+      setPreview(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [parentSearch, parentStatus, parentClass, parentClassSection, selectedParentIds, skipIfEverEmailed, useSkipDays, skipDays]);
+
+  const openSendModal = (mode: 'all' | 'filtered' | 'selected') => {
+    setEmailMode(mode);
+    setEmailModalOpen(true);
+  };
+
+  useEffect(() => {
+    if (!emailModalOpen) return;
+    fetchPreview(emailMode);
+  }, [emailModalOpen, emailMode, skipIfEverEmailed, useSkipDays, skipDays]);
+
+  const handleConfirmSend = async () => {
+    setSending(true);
+    try {
+      const payload = buildEmailPayload(emailMode);
+      const data = await parentsAPI.sendCredentialsEmail(payload);
+      if (data?.queued) {
+        showToast('success', `Sending credentials to ${data.recipient_count} parent${data.recipient_count !== 1 ? 's' : ''}…`);
+        setEmailModalOpen(false);
+        setSelectedParentIds(new Set());
+        fetchParents(parentPage);
+      } else {
+        showToast('error', data?.message || 'No eligible parents to email.');
+      }
+    } catch (err) {
+      showToast('error', extractError(err));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleDownloadSkipped = async (group: 'no_email' | 'already_emailed', fmt: 'excel' | 'pdf') => {
+    if (!preview) return;
+    const ids = preview.skipped?.[group]?.parents?.map((p: any) => p.id) ?? [];
+    if (ids.length === 0) return;
+    setDownloadingSkipped(true);
+    try {
+      const params = { ids: ids.join(',') };
+      if (fmt === 'excel') await (parentsAPI as any).downloadCredentialsExcel(params);
+      else await (parentsAPI as any).downloadCredentialsPDF(params);
+    } catch {
+      showToast('error', 'Failed to download list');
+    } finally {
+      setDownloadingSkipped(false);
+    }
   };
 
   // ── shared input/select styles ──
@@ -459,6 +842,26 @@ export default function CredentialsPage() {
     <div className="space-y-5 pb-10">
       <ToastStack toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
 
+      {emailModalOpen && (
+        <SendCredentialsModal
+          mode={emailMode}
+          onClose={() => setEmailModalOpen(false)}
+          preview={preview}
+          previewLoading={previewLoading}
+          onRefreshPreview={() => fetchPreview(emailMode)}
+          skipIfEverEmailed={skipIfEverEmailed}
+          setSkipIfEverEmailed={setSkipIfEverEmailed}
+          useSkipDays={useSkipDays}
+          setUseSkipDays={setUseSkipDays}
+          skipDays={skipDays}
+          setSkipDays={setSkipDays}
+          onConfirm={handleConfirmSend}
+          sending={sending}
+          onDownloadSkipped={handleDownloadSkipped}
+          downloadingSkipped={downloadingSkipped}
+        />
+      )}
+
       {/* ── Page Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -471,13 +874,21 @@ export default function CredentialsPage() {
           <p className="text-sm text-slate-400 mt-1 pl-12">Export default login credentials for students and parents</p>
         </div>
 
-        {/* Download button — shown in header for convenience, also in toolbar */}
-        <div>
+        <div className="flex items-center gap-2">
           {tab === 'student' && settings?.student_portal_enabled !== false && (
             <DownloadDropdown onExcel={handleStudentExcel} onPDF={handleStudentPDF} downloading={downloading} />
           )}
           {tab === 'parent' && settings?.parent_portal_enabled !== false && (
-            <DownloadDropdown onExcel={handleParentExcel} onPDF={handleParentPDF} downloading={downloading} />
+            <>
+              <SendCredentialsDropdown
+                onSendAll={() => openSendModal('all')}
+                onSendFiltered={() => openSendModal('filtered')}
+                onSendSelected={() => openSendModal('selected')}
+                selectedCount={selectedParentIds.size}
+                hasFilters={hasActiveParentFilters}
+              />
+              <DownloadDropdown onExcel={handleParentExcel} onPDF={handleParentPDF} downloading={downloading} />
+            </>
           )}
         </div>
       </div>
@@ -591,11 +1002,9 @@ export default function CredentialsPage() {
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex-shrink-0">
                     Extra download columns:
                   </span>
-                  {/* locked fields — display only */}
                   {['Full Name', 'Reg Number', 'Username', 'Default Password'].map(l => (
                     <FieldCheckbox key={l} label={l} checked locked />
                   ))}
-                  {/* optional */}
                   {STUDENT_OPTIONAL.map(f => (
                     <FieldCheckbox
                       key={f.key}
@@ -718,7 +1127,7 @@ export default function CredentialsPage() {
               {/* Toolbar */}
               <div className="px-5 py-4 border-b border-slate-50 space-y-4">
 
-                {/* Row 1: search + status */}
+                {/* Row 1: search + status + class + section */}
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="relative flex-1 min-w-[180px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -747,6 +1156,30 @@ export default function CredentialsPage() {
                     <option value="suspended">Suspended</option>
                     <option value="inactive">Inactive</option>
                   </select>
+
+                  {/* Ward's class */}
+                  <select
+                    value={parentClass}
+                    onChange={e => handleParentClassChange(e.target.value)}
+                    className={inputCls}
+                    title="Filter by ward's class"
+                  >
+                    <option value="">All classes (ward)</option>
+                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+
+                  {/* Ward's section */}
+                  {useClassSections && (
+                    <select
+                      value={parentClassSection}
+                      onChange={e => { setParentClassSection(e.target.value); fetchParents(1, { section: e.target.value }); }}
+                      disabled={!parentClass || parentSections.length === 0}
+                      className={inputCls}
+                    >
+                      <option value="">{parentClass ? 'All sections' : 'Select class first'}</option>
+                      {parentSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  )}
 
                   <button onClick={() => fetchParents(parentPage)} title="Refresh"
                     className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
@@ -794,20 +1227,30 @@ export default function CredentialsPage() {
                 <>
                   {/* Table header */}
                   <div className="hidden sm:grid items-center gap-3 px-5 py-3 bg-slate-50/60 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wide"
-                    style={{ gridTemplateColumns: '1fr 150px 150px 80px' }}>
+                    style={{ gridTemplateColumns: '32px 1fr 150px 150px 100px 90px' }}>
+                    <button onClick={toggleSelectAllOnPage} className="flex items-center justify-center">
+                      {allOnPageSelected ? <CheckSquare className="h-4 w-4 text-blue-600" /> : <Square className="h-4 w-4 text-slate-300" />}
+                    </button>
                     <span>Parent</span>
                     <span>Username</span>
                     <span>Default Password</span>
                     <span>Status</span>
+                    <span>Last Emailed</span>
                   </div>
 
                   <div className="divide-y divide-slate-50">
                     {parents.map(p => {
                       const status = PARENT_STATUS_META[p.status ?? 'active'] ?? PARENT_STATUS_META.active;
+                      const isSelected = selectedParentIds.has(p.id);
                       return (
                         <div key={p.id}
-                          className="flex sm:grid items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 transition-colors"
-                          style={{ gridTemplateColumns: '1fr 150px 150px 80px' }}>
+                          className={`flex sm:grid items-center gap-3 px-5 py-3.5 transition-colors ${isSelected ? 'bg-blue-50/40' : 'hover:bg-slate-50/50'}`}
+                          style={{ gridTemplateColumns: '32px 1fr 150px 150px 100px 90px' }}>
+
+                          {/* Checkbox */}
+                          <button onClick={() => toggleParentSelected(p.id)} className="flex items-center justify-center">
+                            {isSelected ? <CheckSquare className="h-4 w-4 text-blue-600" /> : <Square className="h-4 w-4 text-slate-300" />}
+                          </button>
 
                           {/* Name */}
                           <div className="min-w-0">
@@ -838,6 +1281,14 @@ export default function CredentialsPage() {
                               {(p.status || 'active').charAt(0).toUpperCase() + (p.status || 'active').slice(1)}
                             </span>
                           </div>
+
+                          {/* Last Emailed */}
+                          <div className="hidden sm:block" title={formatExactTime(p.credentials_last_emailed_at)}>
+                            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${p.credentials_last_emailed_at ? 'text-slate-500' : 'text-slate-300'}`}>
+                              <Clock className="h-3 w-3" />
+                              {formatRelativeTime(p.credentials_last_emailed_at)}
+                            </span>
+                          </div>
                         </div>
                       );
                     })}
@@ -848,6 +1299,9 @@ export default function CredentialsPage() {
                     <p className="text-xs text-slate-400">
                       Showing {((parentPage - 1) * PAGE_SIZE) + 1}–{Math.min(parentPage * PAGE_SIZE, parentTotal)} of{' '}
                       <span className="font-semibold text-slate-600">{parentTotal}</span> parent{parentTotal !== 1 ? 's' : ''}
+                      {selectedParentIds.size > 0 && (
+                        <span className="ml-2 text-blue-600 font-semibold">· {selectedParentIds.size} selected</span>
+                      )}
                     </p>
                     <Pagination page={parentPage} total={parentTotal} onPage={p => fetchParents(p)} />
                   </div>
