@@ -5,15 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useWard, Ward } from '@/context/WardContext';
 import { useAuth } from '@/context/AuthContext';
 import {
-  GraduationCap, ChevronRight, Loader2,
-  AlertCircle, Users, LogOut, ShieldCheck
+  ChevronRight, Loader2,
+  AlertCircle, Users, ShieldCheck
 } from 'lucide-react';
-import { SOFTWARE_NAME } from '@/lib/constants';
 
 export default function SelectWardPage() {
   const router = useRouter();
   const { wards, loading, setSelectedWard } = useWard();
-  const { logout, user } = useAuth();
+  const { user } = useAuth();
 
   const handleSelect = (ward: Ward) => {
     setSelectedWard(ward);
@@ -35,26 +34,6 @@ export default function SelectWardPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* ── Navbar ── */}
-      <nav className="px-6 py-4 bg-white border-b border-slate-200 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-200">
-            <GraduationCap className="h-6 w-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-black text-slate-900 leading-tight">PARENT PORTAL</h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{SOFTWARE_NAME}</p>
-          </div>
-        </div>
-        <button
-          onClick={logout}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-        >
-          <LogOut className="h-4 w-4" />
-          <span className="hidden sm:inline">Sign Out</span>
-        </button>
-      </nav>
-
       {/* ── Main Content ── */}
       <main className="flex-1 flex flex-col items-center justify-center p-6 pb-20">
         <div className="w-full max-w-2xl mx-auto space-y-8">

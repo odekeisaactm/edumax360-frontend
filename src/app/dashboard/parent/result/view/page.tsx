@@ -4,11 +4,12 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import nextDynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useWard } from '@/context/WardContext';
 import { api } from '@/lib/api';
 import {
   Loader2, AlertCircle, ArrowLeft, Download, Printer,
-  X, CheckCircle2, AlertTriangle
+  X, CheckCircle2, AlertTriangle, Lock, Receipt, Layers
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ interface PrintData {
     total_score?: number;
     average_score?: number;
     result_type: string;
+    is_last_term?: boolean;
   };
   behavior_categories: any[];
   behavior_ratings: Record<string, number>;
@@ -120,10 +122,17 @@ export default function ParentResultViewPage() {
 
   const [data, setData] = useState<PrintData | null>(null);
   const [activeTemplates, setActiveTemplates] = useState<ActiveTemplates | null>(null);
+
+  // ── States ──
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isDownloadingCum, setIsDownloadingCum] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  // ── Fee Locking States ──
+  const [feeBlocked, setFeeBlocked] = useState(false);
+  const [feeReason, setFeeReason] = useState("");
 
   const showToast = (type: 'success' | 'error' | 'warn', message: string) => {
     const id = ++_toastId;
@@ -141,6 +150,8 @@ export default function ParentResultViewPage() {
 
     setLoading(true);
     setError(null);
+    setFeeBlocked(false);
+
     try {
       const [printData, templatesData] = await Promise.all([
         api.get('/api/result/detail/print-data/', {
@@ -155,8 +166,14 @@ export default function ParentResultViewPage() {
 
       setData(printData.data);
       setActiveTemplates(templatesData.data);
-    } catch (err) {
-      setError(extractError(err));
+    } catch (err: any) {
+      // ── STRICT FEE RESTRICTION CHECK (HTTP 402) ──
+      if (err.response && err.response.status === 402) {
+        setFeeBlocked(true);
+        setFeeReason(err.response.data.reason || "Outstanding fees prevent access to this result.");
+      } else {
+        setError(extractError(err));
+      }
     } finally {
       setLoading(false);
     }
@@ -168,15 +185,19 @@ export default function ParentResultViewPage() {
     window.print();
   };
 
-  const handleDownloadPDF = async () => {
-    if (!selectedWard || !periodId) return;
-    setIsDownloading(true);
+  const handleDownloadPDF = async (downloadType: 'term' | 'cumulative' = 'term') => {
+    if (!selectedWard || !periodId || !data) return;
+
+    if (downloadType === 'cumulative') setIsDownloadingCum(true);
+    else setIsDownloading(true);
+
     try {
       const response = await api.get('/api/result/detail/download-pdf/', {
         params: {
           student_id: selectedWard.id,
           period_id: parseInt(periodId),
           comment_type: termType,
+          download_type: downloadType,
         },
         responseType: 'blob',
       });
@@ -185,25 +206,30 @@ export default function ParentResultViewPage() {
       const link = document.createElement('a');
       link.href = url;
 
-      const fileName = `${selectedWard.first_name}_${selectedWard.last_name}_${termType === 'midterm' ? 'Midterm' : 'End_of_Term'}_Result.pdf`;
+      const firstName = data.student.first_name.replace(' ', '_');
+      const lastName = data.student.last_name.replace(' ', '_');
+
+      const fileName = downloadType === 'cumulative'
+        ? `${lastName}_${firstName}_Cumulative_Result.pdf`
+        : `${lastName}_${firstName}_${termType === 'midterm' ? 'Midterm' : 'End_of_Term'}_Result.pdf`;
+
       link.setAttribute('download', fileName);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
 
-      showToast('success', 'PDF downloaded successfully!');
+      showToast('success', `${downloadType === 'cumulative' ? 'Cumulative' : 'Term'} PDF downloaded successfully!`);
     } catch (err) {
-      showToast('error', 'Failed to download PDF. Please try again.');
+      showToast('error', `Failed to download PDF. Please try again.`);
     } finally {
       setIsDownloading(false);
+      setIsDownloadingCum(false);
     }
   };
 
-  // Determine which template to use based on result type
   const getTemplateId = () => {
     if (!data || !activeTemplates) return null;
-
     const resultType = data.result.result_type;
     if (resultType === 'score') return activeTemplates.score?.selected_id;
     if (resultType === 'text') return activeTemplates.text?.selected_id;
@@ -223,9 +249,48 @@ export default function ParentResultViewPage() {
     );
   }
 
+  if (feeBlocked) {
+    return (
+      <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="bg-white max-w-lg w-full rounded-3xl shadow-2xl overflow-hidden border border-slate-100 flex flex-col animate-in zoom-in-95 duration-200">
+          <div className="bg-red-50 p-6 flex flex-col items-center justify-center border-b border-red-100">
+            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
+              <Lock className="w-8 h-8 text-red-500" />
+            </div>
+            <h2 className="text-xl font-black text-red-900 text-center">Result Withheld</h2>
+            <p className="text-sm font-semibold text-red-700/80 text-center mt-1 uppercase tracking-widest">
+              Financial Restriction Active
+            </p>
+          </div>
+          <div className="p-6 sm:p-8 space-y-6">
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-center">
+              <p className="text-slate-600 text-sm leading-relaxed font-medium">
+                {feeReason}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <Link
+                href="/dashboard/parent/fees"
+                className="w-full flex items-center justify-center gap-2 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-indigo-200"
+              >
+                <Receipt className="w-5 h-5" /> View Invoices & Pay
+              </Link>
+              <button
+                onClick={() => router.back()}
+                className="w-full flex items-center justify-center gap-2 py-3.5 bg-white text-slate-700 border border-slate-200 font-bold rounded-xl hover:bg-slate-50 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" /> Go Back
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (error || !data) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="min-h-[60vh] flex items-center justify-center p-4">
         <div className="max-w-md w-full text-center bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 p-8 space-y-4">
           <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-2">
             <AlertCircle className="h-8 w-8 text-red-500" />
@@ -237,7 +302,7 @@ export default function ParentResultViewPage() {
               onClick={() => router.back()}
               className="inline-flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-slate-800 transition-colors shadow-md"
             >
-              <ArrowLeft className="h-4 w-4" /> Go Back to Selection
+              <ArrowLeft className="w-4 h-4" /> Go Back
             </button>
           </div>
         </div>
@@ -249,54 +314,68 @@ export default function ParentResultViewPage() {
     <div className="max-w-6xl mx-auto pb-20 space-y-6 print:space-y-0 print:p-0 print:m-0">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
-      {/* ── Action Bar (Hidden when printing) ── */}
-      <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden transition-all">
+      {/* ── Action Bar (Responsive Flex-Wrap) ── */}
+      <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200 shadow-sm p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden transition-all">
 
-        <div className="flex items-center gap-4 w-full sm:w-auto">
+        <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
           <button
             onClick={() => router.back()}
-            className="p-2.5 text-slate-500 bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-900 rounded-xl transition-all shadow-sm flex-shrink-0"
+            className="p-2 sm:p-2.5 text-slate-500 bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-900 rounded-xl transition-all shadow-sm flex-shrink-0"
             title="Go Back"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest truncate">
+            <h2 className="text-sm sm:text-base font-black text-slate-800 uppercase tracking-widest truncate">
               {data.student.first_name} {data.student.last_name}
             </h2>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest truncate mt-0.5">
+            <p className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-widest truncate mt-0.5">
               {data.result.session_name} • {data.result.period_name}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+        {/* Buttons now wrap neatly on mobile, taking appropriate widths */}
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3 w-full sm:w-auto">
           {TemplateComponent && (
             <>
+              {data.result.is_last_term && data.result.result_type !== 'text' && termType === 'end_of_term' && (
+                <button
+                  onClick={() => handleDownloadPDF('cumulative')}
+                  disabled={isDownloadingCum || isDownloading}
+                  className="flex-1 sm:flex-none min-w-[110px] inline-flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-2.5 bg-emerald-50 border-2 border-emerald-600 text-emerald-700 text-xs sm:text-sm font-bold rounded-xl hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                  title="Download full session cumulative report"
+                >
+                  {isDownloadingCum ? <Loader2 className="h-4 w-4 animate-spin" /> : <Layers className="h-4 w-4" />}
+                  {isDownloadingCum ? 'Downloading...' : 'Cumulative'}
+                </button>
+              )}
+
               <button
-                onClick={handleDownloadPDF}
-                disabled={isDownloading}
-                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-white border-2 border-indigo-600 text-indigo-700 text-sm font-bold rounded-xl hover:bg-indigo-50 transition-colors disabled:opacity-50"
+                onClick={() => handleDownloadPDF('term')}
+                disabled={isDownloading || isDownloadingCum}
+                className="flex-1 sm:flex-none min-w-[100px] inline-flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-2.5 bg-white border-2 border-indigo-600 text-indigo-700 text-xs sm:text-sm font-bold rounded-xl hover:bg-indigo-50 transition-colors disabled:opacity-50"
               >
                 {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                {isDownloading ? 'Saving...' : 'Save PDF'}
+                {isDownloading ? 'Downloading...' : 'PDF'}
               </button>
+
               <button
                 onClick={handlePrint}
-                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-indigo-200"
+                className="flex-none inline-flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs sm:text-sm font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-indigo-200"
               >
                 <Printer className="h-4 w-4" />
-                Print Result
+                <span className="hidden sm:inline">Print</span>
               </button>
             </>
           )}
         </div>
       </div>
 
-      {/* ── Template Component Container ── */}
-      <div className="print:m-0 flex justify-center">
+      {/* ── Scrollable Horizontal Wrapper for Mobile ── */}
+      <div className="print:m-0 flex justify-center w-full overflow-x-auto pb-6">
         {TemplateComponent ? (
-          <div className="bg-white print:bg-transparent shadow-2xl print:shadow-none shadow-slate-200/50 rounded-sm overflow-hidden border border-slate-200 print:border-none">
+          <div className="min-w-[210mm] bg-white print:bg-transparent shadow-2xl print:shadow-none shadow-slate-200/50 rounded-sm overflow-hidden border border-slate-200 print:border-none">
             <TemplateComponent
               student={data.student}
               result={data.result}

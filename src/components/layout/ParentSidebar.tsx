@@ -4,10 +4,10 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { SOFTWARE_NAME, SOFTWARE_TAGLINE } from '@/lib/constants';
+import { SOFTWARE_NAME } from '@/lib/constants';
 import {
   Home, Eye, CreditCard, Upload, History, Wallet, DollarSign,
-  User, Users, Phone, LogOut, ChevronDown, ChevronRight, GraduationCap, Award
+  User, Users, Phone, LogOut, ChevronDown, ChevronRight, GraduationCap, Award, Layers
 } from 'lucide-react';
 
 interface NavItem {
@@ -17,7 +17,7 @@ interface NavItem {
   current?: boolean;
   children?: NavItem[];
   moduleCode?: string;
-  action?: () => void; // Added for logout button
+  action?: () => void;
 }
 
 export function ParentSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -65,10 +65,16 @@ export function ParentSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: (
       moduleCode: 'result',
       children: [
         {
-          name: 'View Result',
+          name: 'Term Result',
           href: '/dashboard/parent/result',
           icon: <Eye className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/parent/result'),
+        },
+        {
+          name: 'Cumulative Result',
+          href: '/dashboard/parent/result/cumulative',
+          icon: <Layers className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/parent/cumulative'),
         }
       ],
     },
@@ -145,7 +151,6 @@ export function ParentSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: (
     },
   ];
 
-  // ── Recursive nav item renderer ───────────────────────────────────────────
   const renderNavItem = (item: NavItem, level = 0) => {
     const hasChildren = item.children && item.children.length > 0;
     const isExpanded = expandedItems.includes(item.name);
