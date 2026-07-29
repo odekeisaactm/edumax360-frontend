@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Lock, Pause,
   Users, UserCircle2, Wrench, Download, Copy, Check, Gift, Shield,
   Percent, Landmark, MinusCircle, PlusCircle, PlusSquare, Wallet,
-  X,
+  X, CopyPlus,
 } from 'lucide-react';
 
 // ─── Helpers (kept consistent with SalarySettingForm.tsx) ─────────────────────
@@ -180,6 +180,9 @@ export default function SalarySettingDetailPage() {
 
   const canEdit = !!(user?.is_superuser || hasPermission?.('salary_management.change_salaryrecordmodel'));
   const canActivate = !!(user?.is_superuser || hasPermission?.('salary_management.change_salaryrecordmodel'));
+  // Duplicating creates a new record, so gate it on the "add" permission
+  // (same permission the create page itself checks), not "change".
+  const canDuplicate = !!(user?.is_superuser || hasPermission?.('salary_management.add_salaryrecordmodel'));
 
   // ── Activate / deactivate ──
   // NOTE: backend has no dedicated toggle endpoint — PUT on the detail view
@@ -376,13 +379,23 @@ export default function SalarySettingDetailPage() {
           <div className="flex items-center gap-2 text-slate-700 font-semibold text-sm mb-2">
             <Wrench className="h-4 w-4 text-slate-500" /> Quick Actions
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button type="button" onClick={handleDownloadJson} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
               <Download className="h-3.5 w-3.5" /> Download
             </button>
             <button type="button" onClick={handleCopyJson} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg hover:bg-slate-200 transition-colors">
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copied ? 'Copied' : 'Copy'}
             </button>
+            {canDuplicate && (
+              <button
+                type="button"
+                onClick={() => router.push(`/dashboard/staff/salary/settings/create?duplicate_from=${data.id}`)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors"
+                title="Create a new setting using this one's structure"
+              >
+                <CopyPlus className="h-3.5 w-3.5" /> Duplicate as New
+              </button>
+            )}
           </div>
         </div>
       </div>

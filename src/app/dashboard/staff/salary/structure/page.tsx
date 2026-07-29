@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { salaryStructuresAPI } from '@/lib/salary_management.service';
-import { SalaryStructure } from '@/lib/salary_management.types';
+import { salaryStructuresAPI, salarySettingsAPI } from '@/lib/salary_management.service';
+import { SalaryStructure, SalarySetting } from '@/lib/salary_management.types';
 import {
   Users,
   Plus,
@@ -24,6 +24,11 @@ import {
   DollarSign,
   Calendar,
   UserCircle,
+  Square,
+  CheckSquare,
+  MinusSquare,
+  ListChecks,
+  Settings,
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -142,6 +147,167 @@ function ConfirmModal({
   );
 }
 
+// ─── Bulk Change-Setting Modal ─────────────────────────────────────────────────
+// Built as a single-purpose modal today, but the surrounding bulk-action bar
+// (see BulkActionBar below) is written to hold more than one action later —
+// adding "send mail" or similar just means adding another entry to the
+// `bulkActions` array in the main component and its own modal component.
+function BulkChangeSettingModal({
+  open,
+  selectedCount,
+  currentSearch,
+  onClose,
+  onSubmitted,
+}: {
+  open: boolean;
+  selectedCount: number;
+  currentSearch: string;
+  onClose: () => void;
+  onSubmitted: (result: { updated: number; skipped: number; settingName: string }) => void;
+}) {
+  const [target, setTarget] = useState<'all' | 'selected'>('all');
+  const [settings, setSettings] = useState<SalarySetting[]>([]);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingId, setSettingId] = useState<string>('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Default to "selected" when something is already checked, "all" otherwise.
+  useEffect(() => {
+    if (open) setTarget(selectedCount > 0 ? 'selected' : 'all');
+  }, [open, selectedCount]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      setSettingsLoading(true);
+      setSettingsError(null);
+      try {
+        const result: any = await salarySettingsAPI.list();
+        const list: SalarySetting[] = Array.isArray(result) ? result : result?.results || result?.data || [];
+        if (!cancelled) setSettings(list.filter((s) => s.is_active));
+      } catch (err) {
+        if (!cancelled) setSettingsError(extractError(err));
+      } finally {
+        if (!cancelled) setSettingsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
+
+  if (!open) return null;
+
+  const selectedSetting = settings.find((s) => String(s.id) === settingId);
+
+  const handleSubmit = async () => {
+    if (!settingId) {
+      setSubmitError('Choose a salary setting to apply.');
+      return;
+    }
+    if (target === 'selected' && selectedCount === 0) {
+      setSubmitError('No staff selected.');
+      return;
+    }
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      const result = await salaryStructuresAPI.bulkChangeSetting({
+        target,
+        salary_setting: Number(settingId),
+        ...(target === 'selected' ? {} : currentSearch ? { search: currentSearch } : {}),
+      } as any);
+      onSubmitted({ updated: result.updated, skipped: result.skipped, settingName: selectedSetting?.name || 'the selected setting' });
+    } catch (err) {
+      setSubmitError(extractError(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center flex-shrink-0">
+            <Settings className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900">Change Salary Setting</h3>
+            <p className="text-xs text-slate-400">Apply a salary setting to multiple staff at once</p>
+          </div>
+        </div>
+
+        {/* Target selector */}
+        <div className="space-y-2 mb-4">
+          <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${target === 'all' ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+            <input type="radio" checked={target === 'all'} onChange={() => setTarget('all')} className="mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-slate-800">All staff{currentSearch ? ' matching current search' : ''}</p>
+              <p className="text-xs text-slate-400">Ignores what's checked; applies to every active structure{currentSearch ? ` matching "${currentSearch}"` : ''}, across all pages.</p>
+            </div>
+          </label>
+          <label className={`flex items-start gap-3 p-3 rounded-xl border transition-colors ${selectedCount === 0 ? 'opacity-50 cursor-not-allowed border-slate-200' : `cursor-pointer ${target === 'selected' ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'}`}`}>
+            <input type="radio" checked={target === 'selected'} disabled={selectedCount === 0} onChange={() => setTarget('selected')} className="mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Selected staff only ({selectedCount})</p>
+              <p className="text-xs text-slate-400">Only the rows you've checked, including on other pages.</p>
+            </div>
+          </label>
+        </div>
+
+        {/* Setting picker */}
+        <div className="mb-2">
+          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">New Salary Setting</label>
+          {settingsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-slate-400 py-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading settings…
+            </div>
+          ) : settingsError ? (
+            <p className="text-sm text-red-600">{settingsError}</p>
+          ) : (
+            <select
+              value={settingId}
+              onChange={(e) => setSettingId(e.target.value)}
+              className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
+            >
+              <option value="">Select a setting…</option>
+              {settings.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {submitError && (
+          <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 mb-4 mt-2">
+            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <p className="text-sm">{submitError}</p>
+          </div>
+        )}
+
+        <div className="flex gap-3 mt-5">
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || settingsLoading || !settingId}
+            className="flex-1 px-4 py-2.5 rounded-xl font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {submitting ? (<><Loader2 className="h-4 w-4 animate-spin" /> Applying…</>) : 'Apply'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 20;
 
@@ -164,10 +330,19 @@ export default function SalaryStructureListPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Bulk selection state ──
+  // Persists across pagination (cross-page selection), by design — checking
+  // rows on page 1 then moving to page 2 keeps page 1's checks intact. It
+  // resets when the search/status filters change, since "what's selected"
+  // stops meaning the same thing once the visible set changes underneath it.
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+
   const canCreate = user?.is_superuser || hasPermission('salary_management.add_salaryrecordmodel');
   const canEdit = user?.is_superuser || hasPermission('salary_management.change_salaryrecordmodel');
   const canDelete = user?.is_superuser || hasPermission('salary_management.delete_salaryrecordmodel');
   const canView = user?.is_superuser || hasPermission('salary_management.view_salaryrecordmodel');
+  const canBulkEdit = canEdit;
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;
@@ -212,6 +387,11 @@ export default function SalaryStructureListPage() {
     };
   }, [search, statusFilter]);
 
+  // Selection no longer makes sense once the underlying filtered set changes.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [search, statusFilter]);
+
   // Initial load
   useEffect(() => {
     if (canView) {
@@ -233,6 +413,12 @@ export default function SalaryStructureListPage() {
           `Staff #${target.staff}`;
         setDeletingStructure(null);
         showToast('success', `Salary structure for "${staffName}" deleted`);
+        setSelectedIds((prev) => {
+          if (!prev.has(target.id)) return prev;
+          const next = new Set(prev);
+          next.delete(target.id);
+          return next;
+        });
       } catch (err) {
         showToast('error', extractError(err));
         setDeletingStructure(null);
@@ -252,6 +438,43 @@ export default function SalaryStructureListPage() {
   const activeCount = structures.filter((s) => s.is_active).length;
   const totalMonthly = structures.reduce((sum, s) => sum + parseFloat(s.monthly_salary), 0);
   const totalAnnual = structures.reduce((sum, s) => sum + parseFloat(s.annual_salary || '0'), 0);
+
+  // ── Selection helpers ──
+  const pageIds = useMemo(() => structures.map((s) => s.id), [structures]);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const somePageSelected = !allPageSelected && pageIds.some((id) => selectedIds.has(id));
+
+  const toggleRow = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const togglePage = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        pageIds.forEach((id) => next.delete(id));
+      } else {
+        pageIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkSubmitted = (result: { updated: number; skipped: number; settingName: string }) => {
+    setBulkModalOpen(false);
+    clearSelection();
+    let msg = `Applied "${result.settingName}" to ${result.updated} staff.`;
+    if (result.skipped) msg += ` Skipped ${result.skipped} already on this setting.`;
+    showToast('success', msg);
+    fetchStructures(page);
+  };
 
   // ── Permission guard ──
   if (!canView) {
@@ -277,6 +500,13 @@ export default function SalaryStructureListPage() {
         isDeleting={isDeleting}
         onConfirm={handleDelete}
         onCancel={() => setDeletingStructure(null)}
+      />
+      <BulkChangeSettingModal
+        open={bulkModalOpen}
+        selectedCount={selectedIds.size}
+        currentSearch={search}
+        onClose={() => setBulkModalOpen(false)}
+        onSubmitted={handleBulkSubmitted}
       />
 
       {/* ── Page Header ── */}
@@ -367,6 +597,20 @@ export default function SalaryStructureListPage() {
               </button>
             )}
 
+            {canBulkEdit && (
+              <button
+                onClick={() => setBulkModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors"
+              >
+                <ListChecks className="h-3.5 w-3.5" /> Bulk Actions
+                {selectedIds.size > 0 && (
+                  <span className="ml-0.5 px-1.5 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-bold leading-none">
+                    {selectedIds.size}
+                  </span>
+                )}
+              </button>
+            )}
+
             <button
               onClick={() => fetchStructures(page)}
               title="Refresh"
@@ -376,6 +620,18 @@ export default function SalaryStructureListPage() {
             </button>
           </div>
         </div>
+
+        {/* ── Selection status bar ── */}
+        {selectedIds.size > 0 && (
+          <div className="px-5 py-2.5 bg-indigo-50/70 border-b border-indigo-100 flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold text-indigo-700">
+              {selectedIds.size} staff selected{totalPages > 1 ? ' (may include other pages)' : ''}
+            </p>
+            <button onClick={clearSelection} className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline">
+              Clear selection
+            </button>
+          </div>
+        )}
 
         {/* ── Body States ── */}
         {loading ? (
@@ -414,7 +670,22 @@ export default function SalaryStructureListPage() {
         ) : (
           <>
             {/* Table header */}
-            <div className="grid grid-cols-[2rem_1fr_140px_130px_110px_100px_90px] items-center gap-3 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
+            <div className="grid grid-cols-[2rem_2rem_1fr_140px_130px_110px_100px_90px] items-center gap-3 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
+              <button
+                type="button"
+                onClick={canBulkEdit ? togglePage : undefined}
+                disabled={!canBulkEdit}
+                className="w-8 flex items-center justify-center text-slate-400 hover:text-indigo-600 disabled:cursor-default disabled:hover:text-slate-400"
+                title={allPageSelected ? 'Unselect page' : 'Select page'}
+              >
+                {allPageSelected ? (
+                  <CheckSquare className="h-4 w-4 text-indigo-600" />
+                ) : somePageSelected ? (
+                  <MinusSquare className="h-4 w-4 text-indigo-600" />
+                ) : (
+                  <Square className="h-4 w-4" />
+                )}
+              </button>
               <span className="w-8" />
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Staff</span>
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Monthly</span>
@@ -429,12 +700,23 @@ export default function SalaryStructureListPage() {
                 const staffName = (s as any).staff_detail?.full_name || (s as any).staff_name || `Staff #${s.staff}`;
                 const staffId = (s as any).staff_detail?.staff_id || null;
                 const deptName = (s as any).staff_detail?.department_name || null;
+                const isSelected = selectedIds.has(s.id);
 
                 return (
                   <div
                     key={s.id}
-                    className="grid grid-cols-[2rem_1fr_140px_130px_110px_100px_90px] items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 transition-colors"
+                    className={`grid grid-cols-[2rem_2rem_1fr_140px_130px_110px_100px_90px] items-center gap-3 px-5 py-3.5 transition-colors ${isSelected ? 'bg-indigo-50/50' : 'hover:bg-slate-50/50'}`}
                   >
+                    {/* Checkbox */}
+                    <button
+                      type="button"
+                      onClick={canBulkEdit ? () => toggleRow(s.id) : undefined}
+                      disabled={!canBulkEdit}
+                      className="w-8 flex items-center justify-center text-slate-300 hover:text-indigo-600 disabled:cursor-default disabled:hover:text-slate-300"
+                    >
+                      {isSelected ? <CheckSquare className="h-4 w-4 text-indigo-600" /> : <Square className="h-4 w-4" />}
+                    </button>
+
                     {/* Avatar */}
                     <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center flex-shrink-0">
                       <UserCircle className="h-4.5 w-4.5 text-indigo-400" />

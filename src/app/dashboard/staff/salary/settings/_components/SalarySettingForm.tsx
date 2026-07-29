@@ -462,13 +462,22 @@ function seedAdditionalFields(raw: any[], genId: () => string): AdditionalField[
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface SalarySettingFormProps {
   initialData?: SalarySetting;
+  // Duplicate flow: seed the structural fields (basic components, allowances,
+  // reliefs, tax brackets, statutory deductions, other deductions, income
+  // items, additional fields) from an existing setting, but this is still a
+  // CREATE — name/effective_from/effective_to are left for the user to set,
+  // and submit goes through the create endpoint, not update.
+  duplicateFrom?: SalarySetting;
 }
 
 // ─── Main form component ──────────────────────────────────────────────────────
-export default function SalarySettingForm({ initialData }: SalarySettingFormProps) {
+export default function SalarySettingForm({ initialData, duplicateFrom }: SalarySettingFormProps) {
   const router = useRouter();
   const { user, hasPermission } = useAuth();
   const isEdit = !!initialData;
+  // Structural seed source: edit uses the full record, duplicate uses the
+  // source record for structure only (name/dates are NOT pulled from here).
+  const structureSeed = initialData || duplicateFrom;
 
   const idCounterRef = useRef(0);
   const genId = useCallback(() => `item-${++idCounterRef.current}`, []);
@@ -505,29 +514,36 @@ export default function SalarySettingForm({ initialData }: SalarySettingFormProp
   });
   const toggle = (k: string) => setOpen((p) => ({ ...p, [k]: !p[k] }));
 
-  // ── Seed from initialData on edit ──
+  // ── Seed from initialData (edit) or duplicateFrom (duplicate) ──
   useEffect(() => {
-    if (!initialData || seeded) return;
-    setName(initialData.name || '');
-    setDescription(initialData.description || '');
-    setEffectiveFrom(initialData.effective_from || new Date().toISOString().split('T')[0]);
-    setEffectiveTo(initialData.effective_to || '');
-    setLeaveAllowancePercentage(toNum(initialData.leave_allowance_percentage, 10));
-    setIncludeLeaveInGross(initialData.include_leave_in_gross || false);
+    if (!structureSeed || seeded) return;
+
+    // Identity fields: only carried over for real edits. Duplicates start
+    // with a blank name/description and a fresh effective_from (today),
+    // leaving effective_to blank — same as a brand-new setting.
+    if (initialData) {
+      setName(initialData.name || '');
+      setDescription(initialData.description || '');
+      setEffectiveFrom(initialData.effective_from || new Date().toISOString().split('T')[0]);
+      setEffectiveTo(initialData.effective_to || '');
+    }
+
+    setLeaveAllowancePercentage(toNum(structureSeed.leave_allowance_percentage, 10));
+    setIncludeLeaveInGross(structureSeed.include_leave_in_gross || false);
 
     // Seed additional fields FIRST so based_on dropdowns are populated
     // before allowances/reliefs/statutory deductions try to reference them.
-    setAdditionalFields(seedAdditionalFields(initialData.additional_fields || [], genId));
+    setAdditionalFields(seedAdditionalFields(structureSeed.additional_fields || [], genId));
 
-    setBasicComponents(seedBasicComponents(initialData.basic_components || {}, genId));
-    setAllowances(seedAllowances(initialData.allowances || [], genId));
-    setReliefs(seedReliefs(initialData.reliefs_exemptions || [], genId));
-    setTaxBrackets(seedTaxBrackets(initialData.tax_brackets || [], genId));
-    setStatutoryDeductions(seedStatutoryDeductions(initialData.statutory_deductions || [], genId));
-    setOtherDeductions(seedOtherDeductions(initialData.other_deductions_config || [], genId));
-    setIncomeItems(seedIncomeItems(initialData.income_items || [], genId));
+    setBasicComponents(seedBasicComponents(structureSeed.basic_components || {}, genId));
+    setAllowances(seedAllowances(structureSeed.allowances || [], genId));
+    setReliefs(seedReliefs(structureSeed.reliefs_exemptions || [], genId));
+    setTaxBrackets(seedTaxBrackets(structureSeed.tax_brackets || [], genId));
+    setStatutoryDeductions(seedStatutoryDeductions(structureSeed.statutory_deductions || [], genId));
+    setOtherDeductions(seedOtherDeductions(structureSeed.other_deductions_config || [], genId));
+    setIncomeItems(seedIncomeItems(structureSeed.income_items || [], genId));
     setSeeded(true);
-  }, [initialData, genId, seeded]);
+  }, [structureSeed, initialData, genId, seeded]);
 
   // ── Derived ──
   const componentCodes = basicComponents.map((c) => c.code).filter(Boolean);
@@ -755,7 +771,11 @@ export default function SalarySettingForm({ initialData }: SalarySettingFormProp
             {isEdit ? `Edit: ${initialData?.name}` : 'Create Salary Setting'}
           </h1>
           <p className="text-sm text-slate-400 mt-0.5 pl-12">
-            {isEdit ? 'Update payroll rules, tax brackets, allowances, and deductions' : 'Define payroll rules, tax brackets, allowances, and deductions'}
+            {isEdit
+              ? 'Update payroll rules, tax brackets, allowances, and deductions'
+              : duplicateFrom
+              ? `Structure duplicated from "${duplicateFrom.name}" — set a new name and effective date`
+              : 'Define payroll rules, tax brackets, allowances, and deductions'}
           </p>
         </div>
       </div>

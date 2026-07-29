@@ -122,6 +122,10 @@ patch: async (id: number, data: Partial<SalaryStructureWrite>): Promise<SalarySt
   delete: async (id: number): Promise<void> => {
     await api.delete(`/api/salary-management/structures/${id}/`);
   },
+   bulkChangeSetting: async (payload: BulkChangeSettingPayload): Promise<BulkChangeSettingResult> => {
+    const response = await api.post('/api/salary-management/structures/bulk-change-setting/', payload);
+    return response.data.data || response.data;
+  },
 };
 
 // ====================================================================

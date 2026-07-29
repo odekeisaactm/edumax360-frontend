@@ -196,6 +196,18 @@ export interface SalaryStructureWrite {
   is_active?: boolean;
 }
 
+export interface BulkChangeSettingPayload {
+  target: 'all' | 'selected';
+  ids?: number[];
+  search?: string;
+  salary_setting: number;
+}
+
+export interface BulkChangeSettingResult {
+  updated: number;
+  skipped: number;
+}
+
 // ---------- SalaryRecord (Payslip) ----------
 export interface BasicComponentBreakdown {
   name: string;
