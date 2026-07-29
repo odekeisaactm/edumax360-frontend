@@ -34,6 +34,15 @@ function extractError(err: any): string {
   return err?.message || 'An unexpected error occurred.';
 }
 
+function toTitleCase(str: string): string {
+  return str
+    .toLowerCase()
+    .split(' ')
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
     <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
@@ -351,7 +360,10 @@ export default function StaffListPage() {
                 const type     = TYPE_META[s.staff_type ?? ''];
                 const deptName = (s as any).department_name ?? departments.find(d => d.id === s.department)?.name ?? '—';
                 const posName  = (s as any).position_name ?? null;
-                const fullName = s.full_name ?? (`${s.first_name ?? ''} ${s.last_name ?? ''}`.trim() || `Staff #${s.id}`);
+                const fullName = toTitleCase(
+                  s.full_name ?? (`${s.first_name ?? ''} ${s.last_name ?? ''}`.trim() || `Staff #${s.id}`)
+                );
+
                  return (
                   <div key={s.id}
                     className="grid grid-cols-[2rem_1fr_140px_110px_100px_90px] items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 transition-colors">
