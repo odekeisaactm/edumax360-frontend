@@ -6,6 +6,7 @@
 import api from './api';
 import type {
   // Core models
+  PaginatedResponse,
   SalarySetting,
   SalarySettingWrite,
   SalaryStructure,
@@ -86,10 +87,10 @@ export const salaryStructuresAPI = {
   /**
    * List salary structures with optional filters
    */
-  list: async (filters?: SalaryStructureListFilters): Promise<SalaryStructure[]> => {
-    const response = await api.get('/api/salary-management/structures/', { params: filters });
-    return response.data.results || response.data;
-  },
+  list: async (filters?: SalaryStructureListFilters): Promise<PaginatedResponse<SalaryStructure>> => {
+      const response = await api.get('/api/salary-management/structures/', { params: filters });
+      return response.data;
+    },
 
   /**
    * Create a new salary structure

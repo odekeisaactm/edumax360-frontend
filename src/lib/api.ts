@@ -540,23 +540,34 @@ export const positionsAPI = {
 
 // ==================== STAFF API ====================
 
-// In your api.ts file, replace the entire staffAPI object with this:
 
 export const staffAPI = {
   /**
    * List staff with filtering and pagination
    */
-  list: async (filters?: StaffListFilters): Promise<Staff[]> => {
+  list: async (filters?: StaffListFilters): Promise<PaginatedResponse<Staff>> => {
     const response = await api.get<any>('/api/human-resource/staff/', { params: filters });
 
-    // Handle the actual response structure
-    if (response.data?.results?.data) {
-        console.log(response.data?.results?.data)
-      return response.data.results.data;
+    // response.data structure:
+    // { count, next, previous, results: { success, data: [...], message, timestamp } }
+    const raw = response.data;
+
+    if (raw?.results?.data) {
+      return {
+        count: raw.count,
+        next: raw.next,
+        previous: raw.previous,
+        results: raw.results.data,
+      };
     }
 
-    // Return empty array if no data
-    return [];
+    // Fallback if structure ever changes
+    return {
+      count: 0,
+      next: null,
+      previous: null,
+      results: [],
+    };
   },
 
   /**
