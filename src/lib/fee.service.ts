@@ -318,8 +318,11 @@ export const discountEnrollmentsAPI = {
     const response = await api.get(`${FEE_API_BASE}/discount-enrollments/`, { params });
     return response.data?.results || response.data || [];
   },
-
-  create: async (data: { student: number; discount: number; is_active?: boolean }): Promise<StudentDiscountEnrollment> => {
+  grouped: async (params?: any): Promise<any> => {
+    const response = await api.get(`${FEE_API_BASE}/discount-enrollments/grouped/`, { params });
+    return response.data;
+  },
+  create: async (data: { student_id: number; discount: number; is_active?: boolean }): Promise<StudentDiscountEnrollment> => {
     try {
       const response = await api.post(`${FEE_API_BASE}/discount-enrollments/`, data);
       return response.data;
@@ -337,8 +340,29 @@ export const discountEnrollmentsAPI = {
     }
   },
 
-  delete: async (id: number): Promise<void> => {
-    await api.delete(`${FEE_API_BASE}/discount-enrollments/${id}/`);
+  delete: async (id: number, params?: { remove_applied?: boolean }): Promise<void> => {
+    await api.delete(`${FEE_API_BASE}/discount-enrollments/${id}/`, { params });
+  },
+};
+
+export const discountApplicationsAPI = {
+  list: async (params?: { session?: string | number; period?: string | number; discount?: string | number }) => {
+    const response = await api.get(`${FEE_API_BASE}/discount-applications/`, { params });
+    return response.data?.results || response.data || [];
+  },
+};
+
+export const appliedDiscountsAPI = {
+  // Used by Tab 3 (Flat student history)
+  list: async (params?: any) => {
+    const response = await api.get(`${FEE_API_BASE}/student-discounts/`, { params });
+    return response.data?.results || response.data || [];
+  },
+
+  // Used by Tab 1 (Grouped and Paginated)
+  grouped: async (params?: any) => {
+    const response = await api.get(`${FEE_API_BASE}/student-discounts/grouped/`, { params });
+    return response.data; // Return full response to keep .count for pagination
   },
 };
 
@@ -361,6 +385,35 @@ export const feeWaiversAPI = {
     }
   },
 
+   getWaivableItems: async (studentId: number | string): Promise<any[]> => {
+    try {
+      const response = await api.get(`${FEE_API_BASE}/waivers/waivable-items/`, {
+        params: { student_id: studentId }
+      });
+      return response.data?.items || response.data || [];
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  bulkCreate: async (payload: {
+    requests: Array<{
+      invoice_item_id?: number | null;
+      family_invoice_item_id?: number | null;
+      other_payment_id?: number | null;
+      amount_waived: string | number;
+      reason?: string;
+    }>;
+    global_reason?: string;
+  }): Promise<any> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/waivers/bulk-create/`, payload);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
   approve: async (id: number): Promise<FeeWaiver> => {
     try {
       const response = await api.post(`${FEE_API_BASE}/waivers/${id}/approve/`);
@@ -373,6 +426,23 @@ export const feeWaiversAPI = {
   reject: async (id: number, rejection_reason: string): Promise<FeeWaiver> => {
     try {
       const response = await api.post(`${FEE_API_BASE}/waivers/${id}/reject/`, { rejection_reason });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+    bulkApprove: async (ids: number[]): Promise<FeeWaiver[]> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/waivers/bulk-approve/`, { ids });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  bulkReject: async (ids: number[], rejection_reason: string): Promise<FeeWaiver[]> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/waivers/bulk-reject/`, { ids, rejection_reason });
       return response.data;
     } catch (error: any) {
       throw new Error(getDrfError(error));
@@ -420,6 +490,19 @@ export const invoicesAPI = {
     } catch (error: any) {
       throw new Error(getDrfError(error));
     }
+  },
+  listCorrectionBatches: async (params?: any) => {
+    const response = await api.get(`${FEE_API_BASE}/invoice-correction-batches/`, { params });
+    return response.data;
+  },
+  getCorrectionBatchDetails: async (id: number) => {
+  const response = await api.get(`${FEE_API_BASE}/invoice-correction-batches/${id}/details/`);
+  return response.data;
+},
+
+  atomicRebill: async (data: { invoice_ids: number[], reason: string, auto_reapply: boolean }) => {
+    const response = await api.post(`${FEE_API_BASE}/invoice-correction-batches/atomic-rebill/`, data);
+    return response.data;
   },
 
   getPendingStudents: async (params: { session_id: number; period_id: number }): Promise<{ count: number; students: any[] }> => {
@@ -519,6 +602,15 @@ export const receiptsAPI = {
   revert: async (id: number, reason: string): Promise<PaymentReceipt> => {
     try {
       const response = await api.post(`${FEE_API_BASE}/checkouts/${id}/revert/`, { reason });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
+  emailReceipt: async (id: number): Promise<{ detail: string }> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/checkouts/${id}/email_receipt/`);
       return response.data;
     } catch (error: any) {
       throw new Error(getDrfError(error));
@@ -634,6 +726,8 @@ export const feeAPI = {
   discounts: discountsAPI,
   discountTiers: discountTiersAPI,
   discountEnrollments: discountEnrollmentsAPI,
+  discountApplications: discountApplicationsAPI,
+  appliedDiscounts: appliedDiscountsAPI,
   waivers: feeWaiversAPI,
   invoices: invoicesAPI,
   familyInvoices: familyInvoicesAPI,

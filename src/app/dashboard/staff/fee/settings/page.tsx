@@ -24,7 +24,7 @@ import {
   Clock,
   CheckCircle,
   Shield,
-  Mail, // Specifically imported
+  Mail,
 } from 'lucide-react';
 
 // ─── Interfaces & Defaults ─────────────────────────────────────────────────────
@@ -475,6 +475,7 @@ export default function FeeSettingsPage() {
           </div>
           <div className="p-2 divide-y divide-slate-100 flex-1">
             <SettingRow icon={FileText} iconBg="bg-emerald-50 text-emerald-600" label="Auto-Generation" description="Create invoices when students enroll" value={<StatusBadge value={settings.auto_generate_invoice_on_enrollment} />} />
+            <SettingRow icon={FileText} iconBg="bg-slate-50 text-slate-600" label="Partial Payments" description="Allow invoices to be paid in installments" value={<StatusBadge value={settings.allow_partial_payments} />} />
             <SettingRow icon={Clock} iconBg="bg-amber-50 text-amber-600" label="Invoice Grace Period" description="Days until invoices are marked overdue" value={<span className="font-mono font-bold text-xs text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">{settings.invoice_due_days_after_period_start} days</span>} />
             <SettingRow icon={Bell} iconBg="bg-blue-50 text-blue-600" label="Auto Reminders" description="Dispatch automated late fee emails" value={<StatusBadge value={settings.enable_auto_reminder} />} />
             <SettingRow icon={CalendarClock} iconBg="bg-indigo-50 text-indigo-600" label="Reminder Schedule" description="When to send the first and subsequent emails" value={
@@ -491,9 +492,13 @@ export default function FeeSettingsPage() {
           <div className="p-2 divide-y divide-slate-100 flex-1">
             <SettingRow icon={Shield} iconBg="bg-blue-50 text-blue-600" label="Default Gateway" description="Active gateway for online payments" value={<span className="font-mono font-bold text-[10px] text-slate-700 bg-slate-100 px-2 py-1 rounded-md border border-slate-200">{getGatewayName(settings.default_gateway)}</span>} />
             <SettingRow icon={CreditCard} iconBg="bg-emerald-50 text-emerald-600" label="Online Gateway" description="Accept payments via Paystack/Flutterwave" value={<StatusBadge value={settings.online_payment_enabled} />} />
+            <SettingRow icon={CreditCard} iconBg="bg-slate-50 text-slate-600" label="Min. Online Payment" description="Lowest allowed card/transfer amount" value={<span className="font-mono font-bold text-xs text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">₦{settings.minimum_online_payment_amount}</span>} />
             <SettingRow icon={CheckCircle} iconBg="bg-indigo-50 text-indigo-600" label="Webhook Auto-Confirm" description="Automatically confirm digital payments" value={<StatusBadge value={settings.online_payment_auto_confirm} />} />
             <SettingRow icon={UploadCloud} iconBg="bg-amber-50 text-amber-600" label="Manual Tellers" description="Allow manual deposit slip uploads" value={<StatusBadge value={settings.allow_teller_upload} />} />
             <SettingRow icon={MessageCircle} iconBg="bg-teal-50 text-teal-600" label="WhatsApp Bot" description="Allow bot to accept proofs & check balances" value={<StatusBadge value={settings.whatsapp_bot_enabled} />} />
+            <SettingRow icon={MessageCircle} iconBg="bg-slate-50 text-slate-600" label="WhatsApp Invoices" description="Push new invoice alerts to parents via WhatsApp" value={<StatusBadge value={settings.send_invoice_whatsapp} />} />
+            <SettingRow icon={MessageCircle} iconBg="bg-slate-50 text-slate-600" label="WhatsApp Receipts" description="Push confirmed receipts to WhatsApp" value={<StatusBadge value={settings.bot_send_receipt} />} />
+            <SettingRow icon={UploadCloud} iconBg="bg-slate-50 text-slate-600" label="Bot Teller Uploads" description="Accept bank deposit images via WhatsApp" value={<StatusBadge value={settings.bot_allow_proof_upload} />} />
             <SettingRow icon={Mail} iconBg="bg-purple-50 text-purple-600" label="Email PDF Receipts" description="Dispatch receipts upon confirmation" value={<StatusBadge value={settings.send_payment_receipt_email} />} />
           </div>
         </div>

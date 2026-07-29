@@ -5,10 +5,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { feeAPI, studentsAPI } from '@/lib/api';
-import { Discount, StudentDiscountEnrollment } from '@/lib/types';
+import { Discount, Fee, StudentDiscountEnrollment } from '@/lib/types';
 import {
   Users, Search, ArrowLeft, X, Loader2, UserCircle,
-  AlertCircle, Check, Tag, ShieldCheck, Plus, Trash2, Ban
+  AlertCircle, Check, Tag, ShieldCheck, Plus, Trash2, Ban, AlertTriangle
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -32,6 +32,25 @@ function toTitleCase(str: string): string {
 
 function fmtMoney(v: string | number) {
   return Number(v).toLocaleString('en-NG', { minimumFractionDigits: 0 });
+}
+
+// Discount is_active isn't guaranteed to exist on every response shape — treat
+// a missing field as active, same convention used on the Discount Config page.
+const isDiscountActive = (d: Pick<Discount, 'id'> & { is_active?: boolean }) => (d as any).is_active !== false;
+
+// Resolves the rate that actually applies to THIS student — a class-tier
+// override if one exists for their class, otherwise the discount's default.
+function getEffectiveRate(discount: Discount | undefined, studentClassId: number | null): number {
+  if (!discount) return 0;
+  const tier = discount.class_tiers?.find(t => t.student_class === studentClassId);
+  const raw = tier ? tier.tier_amount : discount.amount;
+  return parseFloat((raw as any) || '0');
+}
+
+function formatRate(discount: Discount | undefined, studentClassId: number | null): string {
+  if (!discount) return '';
+  const val = getEffectiveRate(discount, studentClassId);
+  return discount.discount_type === 'percentage' ? `${val}%` : `₦${fmtMoney(val)}`;
 }
 
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
@@ -93,6 +112,7 @@ export default function DiscountEnrollmentPage() {
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
   const [masterDiscounts, setMasterDiscounts] = useState<Discount[]>([]);
+  const [fees, setFees] = useState<Fee[]>([]);
   const [enrollments, setEnrollments] = useState<StudentDiscountEnrollment[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -106,13 +126,18 @@ export default function DiscountEnrollmentPage() {
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [selectedDiscountToAssign, setSelectedDiscountToAssign] = useState<string>('');
   const [revokeModal, setRevokeModal] = useState<{ open: boolean; enrollment: StudentDiscountEnrollment | null }>({ open: false, enrollment: null });
+  const [removeApplied, setRemoveApplied] = useState(false);
 
-  // ── Load Master Discounts ──
+  // ── Load Master Discounts + Fee Catalog ──
   useEffect(() => {
     const loadMasters = async () => {
       try {
-        const discounts = await feeAPI.getDiscounts();
+        const [discounts, feesData] = await Promise.all([
+          feeAPI.getDiscounts(),
+          feeAPI.getFees(),
+        ]);
         setMasterDiscounts(discounts);
+        setFees(feesData);
       } catch (err) {
         showToast('error', extractError(err));
       }
@@ -129,6 +154,7 @@ export default function DiscountEnrollmentPage() {
         showToast('error', 'Could not load the requested student.');
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillStudentId]);
 
   // ── Search Debounce ──
@@ -182,10 +208,10 @@ export default function DiscountEnrollmentPage() {
     setIsSubmitting(true);
     try {
       const newEnrollment = await feeAPI.createDiscountEnrollment({
-        student: selectedPerson.id,
+        student_id: selectedPerson.id,
         discount: parseInt(selectedDiscountToAssign),
         is_active: true
-      });
+      } as any);
       setEnrollments(prev => [newEnrollment, ...prev]);
 
       // Reset & Close Modal
@@ -205,7 +231,9 @@ export default function DiscountEnrollmentPage() {
     if (!revokeModal.enrollment) return;
     setIsSubmitting(true);
     try {
-      await feeAPI.deleteDiscountEnrollment(revokeModal.enrollment.id);
+      // Pass the new remove_applied parameter safely
+      await feeAPI.deleteDiscountEnrollment(revokeModal.enrollment.id, { remove_applied: removeApplied } as any);
+
       setEnrollments(prev => prev.filter(e => e.id !== revokeModal.enrollment!.id));
       showToast('success', 'Discount revoked successfully.');
     } catch (err) {
@@ -213,34 +241,92 @@ export default function DiscountEnrollmentPage() {
     } finally {
       setIsSubmitting(false);
       setRevokeModal({ open: false, enrollment: null });
+      setRemoveApplied(false); // Reset for next time
     }
   };
 
-  // ── Smart Filter ──
+  const studentClassId = selectedPerson ? Number(selectedPerson.current_class) : null;
+
+  // ── Resolve each enrollment to its master discount once ──
+  const resolvedEnrollments = enrollments.map(e => ({
+    enrollment: e,
+    master: masterDiscounts.find(d => d.id === e.discount),
+  }));
+
+  // ── Flag: student enrolled in a disabled discount ──
+  const staleEnrollmentIds = new Set(
+    resolvedEnrollments.filter(x => x.master && !isDiscountActive(x.master)).map(x => x.enrollment.id)
+  );
+
+  // ── Flag: two active enrollments covering the same fee ──
+  type StackConflict = { enrollmentId: number; otherTitle: string; sharedFeeNames: string[]; severe: boolean };
+  const stackConflicts: StackConflict[] = [];
+  for (let i = 0; i < resolvedEnrollments.length; i++) {
+    for (let j = i + 1; j < resolvedEnrollments.length; j++) {
+      const a = resolvedEnrollments[i];
+      const b = resolvedEnrollments[j];
+      if (!a.master || !b.master) continue;
+      const aFees = a.master.applicable_fees || [];
+      const bFees = b.master.applicable_fees || [];
+      if (aFees.length === 0 || bFees.length === 0) continue;
+      const sharedFeeIds = aFees.filter(f => bFees.includes(f));
+      if (sharedFeeIds.length === 0) continue;
+
+      const sharedFeeNames = sharedFeeIds.map(fid => fees.find(f => f.id === fid)?.name || `Fee #${fid}`);
+      const bothPercentage = a.master.discount_type === 'percentage' && b.master.discount_type === 'percentage';
+      const severe = bothPercentage && (getEffectiveRate(a.master, studentClassId) + getEffectiveRate(b.master, studentClassId)) >= 100;
+
+      stackConflicts.push({ enrollmentId: a.enrollment.id, otherTitle: b.master.title, sharedFeeNames, severe });
+      stackConflicts.push({ enrollmentId: b.enrollment.id, otherTitle: a.master.title, sharedFeeNames, severe });
+    }
+  }
+  const conflictsByEnrollment = new Map<number, StackConflict[]>();
+  stackConflicts.forEach(c => {
+    const list = conflictsByEnrollment.get(c.enrollmentId) || [];
+    list.push(c);
+    conflictsByEnrollment.set(c.enrollmentId, list);
+  });
+  const hasSevereStacking = stackConflicts.some(c => c.severe);
+
+  // ── Smart Filter for the Assign modal ──
   const availableDiscounts = (() => {
     if (!selectedPerson) return [];
     const enrolledIds = enrollments.map(e => e.discount);
-    let available = masterDiscounts.filter(d => !enrolledIds.includes(d.id));
 
-    const studentClassId = Number(selectedPerson.current_class);
-    available = available.filter(d => {
-      if (!d.applicable_classes || d.applicable_classes.length === 0) return true;
+    return masterDiscounts.filter(d => {
+      if (enrolledIds.includes(d.id)) return false;
+      if (!isDiscountActive(d)) return false;
+      if (!d.applicable_fees || d.applicable_fees.length === 0) return false;
+      if (!d.applicable_classes || d.applicable_classes.length === 0) return false;
       return d.applicable_classes.some((c: any) => {
         const targetClassId = typeof c === 'object' ? c.id : c;
         return Number(targetClassId) === studentClassId;
       });
     });
-    return available;
   })();
 
-  // ── Utility: Get Rate string ──
-  const getRateForDiscount = (discountId: number) => {
-    const master = masterDiscounts.find(d => d.id === discountId);
-    if (!master) return null;
-    return master.discount_type === 'percentage'
-      ? `${master.amount}%`
-      : `₦${fmtMoney(master.amount || 0)}`;
-  };
+  // ── Live overlap check for whichever discount is currently selected ──
+  const candidateMaster = selectedDiscountToAssign
+    ? masterDiscounts.find(d => d.id.toString() === selectedDiscountToAssign)
+    : undefined;
+  const candidateConflicts = (() => {
+    if (!candidateMaster) return [];
+    const candidateFees = candidateMaster.applicable_fees || [];
+    if (candidateFees.length === 0) return [];
+    const found: { otherTitle: string; sharedFeeNames: string[]; severe: boolean }[] = [];
+    resolvedEnrollments.forEach(({ master }) => {
+      if (!master) return;
+      const otherFees = master.applicable_fees || [];
+      if (otherFees.length === 0) return;
+      const sharedFeeIds = candidateFees.filter(f => otherFees.includes(f));
+      if (sharedFeeIds.length === 0) return;
+      const sharedFeeNames = sharedFeeIds.map(fid => fees.find(f => f.id === fid)?.name || `Fee #${fid}`);
+      const bothPercentage = candidateMaster.discount_type === 'percentage' && master.discount_type === 'percentage';
+      const severe = bothPercentage && (getEffectiveRate(candidateMaster, studentClassId) + getEffectiveRate(master, studentClassId)) >= 100;
+      found.push({ otherTitle: master.title, sharedFeeNames, severe });
+    });
+    return found;
+  })();
 
   return (
     <div className="pb-20 max-w-7xl mx-auto animate-in fade-in duration-300">
@@ -347,7 +433,23 @@ export default function DiscountEnrollmentPage() {
           </div>
 
           {/* Right: Discounts Management */}
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-3 space-y-4">
+
+            {/* Summary flags — only shown when something actually needs attention */}
+            {(staleEnrollmentIds.size > 0 || stackConflicts.length > 0) && (
+              <div className={`rounded-xl border px-4 py-3 flex items-start gap-2.5 ${hasSevereStacking ? 'bg-rose-50 border-rose-200' : 'bg-amber-50 border-amber-200'}`}>
+                <AlertTriangle className={`h-4 w-4 shrink-0 mt-0.5 ${hasSevereStacking ? 'text-rose-600' : 'text-amber-600'}`} />
+                <div className={`text-xs leading-relaxed ${hasSevereStacking ? 'text-rose-800' : 'text-amber-800'}`}>
+                  {staleEnrollmentIds.size > 0 && (
+                    <p className="font-semibold">{staleEnrollmentIds.size} enrollment{staleEnrollmentIds.size !== 1 ? 's' : ''} on a discount that's been deactivated — flagged below, consider revoking.</p>
+                  )}
+                  {stackConflicts.length > 0 && (
+                    <p className="font-semibold">{new Set(stackConflicts.map(c => c.enrollmentId)).size} enrollment{new Set(stackConflicts.map(c => c.enrollmentId)).size !== 1 ? 's are' : ' is'} stacking with another active discount on the same fee — flagged below.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden min-h-[300px] flex flex-col">
               {/* Header with Assign Button */}
               <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
@@ -381,36 +483,64 @@ export default function DiscountEnrollmentPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {enrollments.map(e => {
-                      const rate = getRateForDiscount(e.discount);
+                    {resolvedEnrollments.map(({ enrollment: e, master }) => {
+                      const rate = formatRate(master, studentClassId);
+                      const isStale = staleEnrollmentIds.has(e.id);
+                      const conflicts = conflictsByEnrollment.get(e.id) || [];
+                      const flagged = isStale || conflicts.length > 0;
+                      const severe = conflicts.some(c => c.severe);
+
                       return (
-                        <div key={e.id} className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between shadow-sm hover:border-emerald-200 transition-colors group">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center border border-emerald-100 flex-shrink-0">
-                               <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="text-sm font-bold text-slate-900">{e.discount_title || `Discount #${e.discount}`}</p>
-                                {rate && (
-                                  <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-black rounded border border-indigo-100">
-                                    {rate}
-                                  </span>
+                        <div key={e.id} className={`bg-white border p-4 rounded-xl shadow-sm transition-colors group ${
+                            severe ? 'border-rose-200' : isStale || conflicts.length > 0 ? 'border-amber-200' : 'border-slate-200 hover:border-emerald-200'
+                          }`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center border flex-shrink-0 ${
+                                  flagged ? (severe ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-100') : 'bg-emerald-50 border-emerald-100'
+                                }`}>
+                                {flagged ? (
+                                  <AlertTriangle className={`h-4 w-4 ${severe ? 'text-rose-600' : 'text-amber-600'}`} />
+                                ) : (
+                                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
                                 )}
                               </div>
-                              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mt-1">
-                                Enrolled: {new Date(e.created_at || Date.now()).toLocaleDateString('en-GB')}
-                              </p>
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-sm font-bold text-slate-900">{e.discount_title || master?.title || `Discount #${e.discount}`}</p>
+                                  {rate && (
+                                    <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-black rounded border border-indigo-100">
+                                      {rate}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mt-1">
+                                  Enrolled: {new Date(e.created_at || Date.now()).toLocaleDateString('en-GB')}
+                                </p>
+                              </div>
                             </div>
+                            {canManage && (
+                              <button
+                                onClick={() => setRevokeModal({ open: true, enrollment: e })}
+                                className="p-2 rounded-lg text-rose-500 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 transition-colors flex-shrink-0"
+                                title="Revoke Discount"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
                           </div>
-                          {canManage && (
-                            <button
-                              onClick={() => setRevokeModal({ open: true, enrollment: e })}
-                              className="p-2 rounded-lg text-rose-500 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 transition-colors flex-shrink-0"
-                              title="Revoke Discount"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+
+                          {isStale && (
+                            <p className="mt-2.5 pt-2.5 border-t border-amber-100 text-[11px] font-semibold text-amber-700">
+                              This discount configuration has been deactivated. It's still assigned here — consider revoking it.
+                            </p>
+                          )}
+                          {conflicts.length > 0 && (
+                            <div className={`mt-2.5 pt-2.5 border-t text-[11px] font-semibold ${severe ? 'border-rose-100 text-rose-700' : 'border-amber-100 text-amber-700'}`}>
+                              {conflicts.map((c, i) => (
+                                <p key={i}>Overlaps with "{c.otherTitle}" on {c.sharedFeeNames.join(', ')}{c.severe ? ' — combined rate reaches 100% or more' : ''}.</p>
+                              ))}
+                            </div>
                           )}
                         </div>
                       )
@@ -431,24 +561,24 @@ export default function DiscountEnrollmentPage() {
               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <Plus className="h-5 w-5 text-indigo-600" /> Assign New Discount
               </h3>
-              <button onClick={() => setAssignModalOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+              <button onClick={() => { setAssignModalOpen(false); setSelectedDiscountToAssign(''); }} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <div className="p-6 overflow-y-auto flex-1">
-              <p className="text-sm text-slate-500 mb-5">Select a discount configuration to apply to <strong className="text-slate-800">{selectedPerson?.first_name}</strong>. Only eligible discounts are shown.</p>
+              <p className="text-sm text-slate-500 mb-5">Select a discount configuration to apply to <strong className="text-slate-800">{selectedPerson?.first_name}</strong>. Only active, eligible discounts are shown.</p>
 
               {availableDiscounts.length === 0 ? (
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm flex items-start gap-2">
                   <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <p>There are no eligible, unassigned discounts available for this student's class.</p>
+                  <p>There are no active, eligible, unassigned discounts available for this student's class.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {availableDiscounts.map(d => {
                     const isSelected = selectedDiscountToAssign === d.id.toString();
-                    const rateText = d.discount_type === 'percentage' ? `${d.amount}% OFF` : `₦${fmtMoney(d.amount || 0)} OFF`;
+                    const rateText = `${formatRate(d, studentClassId)} OFF`;
 
                     return (
                       <div
@@ -470,10 +600,23 @@ export default function DiscountEnrollmentPage() {
                   })}
                 </div>
               )}
+
+              {/* Non-blocking heads-up if the selected discount overlaps an existing one on this student */}
+              {candidateConflicts.length > 0 && (
+                <div className={`mt-4 p-3.5 rounded-xl border flex items-start gap-2.5 ${candidateConflicts.some(c => c.severe) ? 'bg-rose-50 border-rose-200' : 'bg-amber-50 border-amber-200'}`}>
+                  <AlertTriangle className={`h-4 w-4 shrink-0 mt-0.5 ${candidateConflicts.some(c => c.severe) ? 'text-rose-600' : 'text-amber-600'}`} />
+                  <div className={`text-xs leading-relaxed ${candidateConflicts.some(c => c.severe) ? 'text-rose-800' : 'text-amber-800'}`}>
+                    <p className="font-bold mb-1">This would stack with an existing discount</p>
+                    {candidateConflicts.map((c, i) => (
+                      <p key={i}>"{candidateMaster?.title}" overlaps with "{c.otherTitle}" on {c.sharedFeeNames.join(', ')}{c.severe ? ' — combined rate would reach 100% or more' : ''}.</p>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 rounded-b-3xl">
-              <button onClick={() => setAssignModalOpen(false)} className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-xl transition-colors">
+              <button onClick={() => { setAssignModalOpen(false); setSelectedDiscountToAssign(''); }} className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-xl transition-colors">
                 Cancel
               </button>
               <button onClick={handleEnroll} disabled={isSubmitting || !selectedDiscountToAssign} className="px-6 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-md hover:bg-indigo-700 transition-all flex items-center gap-2 disabled:opacity-50">
@@ -487,19 +630,44 @@ export default function DiscountEnrollmentPage() {
       {/* ── Revoke Modal ── */}
       {revokeModal.open && (
         <div className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95">
             <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 bg-rose-50 border border-rose-200 text-rose-600">
                <Ban className="h-6 w-6" />
             </div>
             <h3 className="text-lg font-bold text-slate-900 text-center mb-2">Revoke Discount</h3>
-            <p className="text-sm text-slate-500 text-center mb-6 leading-relaxed">
+            <p className="text-sm text-slate-500 text-center mb-5 leading-relaxed">
               Remove <strong className="text-slate-800">{revokeModal.enrollment?.discount_title}</strong> from this student? They will be billed standard rates moving forward.
             </p>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <div className="relative flex items-center justify-center mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={removeApplied}
+                    onChange={(e) => setRemoveApplied(e.target.checked)}
+                    className="peer appearance-none w-5 h-5 border-2 border-slate-300 rounded cursor-pointer checked:border-rose-500 checked:bg-rose-500 transition-colors"
+                  />
+                  <Check className="absolute w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" strokeWidth={3} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-800 group-hover:text-rose-700 transition-colors">Also remove from existing unpaid invoices</p>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    If checked, this discount will be stripped from any <strong>unpaid</strong> invoices generated for the current or future terms. <br/><br/>
+                    <span className="text-amber-600 font-semibold flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> Invoices with any payment history will be skipped. Past terms will not be altered.</span>
+                  </p>
+                </div>
+              </label>
+            </div>
+
             <div className="flex gap-3">
-              <button onClick={() => setRevokeModal({ open: false, enrollment: null })} className="flex-1 py-3 bg-slate-100 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-200 transition-colors">
+              <button
+                onClick={() => { setRevokeModal({ open: false, enrollment: null }); setRemoveApplied(false); }}
+                className="flex-1 py-3 bg-slate-100 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-200 transition-colors"
+              >
                 Cancel
               </button>
-              <button onClick={handleRevoke} disabled={isSubmitting} className="flex-1 py-3 bg-rose-600 text-white text-sm font-bold rounded-xl hover:bg-rose-700 flex items-center justify-center gap-2 transition-colors">
+              <button onClick={handleRevoke} disabled={isSubmitting} className="flex-1 py-3 bg-rose-600 text-white text-sm font-bold rounded-xl shadow-md hover:bg-rose-700 flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Yes, Revoke'}
               </button>
             </div>

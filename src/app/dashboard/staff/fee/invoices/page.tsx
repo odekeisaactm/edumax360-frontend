@@ -98,6 +98,31 @@ function LedgerContent() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [rawLedgers, setRawLedgers] = useState<any[]>([]);
+  // FIX: page size is now read from the response instead of hardcoded, falling back to 50
+  // if the backend's pagination class doesn't echo it back.
+  const [pageSize, setPageSize] = useState<number>(50);
+  // FIX3: tracks which mode `rawLedgers` was actually fetched for. viewMode can change the
+  // instant the user clicks the toggle, but rawLedgers only catches up once fetchLedger()
+  // resolves. Rendering must gate on THIS, not on viewMode, or a stale student-shaped
+  // response gets rendered through the parent-mode template (and vice versa) — this was
+  // the root cause of a parent with N wards splitting into multiple rows after toggling
+  // Student -> Parent quickly.
+  const [loadedMode, setLoadedMode] = useState<'parent' | 'student'>('parent');
+
+  // FIX2: monotonically increasing request counter. Guards against a slow, stale-mode
+  // response (e.g. a 'student' mode fetch still in flight) landing AFTER a newer request
+  // (e.g. switching back to 'parent' mode) and overwriting fresher data with stale,
+  // differently-shaped data. This was the root cause of a parent with N wards appearing
+  // split into multiple rows after toggling Student -> Parent quickly: the backend wraps
+  // each student individually in student-mode ("dummy parent" per ward), and if that
+  // response won the race, rawLedgers ended up holding several single-ward entries that
+  // all share the same parent_id, which the parent-mode render then displayed as separate
+  // rows for the same parent.
+  const fetchRequestIdRef = useRef(0);
+
+  // FIX3: guards the debounced search effect from firing an extra redundant fetch on
+  // initial mount (the immediate-fetch effect below already covers first load).
+  const isFirstSearchRun = useRef(true);
 
   // ── Selection State ──
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -107,15 +132,10 @@ function LedgerContent() {
   const [adHocModalOpen, setAdHocModalOpen] = useState(false);
   const [chargeCategory, setChargeCategory] = useState('fine');
   const [studentDetailModal, setStudentDetailModal] = useState<any | null>(null);
-  // invoiceDrawer replaces the old "quick view" modal — this is the drawer that carries
-  // the full discount/waived/paid/balance breakdown that was removed from the table.
   const [invoiceDrawer, setInvoiceDrawer] = useState<{ type: 'student'; parent: any; ledgerStudent: any } | { type: 'family'; parent: any } | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState<{ actionType: 'send_reminders' | 'send_summaries'; scope: 'all' | 'selected'; count: number } | null>(null);
 
   // ── Print State ──
-  // Browser-native print (not a generated PDF file) so a cashier standing at a plugged-in
-  // printer can print instantly — and "Save as PDF" is still available as a destination
-  // inside the browser's own print dialog for anyone who wants a file instead.
   const [printData, setPrintData] = useState<{ kind: 'student_invoice'; parent: any; ledgerStudent: any } | { kind: 'family_statement'; parent: any } | null>(null);
 
   // ── Autocomplete State for Ad-Hoc Charge Modal ──
@@ -174,29 +194,57 @@ function LedgerContent() {
 
   const fetchLedger = useCallback(async () => {
     if (!filterSessionId || !filterPeriodId) return;
+    // FIX2: stamp this call with a unique, ever-increasing id before the request goes out.
+    const requestId = ++fetchRequestIdRef.current;
     setDataLoading(true);
     try {
       const res = await feeAPI.getBillingLedger({
         session_id: filterSessionId,
         period_id: filterPeriodId,
-        mode: 'parent',
+        // FIX: was hardcoded to 'parent' regardless of the Group By toggle — "By Student"
+        // never actually reached the backend's student-mode branch. Now wired through.
+        mode: viewMode,
         page: currentPage,
         q: searchQuery
       });
+      // FIX2: if a newer request has been fired since this one started, this response is
+      // stale — discard it instead of overwriting fresher (possibly differently-shaped) data.
+      if (requestId !== fetchRequestIdRef.current) return;
       setRawLedgers(res.results || []);
-      setTotalPages(Math.ceil((res.count || 0) / 50) || 1);
+      // FIX3: stamp the data with the mode it was actually fetched for, so the render can
+      // gate on this instead of the (possibly already-changed-again) live viewMode state.
+      setLoadedMode(viewMode);
+      const effectivePageSize = res.page_size || res.results_per_page || pageSize;
+      if (res.page_size || res.results_per_page) setPageSize(effectivePageSize);
+      setTotalPages(Math.ceil((res.count || 0) / effectivePageSize) || 1);
       setSelectedIds(new Set());
     } catch (error: any) {
+      if (requestId !== fetchRequestIdRef.current) return;
       showToast('error', extractError(error));
     } finally {
-      setDataLoading(false);
+      if (requestId === fetchRequestIdRef.current) setDataLoading(false);
     }
-  }, [filterSessionId, filterPeriodId, currentPage, searchQuery]);
+  }, [filterSessionId, filterPeriodId, currentPage, searchQuery, viewMode, pageSize]);
 
+  // FIX3: discrete state changes (mode toggle, session/period/page) now fetch immediately —
+  // no debounce. The old version reset a single shared 400ms timer on every dependency
+  // change (including these), so rapid toggling (mode -> mode -> mode) kept cancelling the
+  // pending fetch and could go arbitrarily long without ever actually firing one — this is
+  // why switching back and forth quickly appeared to "stop changing completely."
   useEffect(() => {
+    fetchLedger();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterSessionId, filterPeriodId, currentPage, viewMode]);
+
+  // FIX3: only free-text search still gets debounced, since that's the one input that
+  // changes on every keystroke. Skips the very first run since the effect above already
+  // covers initial load.
+  useEffect(() => {
+    if (isFirstSearchRun.current) { isFirstSearchRun.current = false; return; }
     const delayDebounceFn = setTimeout(() => { fetchLedger(); }, 400);
     return () => clearTimeout(delayDebounceFn);
-  }, [fetchLedger, filterStatus, viewMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
 
   // ── Compute Flattened/Filtered View Data ──
   const displayData = useMemo(() => {
@@ -221,11 +269,13 @@ function LedgerContent() {
     return displayData.flatMap(p => p.students);
   }, [displayData]);
 
+  // FIX3: true while viewMode has changed but rawLedgers/loadedMode haven't caught up yet.
+  // While this is true we show a loading state instead of the table — this is what stops
+  // both the "parent split into N rows" bug and the "switches before data loads" bug, since
+  // neither render branch below is ever reached against data shaped for the other mode.
+  const modeMismatch = viewMode !== loadedMode;
+
   // ── Combined Billing Breakdown Helpers ──
-  // A student's true financial picture spans two sources: the structured tuition
-  // invoice AND any ad-hoc charges. This combines both into one itemized list plus
-  // aggregate totals — used by the invoice drawer, the print summary, and the page
-  // totals footer, so all three always agree with each other.
   const getStudentBreakdown = useCallback((ledgerStudent: any) => {
     const items: { description: string; billed: number; discount: number; waived: number; paid: number; balance: number }[] = [];
     let billed = 0, discount = 0, waived = 0, paid = 0, balance = 0;
@@ -295,7 +345,9 @@ function LedgerContent() {
         const b = getStudentBreakdown(ls);
         billed += b.billed; discount += b.discount; waived += b.waived; paid += b.paid; balance += b.balance;
       });
-      if (viewMode === 'parent' && parent.family_invoice) {
+      // FIX: previously only counted family_invoice totals when viewMode === 'parent'.
+      // Student mode now renders its own family-fee row too, so the footer must match.
+      if (parent.family_invoice) {
         billed += parseFloat(parent.family_invoice.total_amount);
         discount += parseFloat(parent.family_invoice.total_discount);
         waived += parseFloat(parent.family_invoice.total_waived);
@@ -304,7 +356,7 @@ function LedgerContent() {
       }
     });
     return { billed, discount, waived, paid, balance };
-  }, [displayData, viewMode, getStudentBreakdown]);
+  }, [displayData, getStudentBreakdown]);
 
   // ── Student Autocomplete Search (Hits Backend) ──
   useEffect(() => {
@@ -315,16 +367,17 @@ function LedgerContent() {
     const delayFn = setTimeout(async () => {
       setIsSearchingStudent(true);
       try {
-        // Fallback: If your API is strictly /api/students/, we query it.
-        // We gracefully catch errors and fall back to local ledger students if needed.
         const res = await api.get('/api/student_management/students/', { params: { search: chargeSearchQuery, limit: 10 } });
         setChargeSearchResults(res.data.results || res.data || []);
       } catch (e) {
-        // Fallback local search if endpoint is unavailable
-        const localHits = allStudentsInLedger.filter(s =>
-          s.student.full_name.toLowerCase().includes(chargeSearchQuery.toLowerCase()) ||
-          s.student.registration_number.toLowerCase().includes(chargeSearchQuery.toLowerCase())
-        ).map(s => s.student);
+        // FIX: null-safe fallback — a student record with a missing full_name or
+        // registration_number used to throw here instead of degrading gracefully.
+        const localHits = allStudentsInLedger.filter(s => {
+          const fullName = s.student?.full_name || '';
+          const regNumber = s.student?.registration_number || '';
+          return fullName.toLowerCase().includes(chargeSearchQuery.toLowerCase()) ||
+                 regNumber.toLowerCase().includes(chargeSearchQuery.toLowerCase());
+        }).map(s => s.student);
         setChargeSearchResults(localHits);
       } finally {
         setIsSearchingStudent(false);
@@ -346,11 +399,14 @@ function LedgerContent() {
       setSelectedIds(new Set());
     } else {
       if (viewMode === 'parent') setSelectedIds(new Set(displayData.map(p => p.parent_id)));
-      if (viewMode === 'student') setSelectedIds(new Set(allStudentsInLedger.map(s => s.student_id)));
+      // FIX4: the backend's `students` array uses `'id': student.id` — there is no
+      // `student_id` key on these objects. "Select all" in student mode was silently
+      // building a Set of `undefined` instead of real student ids.
+      if (viewMode === 'student') setSelectedIds(new Set(allStudentsInLedger.map(s => s.id)));
     }
   };
 
-  // ── Bulk Actions — now routed through a confirmation step, with explicit counts in labels ──
+  // ── Bulk Actions ──
   const openBulkConfirm = (actionType: 'send_reminders' | 'send_summaries', scope: 'all' | 'selected') => {
     setIsActionMenuOpen(false);
     const count = scope === 'selected' ? selectedIds.size : (viewMode === 'parent' ? displayData.length : allStudentsInLedger.length);
@@ -364,7 +420,7 @@ function LedgerContent() {
     if (scope === 'selected') {
       targetIds = Array.from(selectedIds);
     } else {
-      targetIds = viewMode === 'parent' ? displayData.map(p => p.parent_id) : allStudentsInLedger.map(s => s.student_id);
+      targetIds = viewMode === 'parent' ? displayData.map(p => p.parent_id) : allStudentsInLedger.map(s => s.id);
     }
 
     if (targetIds.length === 0) return showToast('error', 'No targets selected.');
@@ -377,7 +433,9 @@ function LedgerContent() {
         session_id: Number(filterSessionId),
         period_id: Number(filterPeriodId)
       });
-      showToast('success', `Bulk action '${actionType}' initiated for ${targetIds.length} records.`);
+      // FIX: message updated to reflect the send is now queued (backend .delay()) rather
+      // than guaranteed complete synchronously.
+      showToast('success', `Bulk action '${actionType}' queued for ${targetIds.length} records.`);
       setSelectedIds(new Set());
     } catch (err) {
       showToast('error', extractError(err));
@@ -721,7 +779,6 @@ function LedgerContent() {
 
         {/* ── Ledger Table ── */}
         <div className="bg-white rounded border border-slate-200 shadow-sm overflow-hidden min-h-[400px]">
-          {/* Selection bar — only appears once something is checked, sits above the sticky header */}
           {selectedIds.size > 0 && (
             <div className="sticky top-0 z-30 h-10 bg-indigo-600 text-white px-4 flex items-center justify-between shadow-md">
               <span className="text-xs sm:text-sm font-bold">{selectedIds.size} {viewMode === 'parent' ? 'parent' : 'student'}{selectedIds.size > 1 ? 's' : ''} selected</span>
@@ -737,7 +794,7 @@ function LedgerContent() {
             </div>
           )}
 
-          {dataLoading && displayData.length === 0 ? (
+          {modeMismatch || (dataLoading && displayData.length === 0) ? (
             <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-indigo-500" /></div>
           ) : displayData.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -766,11 +823,12 @@ function LedgerContent() {
 
                       // ==========================================
                       // PARENT VIEW RENDERING
+                      // FIX3: gated on loadedMode (matches rawLedgers' actual shape), not the
+                      // possibly-already-changed-again live viewMode.
                       // ==========================================
-                      if (viewMode === 'parent') {
+                      if (loadedMode === 'parent') {
                         return (
                           <React.Fragment key={`parent-${parent.parent_id}`}>
-                            {/* PARENT HEADER ROW */}
                             <tr className="bg-[#e9ecef] border-t border-slate-300 hover:bg-slate-200 transition-colors">
                                <td className="px-4 py-3 text-center">
                                  <input type="checkbox" checked={selectedIds.has(parent.parent_id)} onChange={() => toggleSelection(parent.parent_id)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer h-4 w-4" aria-label={`Select ${toTitleCase(parent.parent_name)}`}/>
@@ -800,9 +858,8 @@ function LedgerContent() {
                                </td>
                             </tr>
 
-                            {/* STUDENTS */}
                             {parent.students.map((ledgerStudent: any) => {
-                              const st = ledgerStudent.student; // From StudentListSerializer
+                              const st = ledgerStudent.student;
                               const tuitionBal = ledgerStudent.invoice ? parseFloat(ledgerStudent.invoice.balance) : 0;
                               const adHocBal = ledgerStudent.other_payments?.reduce((acc: number, op: any) => acc + parseFloat(op.balance), 0) || 0;
                               const studentGrandTotal = tuitionBal + adHocBal;
@@ -810,7 +867,6 @@ function LedgerContent() {
 
                               return (
                               <React.Fragment key={`stu-${st.id}`}>
-                                {/* TUITION INVOICE */}
                                 {ledgerStudent.invoice && (
                                   <tr className="hover:bg-slate-50">
                                     <td></td>
@@ -853,7 +909,6 @@ function LedgerContent() {
                                   </tr>
                                 )}
 
-                                {/* AD-HOC CHARGES */}
                                 {ledgerStudent.other_payments?.map((op: any) => (
                                   <tr key={`op-${op.id}`} className="bg-amber-50/20 hover:bg-amber-50/60 transition-colors">
                                     <td></td>
@@ -880,7 +935,6 @@ function LedgerContent() {
                                   </tr>
                                 ))}
 
-                                {/* STUDENT SUBTOTAL */}
                                 {ledgerStudent.other_payments?.length > 0 && ledgerStudent.invoice && (
                                   <tr className="bg-slate-50/50">
                                     <td colSpan={6} className="px-4 py-2 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -896,7 +950,6 @@ function LedgerContent() {
                               );
                             })}
 
-                            {/* FAMILY INVOICE ROW */}
                             {parent.family_invoice && (
                               <tr className="bg-purple-50/20 hover:bg-purple-50/50 transition-colors border-t border-purple-100">
                                 <td></td>
@@ -938,8 +991,12 @@ function LedgerContent() {
 
                       // ==========================================
                       // STUDENT VIEW RENDERING (Flattened)
+                      // In student mode, each `parent` entry from the backend actually wraps
+                      // exactly one student plus that student's shared family_invoice (if any) —
+                      // see BillingLedgerView.get(), student-mode branch.
+                      // FIX3: gated on loadedMode, matching the parent-mode branch above.
                       // ==========================================
-                      if (viewMode === 'student') {
+                      if (loadedMode === 'student') {
                         return parent.students.map((ledgerStudent: any) => {
                           const st = ledgerStudent.student;
                           const studentDisplayName = toTitleCase(st.full_name);
@@ -989,7 +1046,6 @@ function LedgerContent() {
                                 </tr>
                               )}
 
-                              {/* Flat Ad Hoc rendering */}
                               {ledgerStudent.other_payments?.map((op: any) => (
                                   <tr key={`flat-op-${op.id}`} className="bg-amber-50/20 hover:bg-amber-50/60 border-b border-amber-50">
                                     <td></td>
@@ -1015,6 +1071,36 @@ function LedgerContent() {
                                     </td>
                                   </tr>
                                 ))}
+
+                              {/* FIX: student-flattened view previously had no representation of shared
+                                  family fees — balance was folded into totals but never shown on screen. */}
+                              {parent.family_invoice && (
+                                <tr className="bg-purple-50/20 hover:bg-purple-50/50 border-b border-purple-100">
+                                  <td></td>
+                                  <td className="px-4 py-2 pl-12">
+                                    <div className="flex items-center gap-2 text-purple-900/80">
+                                      <ShieldMinus className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                                      <div className="flex flex-col">
+                                        <span className="text-xs font-bold">Family Shared Fees</span>
+                                        <button onClick={() => router.push(`/dashboard/staff/fee/invoices/${parent.family_invoice.id}?type=family`)} className="text-[9px] font-bold text-purple-500 hover:underline text-left w-max">
+                                          {parent.family_invoice.invoice_number}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2 text-right text-xs font-medium text-purple-700">{formatCurrency(parent.family_invoice.total_amount)}</td>
+                                  <td className="px-4 py-2 text-right text-xs font-bold text-emerald-600">-{formatCurrency(parent.family_invoice.total_discount)}</td>
+                                  <td className="px-4 py-2 text-right text-xs font-bold text-amber-600">-{formatCurrency(parent.family_invoice.total_waived)}</td>
+                                  <td className="px-4 py-2 text-right text-xs font-medium text-purple-700">{formatCurrency(parent.family_invoice.amount_paid)}</td>
+                                  <td className="px-4 py-2 text-right">
+                                    <span className={`text-xs font-black ${parseFloat(parent.family_invoice.balance) > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{formatCurrency(parent.family_invoice.balance)}</span>
+                                  </td>
+                                  <td className="px-4 py-2 text-center">{renderStatusBadge(parent.family_invoice.balance, parent.family_invoice.amount_paid)}</td>
+                                  <td className="px-4 py-2 text-center">
+                                    <button onClick={() => router.push(`/dashboard/staff/fee/payments/new?parent_id=${parent.id}`)} className="text-slate-400 hover:text-emerald-600 transition-colors mx-auto block" title="Record a payment for shared family fees" aria-label="Receive payment for family shared fees"><Wallet className="w-3.5 h-3.5"/></button>
+                                  </td>
+                                </tr>
+                              )}
                             </React.Fragment>
                           );
                         });
@@ -1053,7 +1139,6 @@ function LedgerContent() {
         {adHocModalOpen && (
           <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={closeAdHocModal}>
             <form onSubmit={handleCreateAdHoc} onClick={e => e.stopPropagation()} className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95">
-              {/* Pinned Header */}
               <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
                 <div>
                   <h3 className="font-black text-slate-800 text-lg">Add Incidental Charge</h3>
@@ -1062,9 +1147,7 @@ function LedgerContent() {
                 <button type="button" onClick={closeAdHocModal} className="text-slate-400 hover:text-slate-600 bg-white p-1 rounded-md shadow-sm border border-slate-200 shrink-0 ml-3" aria-label="Close"><X className="h-5 w-5" /></button>
               </div>
 
-              {/* Scrollable Body */}
               <div className="p-6 overflow-y-auto space-y-5">
-                {/* Autocomplete Search */}
                 <div className="relative">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Target Student</label>
 
@@ -1095,7 +1178,6 @@ function LedgerContent() {
                       />
                       {isSearchingStudent && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-indigo-500 animate-spin" />}
 
-                      {/* Search Results Dropdown */}
                       {chargeSearchQuery.length >= 2 && chargeSearchResults.length > 0 && (
                         <ul className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
                           {chargeSearchResults.map((st) => (
@@ -1157,7 +1239,6 @@ function LedgerContent() {
                 </div>
               </div>
 
-              {/* Pinned Footer */}
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3 shrink-0">
                 <button type="button" onClick={closeAdHocModal} className="px-5 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 shadow-sm">Cancel</button>
                 <button type="submit" disabled={!selectedChargeStudent} className="px-6 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all">Apply Charge</button>
@@ -1217,7 +1298,6 @@ function LedgerContent() {
 
                    <div className="h-px bg-slate-200 w-full" />
 
-                   {/* True Total Debt Calculation */}
                    {(() => {
                       const activeTuition = parseFloat(studentDetailModal.invoice?.balance || '0');
                       const activeAdHoc = studentDetailModal.other_payments?.reduce((acc: number, op: any) => acc + parseFloat(op.balance), 0) || 0;
@@ -1246,7 +1326,7 @@ function LedgerContent() {
           </div>
         )}
 
-        {/* ── Invoice Detail Drawer (redesigned) ── */}
+        {/* ── Invoice Detail Drawer ── */}
         {invoiceDrawer && (
           <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in slide-in-from-right-8" onClick={() => setInvoiceDrawer(null)}>
             <div className="bg-white w-full max-w-md h-full shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>

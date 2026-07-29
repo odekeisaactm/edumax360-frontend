@@ -2,7 +2,6 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { feeAPI, academicAPI, academicCalendarAPI } from '@/lib/api';
 import { Discount, Fee, ClassModel, ClassSection, AcademicSessionPeriod } from '@/lib/types';
@@ -56,6 +55,17 @@ function ToastStack({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: numb
   );
 }
 
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${checked ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+  );
+}
+
+const isDiscountActive = (d: Pick<Discount, 'id'> & { is_active?: boolean }) => (d as any).is_active !== false;
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function DiscountConfigurationsPage() {
@@ -88,10 +98,17 @@ export default function DiscountConfigurationsPage() {
   const [occurrence, setOccurrence] = useState('periodic');
   const [paymentPeriod, setPaymentPeriod] = useState<string>('');
   const [defaultAmount, setDefaultAmount] = useState('');
+  const [isActive, setIsActive] = useState(true);
   const [selectedFees, setSelectedFees] = useState<number[]>([]);
   const [selectedClasses, setSelectedClasses] = useState<number[]>([]);
   const [tierOverrides, setTierOverrides] = useState<Record<number, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Filters for the two checklists in the form — same pattern as the class
+  // search box on the Fee Structure form, added here for the same reason:
+  // this gets tedious fast once the fee catalog / class list grows.
+  const [feeSearch, setFeeSearch] = useState('');
+  const [classSearch, setClassSearch] = useState('');
 
   // ── Modals State ──
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; discount: Discount | null; isErrorMode: boolean; errorMsg: string }>({ open: false, discount: null, isErrorMode: false, errorMsg: '' });
@@ -99,10 +116,6 @@ export default function DiscountConfigurationsPage() {
   const [lowAmountWarning, setLowAmountWarning] = useState(false);
 
   // ── Overlap Guard (mirrors the Fee Structure double-billing guard) ──
-  // Two discounts silently covering the same class + fee is the discount
-  // equivalent of double billing: a student ends up stacked with concessions
-  // nobody deliberately intended together. An empty applicable_fees list
-  // means "all fees", same convention as a null class_section meaning "all arms".
   const [liveConflicts, setLiveConflicts] = useState<{ message: string; severe: boolean }[]>([]);
   const [dismissedLiveWarning, setDismissedLiveWarning] = useState(false);
   const [overlapModal, setOverlapModal] = useState<{ open: boolean; conflicts: { message: string; severe: boolean }[] }>({ open: false, conflicts: [] });
@@ -138,18 +151,17 @@ export default function DiscountConfigurationsPage() {
   useEffect(() => { loadData(); }, [loadData]);
 
   // ── Cross-Discount Anomaly Scanner ──
-  // Same idea as the Fee Structure "Missing Arm" scanner, but for discounts:
-  // scans every pair of discounts for shared class + overlapping fee scope,
-  // so overlaps that were never visible from a single edit screen (e.g. two
-  // discounts created weeks apart by different admins) still surface.
+  // Inactive discounts are excluded — a retired discount overlapping with a
+  // live one isn't a real conflict, it just used to be one.
   useEffect(() => {
     if (discounts.length < 2 || classes.length === 0) { setAnomalies([]); return; }
 
+    const active = discounts.filter(isDiscountActive);
     const found: typeof anomalies = [];
-    for (let i = 0; i < discounts.length; i++) {
-      for (let j = i + 1; j < discounts.length; j++) {
-        const a = discounts[i];
-        const b = discounts[j];
+    for (let i = 0; i < active.length; i++) {
+      for (let j = i + 1; j < active.length; j++) {
+        const a = active[i];
+        const b = active[j];
         const key = `${a.id}-${b.id}`;
         if (localStorage.getItem(`discount_anomaly_ignored_${key}`)) continue;
 
@@ -189,6 +201,19 @@ export default function DiscountConfigurationsPage() {
     setAnomalies(prev => prev.filter(a => a.key !== key));
   };
 
+  // Clears ignore-flags tied to a deleted discount so localStorage doesn't
+  // accumulate keys referencing records that no longer exist.
+  const purgeAnomalyIgnores = (discountId: number) => {
+    try {
+      const idStr = String(discountId);
+      Object.keys(localStorage).forEach(k => {
+        if (!k.startsWith('discount_anomaly_ignored_')) return;
+        const [aId, bId] = k.replace('discount_anomaly_ignored_', '').split('-');
+        if (aId === idStr || bId === idStr) localStorage.removeItem(k);
+      });
+    } catch { /* ignore storage access issues */ }
+  };
+
   // ── Form Effect ──
   useEffect(() => {
     if (typeof view === 'object' && view.mode === 'edit') {
@@ -198,6 +223,7 @@ export default function DiscountConfigurationsPage() {
       setOccurrence(d.occurrence);
       setPaymentPeriod(d.payment_period?.toString() || '');
       setDefaultAmount(d.amount || '');
+      setIsActive(isDiscountActive(d));
       setSelectedFees(d.applicable_fees || []);
       setSelectedClasses(d.applicable_classes || []);
 
@@ -208,9 +234,10 @@ export default function DiscountConfigurationsPage() {
       setTierOverrides(overrides);
     } else {
       setTitle(''); setType('percentage'); setOccurrence('periodic'); setPaymentPeriod(''); setDefaultAmount('');
-      setSelectedFees([]); setSelectedClasses([]); setTierOverrides({});
+      setIsActive(true); setSelectedFees([]); setSelectedClasses([]); setTierOverrides({});
     }
     setDismissedLiveWarning(false);
+    setFeeSearch(''); setClassSearch('');
   }, [view]);
 
   // ── Interactions ──
@@ -235,8 +262,15 @@ export default function DiscountConfigurationsPage() {
   const selectAllClasses = () => setSelectedClasses(classes.map(c => c.id));
   const clearAllClasses = () => { setSelectedClasses([]); setTierOverrides({}); };
 
+  // Blocks negative entries at the source (was previously only guarded against
+  // exceeding 100% for percentage discounts — nothing stopped a negative value,
+  // which silently increases the invoice instead of discounting it).
   const handleTierChange = (classId: number, val: string) => {
-    if (type === 'percentage' && parseFloat(val) > 100) return;
+    if (val !== '') {
+      const num = parseFloat(val);
+      if (!isNaN(num) && num < 0) return;
+      if (type === 'percentage' && num > 100) return;
+    }
     if (val === '') {
       const newTiers = { ...tierOverrides };
       delete newTiers[classId];
@@ -246,17 +280,34 @@ export default function DiscountConfigurationsPage() {
     }
   };
 
+  // Switching Type to percentage previously only clamped the master Default
+  // Amount — any per-class override left over from "fixed" (e.g. ₦5000) stayed
+  // in tierOverrides untouched and got saved as a 5000% discount. Now every
+  // override above 100 gets capped the same way the default does, with a
+  // heads-up toast so it's not a silent rewrite of what the admin typed.
+  const handleTypeChange = (newType: 'percentage' | 'fixed') => {
+    setType(newType);
+    if (newType !== 'percentage') return;
+
+    let anyClamped = false;
+    if (parseFloat(defaultAmount) > 100) { setDefaultAmount('100'); anyClamped = true; }
+
+    const nextTiers: Record<number, string> = {};
+    Object.entries(tierOverrides).forEach(([cid, val]) => {
+      const num = parseFloat(val);
+      if (!isNaN(num) && num > 100) { nextTiers[Number(cid)] = '100'; anyClamped = true; }
+      else nextTiers[Number(cid)] = val;
+    });
+    setTierOverrides(nextTiers);
+
+    if (anyClamped) showToast('error', 'Switched to percentage — values above 100% were capped. Review class overrides before saving.');
+  };
+
   // ── Overlap Detection ──
-  // For each class this discount targets, find other discounts that already
-  // cover that same class AND share fee scope (empty applicable_fees == ALL
-  // fees, so it overlaps with anything). If both discounts are percentage-based,
-  // also sum the effective rates for that class — a stack reaching 100%+ zeroes
-  // out or goes negative on the invoice line, which is a hard financial bug,
-  // not just an "FYI these overlap" notice, so it's flagged separately (severe).
   const checkOverlap = useCallback(() => {
     if (selectedClasses.length === 0) return [];
     const editingId = typeof view === 'object' ? view.discount.id : null;
-    const others = discounts.filter(d => d.id !== editingId);
+    const others = discounts.filter(d => d.id !== editingId && isDiscountActive(d));
     const feesAEmpty = selectedFees.length === 0;
     const conflicts: { message: string; severe: boolean }[] = [];
     const seen = new Set<string>();
@@ -293,8 +344,6 @@ export default function DiscountConfigurationsPage() {
     return conflicts;
   }, [selectedClasses, selectedFees, tierOverrides, defaultAmount, type, discounts, view, classes]);
 
-  // Live-check as the admin builds out the form, same pattern as the fee
-  // structure's double-billing check — surfaces the warning well before Save.
   useEffect(() => {
     if (selectedClasses.length === 0) { setLiveConflicts([]); return; }
     const conflicts = checkOverlap();
@@ -307,6 +356,19 @@ export default function DiscountConfigurationsPage() {
     if (!title) return showToast('error', 'Discount title is required.');
     if (!defaultAmount || parseFloat(defaultAmount) <= 0) return showToast('error', 'Default amount must be greater than zero.');
     if (type === 'percentage' && parseFloat(defaultAmount) > 100) return showToast('error', 'Percentage cannot exceed 100%.');
+
+    // No eligible classes means the discount applies to nobody — this used to
+    // save silently and only show up as a small note in the expanded list row.
+    if (selectedClasses.length === 0) return showToast('error', 'Select at least one eligible class — otherwise nobody receives this discount.');
+
+    // Safety net behind the input-level guards in handleTierChange/handleTypeChange,
+    // in case stale state ever slips a bad value through.
+    const negativeOverride = Object.entries(tierOverrides).find(([_, v]) => v !== '' && parseFloat(v) < 0);
+    if (negativeOverride) return showToast('error', 'Class overrides cannot be negative.');
+    if (type === 'percentage') {
+      const over100 = Object.entries(tierOverrides).find(([_, v]) => v !== '' && parseFloat(v) > 100);
+      if (over100) return showToast('error', 'Class overrides cannot exceed 100% for a percentage discount.');
+    }
 
     // Smart guardrail for suspiciously low fixed amounts
     if (!bypassLowAmount && type === 'fixed' && parseFloat(defaultAmount) <= 100) {
@@ -337,6 +399,7 @@ export default function DiscountConfigurationsPage() {
         occurrence,
         payment_period: occurrence !== 'periodic' && paymentPeriod ? parseInt(paymentPeriod) : null,
         amount: defaultAmount,
+        is_active: isActive,
         applicable_fees: selectedFees,
         applicable_classes: selectedClasses,
         class_tiers: Object.entries(tierOverrides).map(([classId, amt]) => ({
@@ -346,12 +409,10 @@ export default function DiscountConfigurationsPage() {
       };
 
       if (typeof view === 'object' && view.mode === 'edit') {
-         // FIXED: Using your exact adapter method
          const updated = await feeAPI.updateDiscount(view.discount.id, payload as any);
          setDiscounts(p => p.map(d => d.id === updated.id ? updated : d));
          showToast('success', 'Discount configuration updated.');
       } else {
-         // FIXED: Using your exact adapter method
          const created = await feeAPI.createDiscount(payload as any);
          setDiscounts(p => [created, ...p]);
          showToast('success', 'Discount configuration created successfully.');
@@ -368,8 +429,16 @@ export default function DiscountConfigurationsPage() {
     if (!deleteModal.discount) return;
     setIsSubmitting(true);
     try {
-      const apiEndpoint = (feeAPI as any).discounts || feeAPI;
-      await (apiEndpoint.delete ? apiEndpoint.delete(deleteModal.discount.id) : (feeAPI as any).deleteDiscount(deleteModal.discount.id));
+      const discountsApi = (feeAPI as any).discounts;
+      const deleteFn: ((id: number) => Promise<any>) | undefined =
+        discountsApi?.delete?.bind(discountsApi) || (feeAPI as any).deleteDiscount;
+
+      if (typeof deleteFn !== 'function') {
+        throw new Error('Delete endpoint is not configured for discounts. Contact support.');
+      }
+
+      await deleteFn(deleteModal.discount.id);
+      purgeAnomalyIgnores(deleteModal.discount.id);
       setDiscounts(p => p.filter(d => d.id !== deleteModal.discount!.id));
       showToast('success', 'Discount deleted successfully.');
       setDeleteModal({ open: false, discount: null, isErrorMode: false, errorMsg: '' });
@@ -450,7 +519,7 @@ export default function DiscountConfigurationsPage() {
              </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[900px]">
+              <table className="w-full text-left border-collapse min-w-[980px]">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100 text-[11px] uppercase tracking-wider text-slate-500 font-bold">
                     <th className="p-4 pl-6 w-8"></th>
@@ -459,6 +528,7 @@ export default function DiscountConfigurationsPage() {
                     <th className="p-4">Occurrence</th>
                     <th className="p-4 text-right">Default Value</th>
                     <th className="p-4 text-center">Class Overrides</th>
+                    <th className="p-4 text-center">Status</th>
                     <th className="p-4 pr-6 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -466,6 +536,7 @@ export default function DiscountConfigurationsPage() {
                   {filtered.map(d => {
                     const isExpanded = expandedRows.includes(d.id);
                     const isPct = d.discount_type === 'percentage';
+                    const active = isDiscountActive(d);
 
                     return (
                       <React.Fragment key={d.id}>
@@ -504,6 +575,12 @@ export default function DiscountConfigurationsPage() {
                                <span className="text-[10px] font-medium text-slate-400 italic">Uniform</span>
                              )}
                           </td>
+                          <td className="p-4 text-center">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                              {active ? 'Active' : 'Disabled'}
+                            </span>
+                          </td>
                           <td className="p-4 pr-6 text-right">
                              <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
                                 {canManage && (
@@ -522,7 +599,7 @@ export default function DiscountConfigurationsPage() {
                         {/* Expanded Dropdown */}
                         {isExpanded && (
                           <tr>
-                            <td colSpan={7} className="p-0 border-b border-slate-100">
+                            <td colSpan={8} className="p-0 border-b border-slate-100">
                               <div className="bg-slate-50/50 p-6 border-l-4 border-indigo-500 shadow-inner grid grid-cols-1 lg:grid-cols-2 gap-8">
 
                                  {/* Allowed Fees Table */}
@@ -614,6 +691,8 @@ export default function DiscountConfigurationsPage() {
   const renderFormView = () => {
     const isEdit = typeof view === 'object' && view.mode === 'edit';
     const isPct = type === 'percentage';
+    const visibleFees = fees.filter(f => f.name.toLowerCase().includes(feeSearch.toLowerCase()));
+    const visibleClasses = classes.filter(c => c.name.toLowerCase().includes(classSearch.toLowerCase()));
 
     return (
       <div className="max-w-7xl mx-auto space-y-6 pb-20 animate-in slide-in-from-bottom-4 duration-300">
@@ -661,10 +740,7 @@ export default function DiscountConfigurationsPage() {
 
             <div>
               <label className={labelCls}>Type</label>
-              <select value={type} onChange={e => {
-                  setType(e.target.value as any);
-                  if (e.target.value === 'percentage' && parseFloat(defaultAmount) > 100) setDefaultAmount('100');
-              }} className={selectCls}>
+              <select value={type} onChange={e => handleTypeChange(e.target.value as 'percentage' | 'fixed')} className={selectCls}>
                 <option value="percentage">Percentage (%)</option>
                 <option value="fixed">Fixed Amount (₦)</option>
               </select>
@@ -675,10 +751,11 @@ export default function DiscountConfigurationsPage() {
               <div className="relative">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">{isPct ? '%' : '₦'}</span>
                 <input
-                  type="number" step="0.01" max={isPct ? 100 : undefined}
+                  type="number" step="0.01" min={0} max={isPct ? 100 : undefined}
                   value={defaultAmount}
                   onChange={e => {
                      const v = e.target.value;
+                     if (v !== '' && parseFloat(v) < 0) return;
                      if (isPct && parseFloat(v) > 100) return;
                      setDefaultAmount(v);
                   }}
@@ -707,6 +784,14 @@ export default function DiscountConfigurationsPage() {
                 <p className="text-[10px] text-slate-400 mt-1 italic">If left blank, the discount will apply to the very next invoice generated and then expire.</p>
               </div>
             )}
+
+            <div className="lg:col-span-4 pt-5 border-t border-slate-100 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold text-slate-800">Configuration Status</p>
+                <p className="text-[10px] text-slate-400 font-medium">Disabled discounts are excluded from overlap checks and stop applying to new invoices, without deleting the record.</p>
+              </div>
+              <Toggle checked={isActive} onChange={setIsActive} />
+            </div>
           </div>
         </div>
 
@@ -714,7 +799,7 @@ export default function DiscountConfigurationsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
 
           {/* Allowed Fees */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[500px]">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[560px]">
             <SectionHeader icon={<Layers className="h-4 w-4" />} title="Allowed Fees Limitation">
               <div className="flex items-center gap-2">
                 <button type="button" onClick={selectAllFees} className="px-2.5 py-1 bg-indigo-50 text-indigo-600 text-[9px] font-bold uppercase rounded-md hover:bg-indigo-100 transition-colors border border-indigo-100">Select All</button>
@@ -725,8 +810,19 @@ export default function DiscountConfigurationsPage() {
                <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
                <p className="text-[10px] text-blue-800 leading-relaxed font-medium">Leave this completely empty to allow this discount to apply against <strong>ALL</strong> fee items on an invoice.</p>
             </div>
+            <div className="px-4 pt-3 pb-2 border-b border-slate-100 bg-white">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input value={feeSearch} onChange={e => setFeeSearch(e.target.value)} placeholder="Filter fees by name..."
+                  className="w-full pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+            </div>
             <div className="p-4 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/50">
-               {fees.map(f => (
+               {fees.length === 0 ? (
+                 <div className="text-center py-10 text-slate-400"><p className="text-sm font-bold">No fees available.</p></div>
+               ) : visibleFees.length === 0 ? (
+                 <div className="text-center py-10 text-slate-400"><p className="text-sm font-bold">No fees match "{feeSearch}"</p></div>
+               ) : visibleFees.map(f => (
                  <label key={f.id} className="flex items-center gap-3 p-2.5 hover:bg-white rounded-lg cursor-pointer transition-colors border border-transparent hover:border-slate-200">
                    <input type="checkbox" checked={selectedFees.includes(f.id)} onChange={() => handleFeeToggle(f.id)} className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4" />
                    <div>
@@ -739,7 +835,7 @@ export default function DiscountConfigurationsPage() {
           </div>
 
           {/* Eligible Classes & Tiers */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[500px]">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[560px]">
             <SectionHeader icon={<Users className="h-4 w-4" />} title="Eligible Classes & Tier Overrides">
                <div className="flex items-center gap-2">
                 <button type="button" onClick={selectAllClasses} className="px-2.5 py-1 bg-indigo-50 text-indigo-600 text-[9px] font-bold uppercase rounded-md hover:bg-indigo-100 transition-colors border border-indigo-100">Select All</button>
@@ -750,12 +846,21 @@ export default function DiscountConfigurationsPage() {
                <Info className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                <p className="text-[10px] text-amber-800 leading-relaxed font-medium">Select eligible classes. By default, they receive the <strong>Default Amount</strong>. Type in the box to create a class-specific override.</p>
             </div>
+            <div className="px-4 pt-3 pb-2 border-b border-slate-100 bg-white">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input value={classSearch} onChange={e => setClassSearch(e.target.value)} placeholder="Filter classes by name..."
+                  className="w-full pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+            </div>
 
             <div className="p-5 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/50 space-y-3">
               {classes.length === 0 ? (
                 <div className="text-center py-10 text-slate-400"><p className="text-sm font-bold">No classes available.</p></div>
+              ) : visibleClasses.length === 0 ? (
+                <div className="text-center py-10 text-slate-400"><p className="text-sm font-bold">No classes match "{classSearch}"</p></div>
               ) : (
-                classes.map(cls => {
+                visibleClasses.map(cls => {
                   const isChecked = selectedClasses.includes(cls.id);
                   const hasOverride = tierOverrides[cls.id] !== undefined;
 
@@ -774,7 +879,7 @@ export default function DiscountConfigurationsPage() {
                           <div className="w-32 relative">
                             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[10px]">{isPct ? '%' : '₦'}</span>
                             <input
-                              type="number" step="0.01" max={isPct ? 100 : undefined}
+                              type="number" step="0.01" min={0} max={isPct ? 100 : undefined}
                               value={tierOverrides[cls.id] ?? ''}
                               onChange={e => handleTierChange(cls.id, e.target.value)}
                               placeholder="Default"

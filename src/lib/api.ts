@@ -2176,11 +2176,12 @@ export const feeAPI = {
   createDiscount: newFeeAPI.discounts.create,
   updateDiscount: newFeeAPI.discounts.update,
   deleteDiscount: newFeeAPI.discounts.delete,
-  getDiscountApplications: async (p?: any) => [], // Temporary stubs for UI compatibility
-  createDiscountApplication: async (d?: any) => ({}),
-  getAppliedDiscounts: async (p?: any) => [],
+  getDiscountApplications: newFeeAPI.discountApplications.list,
+  getAppliedDiscounts: newFeeAPI.appliedDiscounts.list,
+  getGroupedAppliedDiscounts: newFeeAPI.appliedDiscounts.grouped,
   // Enrollments
   getDiscountEnrollments: newFeeAPI.discountEnrollments.list,
+  getGroupedDiscountEnrollments: newFeeAPI.discountEnrollments.grouped,
   createDiscountEnrollment: newFeeAPI.discountEnrollments.create,
   deleteDiscountEnrollment: newFeeAPI.discountEnrollments.delete,
 
@@ -2188,6 +2189,14 @@ export const feeAPI = {
   generateSingleInvoice: newFeeAPI.invoices.generateSingle,
 
   getBillingLedger: newFeeAPI.billingLedger.get,
+  // 1. Invoices extensions
+  getInvoices: newFeeAPI.invoices.list,
+  voidInvoice: newFeeAPI.invoices.void,
+  getFamilyInvoices: newFeeAPI.familyInvoices.list,
+
+  getCorrectionBatches: newFeeAPI.invoices.listCorrectionBatches,
+  getCorrectionBatchDetail: newFeeAPI.invoices.getCorrectionBatchDetails,
+  executeAtomicRebill: newFeeAPI.invoices.atomicRebill,
 
   // Banks & Gateways (UI calls Fee, but we route to Finance backend)
   getBankAccounts: financeAPI.bankDetails.list,
@@ -2212,6 +2221,11 @@ export const feeAPI = {
   // Payments
   createOtherPayment: newFeeAPI.otherPayments.create,
   createWaiver: newFeeAPI.waivers.create,
+  getWaivableItems: newFeeAPI.waivers.getWaivableItems,
+  bulkCreateWaivers: newFeeAPI.waivers.bulkCreate,
+  getWaivers: newFeeAPI.waivers.list,
+  bulkApproveWaivers: newFeeAPI.waivers.bulkApprove,
+  bulkRejectWaivers: newFeeAPI.waivers.bulkReject,
   // Master Checkouts & Receipts
   getPosTerms: newFeeAPI.receipts.getPosTerms,
   checkout: newFeeAPI.receipts.checkout,
@@ -2219,7 +2233,7 @@ export const feeAPI = {
   revertReceipt: newFeeAPI.receipts.revert,
   getReceipts: newFeeAPI.receipts.list,
   getPendingReceipts: newFeeAPI.receipts.listPending,
-
+  emailReceipt: newFeeAPI.receipts.emailReceipt,
   // Wallets (UI calls Fee, but we route to Finance backend)
   getWalletTransactions: async (p?: any) => financeAPI.auditLedgers?.getStudentWalletLedger(p) || [],
   fundWallet: financeAPI.studentFunding.create,

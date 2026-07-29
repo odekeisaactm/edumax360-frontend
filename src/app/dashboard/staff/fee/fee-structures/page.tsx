@@ -9,15 +9,16 @@ import { FeeStructure, Fee, FeeGroup, ClassModel, ClassSection, AcademicSessionP
 import {
   Layers, Plus, Edit2, Trash2, Check, X, AlertCircle,
   Loader2, Search, ArrowLeft, Settings, Users, Info,
-  LayoutGrid, AlertTriangle, ShieldCheck, PlayCircle,
-  ChevronDown, ChevronUp, FolderOpen, Tag, Ban, Calculator, ShieldAlert
+  ChevronDown, ChevronUp, FolderOpen, Tag, Ban, Calculator, ShieldAlert, Copy
 } from 'lucide-react';
 
 // ─── Constants & UI Helpers ───────────────────────────────────────────────────
+// Single accent (cyan) instead of the old blue→indigo gradient soup. Functional
+// colors (emerald/rose/amber) are reserved for status/severity only, never decoration.
 
 const labelCls = 'block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5';
-const inputCls = 'w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 bg-white transition-all';
-const selectCls = 'w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 bg-white transition-all appearance-none';
+const inputCls = 'w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 text-slate-800 bg-white transition-all';
+const selectCls = 'w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 text-slate-800 bg-white transition-all appearance-none';
 
 const fmtMoney = (v: string | number = 0) => `₦${Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
 
@@ -28,9 +29,9 @@ function extractError(err: any): string {
 
 function SectionHeader({ icon, title, children }: { icon: React.ReactNode; title: string; children?: React.ReactNode; }) {
   return (
-    <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-      <h2 className="font-bold text-slate-800 flex items-center gap-2.5 text-sm uppercase tracking-wide">
-        <span className="text-blue-500">{icon}</span>
+    <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+      <h2 className="font-bold text-slate-700 flex items-center gap-2 text-xs uppercase tracking-wide">
+        <span className="text-cyan-600">{icon}</span>
         {title}
       </h2>
       {children}
@@ -46,7 +47,7 @@ function ToastStack({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: numb
   return (
     <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
       {toasts.map(t => (
-        <div key={t.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border pointer-events-auto animate-in slide-in-from-right-4 ${t.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
+        <div key={t.id} className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border pointer-events-auto animate-in slide-in-from-right-4 ${t.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
           {t.type === 'success' ? <Check className="h-4 w-4 shrink-0 text-emerald-600" /> : <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />}
           <span className="text-sm font-medium whitespace-pre-line">{t.message}</span>
           <button onClick={() => onRemove(t.id)} className="ml-1 opacity-60 hover:opacity-100"><X className="h-3.5 w-3.5" /></button>
@@ -59,11 +60,33 @@ function ToastStack({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: numb
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${checked ? 'bg-blue-600' : 'bg-slate-200'}`}>
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 ${checked ? 'bg-cyan-600' : 'bg-slate-200'}`}>
       <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
     </button>
   );
 }
+
+// ─── Anomaly Types ──────────────────────────────────────────────────────────
+// One unified scanner instead of two disconnected systems. "missing_arm" flags a
+// single structure that covers some but not all sibling sections of a class.
+// "double_billing" flags a PAIR of already-saved, active structures for the same
+// fee whose scopes overlap — the persistent, list-level counterpart to the
+// live/submit-time guard that only runs while the form is open.
+
+type MissingArmAnomaly = {
+  type: 'missing_arm';
+  id: string;
+  structure: FeeStructure;
+  missing: { cls: ClassModel; missingSecs: ClassSection[] }[];
+};
+type DoubleBillingAnomaly = {
+  type: 'double_billing';
+  id: string;
+  a: FeeStructure;
+  b: FeeStructure;
+  classNames: string[];
+};
+type Anomaly = MissingArmAnomaly | DoubleBillingAnomaly;
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -113,8 +136,8 @@ export default function FeeStructuresPage() {
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; struct: FeeStructure | null; isErrorMode: boolean; errorMsg: string }>({ open: false, struct: null, isErrorMode: false, errorMsg: '' });
   const [doubleBillingModal, setDoubleBillingModal] = useState<{ open: boolean; conflicts: string[] }>({ open: false, conflicts: [] });
 
-  // ── Anomalies State ──
-  const [anomalies, setAnomalies] = useState<{ structure: FeeStructure; missing: { cls: ClassModel, missingSecs: ClassSection[] }[] }[]>([]);
+  // ── Unified Anomalies State (list-level, persistent) ──
+  const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
   const [showAnomaliesModal, setShowAnomaliesModal] = useState(false);
 
   // ── Simulator State ──
@@ -138,7 +161,16 @@ export default function FeeStructuresPage() {
         academicCalendarAPI.listSessionPeriods({ is_current: true }),
       ]);
       setStructures(sData); setFees(fData); setGroups(gData); setClasses(cData); setSections(secData);
-      setSimPeriods(pData);
+
+      // De-duplicate session-period rows down to one entry per underlying period.
+      // The endpoint returns session-period junction rows, so if more than one
+      // matches "current" (e.g. across sessions), the same period name can appear
+      // more than once. Keep the first occurrence per period.id — same approach
+      // the Discounts page already uses for its own period dropdown.
+      const dedupedPeriods = Array.from(
+        new Map(pData.map((p: any) => [p.period?.id ?? p.id, p])).values()
+      );
+      setSimPeriods(dedupedPeriods as AcademicSessionPeriod[]);
 
       // Try fetching discounts if the endpoint exists, otherwise fail gracefully
       try {
@@ -157,14 +189,19 @@ export default function FeeStructuresPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // ── Missing Arm Analyzer ──
+  // ── Unified Anomaly Scanner ──
+  // Runs against saved data only (not the open form), so it stays accurate on the
+  // list page at all times, not just while someone happens to be editing.
   useEffect(() => {
-    if (structures.length === 0 || classes.length === 0 || sections.length === 0) return;
+    if (structures.length === 0 || classes.length === 0 || sections.length === 0) { setAnomalies([]); return; }
 
-    const detected: typeof anomalies = [];
+    const detected: Anomaly[] = [];
+
+    // 1) Missing-arm: a structure covers some but not all sibling sections of a class.
     structures.forEach(struct => {
       if (!struct.is_active || !struct.scopes) return;
-      if (localStorage.getItem(`fee_anomaly_ignored_${struct.id}`)) return;
+      const armId = `arm-${struct.id}`;
+      if (localStorage.getItem(`fee_anomaly_ignored_${armId}`)) return;
 
       const classMap: Record<number, (number | null)[]> = {};
       struct.scopes.forEach(sc => {
@@ -173,17 +210,15 @@ export default function FeeStructuresPage() {
       });
 
       const missingForStruct: { cls: ClassModel, missingSecs: ClassSection[] }[] = [];
-
       Object.keys(classMap).forEach(cidStr => {
         const cId = parseInt(cidStr);
         const assignedSections = classMap[cId];
-        if (assignedSections.includes(null)) return; // Whole class covered
+        if (assignedSections.includes(null)) return;
 
         const cls = classes.find(c => c.id === cId);
         if (!cls) return;
 
         const availableSecs = sections.filter(sec => !sec.school_section || !cls.school_section || sec.school_section === cls.school_section);
-
         if (availableSecs.length > 0 && assignedSections.length < availableSecs.length) {
           const missing = availableSecs.filter(sec => !assignedSections.includes(sec.id));
           missingForStruct.push({ cls, missingSecs: missing });
@@ -191,16 +226,66 @@ export default function FeeStructuresPage() {
       });
 
       if (missingForStruct.length > 0) {
-        detected.push({ structure: struct, missing: missingForStruct });
+        detected.push({ type: 'missing_arm', id: armId, structure: struct, missing: missingForStruct });
       }
     });
+
+    // 2) Double-billing: two active, saved structures for the SAME fee whose
+    // scopes overlap. This is the persistent counterpart to the live guard in
+    // the create/edit form — that one only ever fires while someone is actively
+    // building a new structure, so conflicts between two already-saved
+    // structures (edited independently, or created before the conflict existed)
+    // never surfaced anywhere. Now they do, right here on the list.
+    const activeStructures = structures.filter(s => s.is_active);
+    for (let i = 0; i < activeStructures.length; i++) {
+      for (let j = i + 1; j < activeStructures.length; j++) {
+        const a = activeStructures[i];
+        const b = activeStructures[j];
+        if (a.fee !== b.fee) continue;
+
+        const billId = `bill-${a.id}-${b.id}`;
+        if (localStorage.getItem(`fee_anomaly_ignored_${billId}`)) continue;
+
+        const overlapNames = new Set<string>();
+        (a.scopes || []).forEach(sa => {
+          (b.scopes || []).forEach(sb => {
+            if (sa.student_class !== sb.student_class) return;
+            if (sa.class_section === null || sb.class_section === null || sa.class_section === sb.class_section) {
+              overlapNames.add(classes.find(c => c.id === sa.student_class)?.name || 'Unknown class');
+            }
+          });
+        });
+
+        if (overlapNames.size > 0) {
+          detected.push({ type: 'double_billing', id: billId, a, b, classNames: Array.from(overlapNames) });
+        }
+      }
+    }
+
     setAnomalies(detected);
   }, [structures, classes, sections]);
 
-  const ignoreAnomaly = (structId: number) => {
-    localStorage.setItem(`fee_anomaly_ignored_${structId}`, 'true');
-    setAnomalies(prev => prev.filter(a => a.structure.id !== structId));
-    if (anomalies.length === 1) setShowAnomaliesModal(false);
+  const ignoreAnomaly = (id: string) => {
+    localStorage.setItem(`fee_anomaly_ignored_${id}`, 'true');
+    setAnomalies(prev => {
+      const next = prev.filter(a => a.id !== id);
+      if (next.length === 0) setShowAnomaliesModal(false);
+      return next;
+    });
+  };
+
+  // Clears any lingering ignore-flags tied to a deleted structure so localStorage
+  // doesn't accumulate keys for records that no longer exist.
+  const purgeAnomalyIgnores = (structureId: number) => {
+    try {
+      localStorage.removeItem(`fee_anomaly_ignored_arm-${structureId}`);
+      Object.keys(localStorage).forEach(k => {
+        if (!k.startsWith('fee_anomaly_ignored_bill-')) return;
+        if (k.includes(`-${structureId}-`) || k.endsWith(`-${structureId}`)) {
+          localStorage.removeItem(k);
+        }
+      });
+    } catch { /* ignore storage access issues */ }
   };
 
   // ── Form Effect ──
@@ -237,7 +322,7 @@ export default function FeeStructuresPage() {
   const selectAllWholeClasses = () => setScopes(classes.map(c => ({ classId: c.id, sectionId: null })));
   const clearAllScopes = () => setScopes([]);
 
-  // ── Double Billing Guard ──
+  // ── Double Billing Guard (live, in the form) ──
   const checkDoubleBilling = useCallback(() => {
     const feeId = parseInt(selectedFee);
     const conflicts: string[] = [];
@@ -264,8 +349,6 @@ export default function FeeStructuresPage() {
     return Array.from(new Set(conflicts));
   }, [selectedFee, scopes, structures, view, classes, sections, groups]);
 
-  // Live-check as the admin builds out scopes, so the warning shows up before
-  // they ever reach Save — not just as a last-resort blocker at submit time.
   useEffect(() => {
     if (!selectedFee || scopes.length === 0) { setLiveConflicts([]); return; }
     const conflicts = checkDoubleBilling();
@@ -318,6 +401,7 @@ export default function FeeStructuresPage() {
     setIsSubmitting(true);
     try {
       await feeAPI.deleteFeeStructure(deleteModal.struct.id);
+      purgeAnomalyIgnores(deleteModal.struct.id);
       setStructures(p => p.filter(s => s.id !== deleteModal.struct!.id));
       showToast('success', 'Structure deleted successfully.');
       setDeleteModal({ open: false, struct: null, isErrorMode: false, errorMsg: '' });
@@ -335,10 +419,6 @@ export default function FeeStructuresPage() {
   };
 
   // ── Simulator ──
-  // Discounts are only shown once a class is picked, and only the ones that
-  // actually apply — matches DiscountService.apply_to_invoke, which requires
-  // applicable_classes to be non-empty AND contain the class (empty means the
-  // discount applies to nobody, not everybody).
   const simClassId = simState.class_id ? parseInt(simState.class_id) : null;
   const applicableDiscounts = simClassId
     ? simDiscounts.filter(d => (d as any).applicable_classes?.includes(simClassId))
@@ -393,66 +473,71 @@ export default function FeeStructuresPage() {
       return pass;
     });
 
-    return (
-      <div className="space-y-6 pb-12 max-w-6xl mx-auto animate-in fade-in duration-300">
+    const severeCount = anomalies.filter(a => a.type === 'double_billing').length;
 
-        {/* Missing Arm Banner */}
+    return (
+      <div className="space-y-5 pb-12 max-w-6xl mx-auto animate-in fade-in duration-300">
+
+        {/* Unified Anomaly Banner */}
         {anomalies.length > 0 && (
-          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm animate-in slide-in-from-top-4">
+          <div className={`border rounded-xl px-4 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in slide-in-from-top-4 ${severeCount > 0 ? 'bg-rose-50 border-rose-200' : 'bg-amber-50 border-amber-200'}`}>
             <div className="flex items-center gap-3">
-              <ShieldAlert className="h-5 w-5 text-rose-600 shrink-0" />
+              <ShieldAlert className={`h-4 w-4 shrink-0 ${severeCount > 0 ? 'text-rose-600' : 'text-amber-600'}`} />
               <div>
-                <p className="text-sm font-bold text-rose-900">{anomalies.length} Potential Structure Anomalies Detected</p>
-                <p className="text-xs text-rose-700">Some fees are assigned to specific sections, but sibling sections in the same class are left out.</p>
+                <p className={`text-sm font-bold ${severeCount > 0 ? 'text-rose-900' : 'text-amber-900'}`}>
+                  {anomalies.length} structure issue{anomalies.length !== 1 ? 's' : ''} to review
+                  {severeCount > 0 && <span className="font-normal"> · {severeCount} possible double billing</span>}
+                </p>
+                <p className={`text-xs ${severeCount > 0 ? 'text-rose-700' : 'text-amber-700'}`}>Uneven arm coverage and overlapping active structures are flagged here as they're saved.</p>
               </div>
             </div>
-            <button onClick={() => setShowAnomaliesModal(true)} className="whitespace-nowrap px-4 py-2 bg-white text-rose-700 text-xs font-bold rounded-xl border border-rose-200 hover:bg-rose-100 transition-colors">
-              Review Anomalies
+            <button onClick={() => setShowAnomaliesModal(true)} className={`whitespace-nowrap px-3.5 py-1.5 bg-white text-xs font-bold rounded-lg border transition-colors ${severeCount > 0 ? 'text-rose-700 border-rose-200 hover:bg-rose-100' : 'text-amber-700 border-amber-200 hover:bg-amber-100'}`}>
+              Review
             </button>
           </div>
         )}
 
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200 shrink-0">
-              <Layers className="h-6 w-6 text-white" />
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-xl border border-slate-100">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 bg-slate-900 rounded-lg flex items-center justify-center shrink-0">
+              <Layers className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-900">Fee Master</h1>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">Manage fee blueprints, scopes, and target classes</p>
+              <h1 className="text-lg font-bold text-slate-900">Fee Master</h1>
+              <p className="text-xs text-slate-500 mt-0.5">Manage fee blueprints, scopes, and target classes</p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
              <button onClick={() => setSimulatorModal(true)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-50 transition-all shadow-sm">
-              <Calculator className="h-4 w-4 text-blue-600" /> Invoice Simulator
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-50 transition-colors">
+              <Calculator className="h-4 w-4 text-cyan-600" /> Simulator
             </button>
             {canManage && (
               <button onClick={() => setView('create')}
-                className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-slate-800 transition-all shadow-sm">
-                <Plus className="h-4 w-4" /> Create Structure
+                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 transition-colors">
+                <Plus className="h-4 w-4" /> New Structure
               </button>
             )}
           </div>
         </div>
 
         {/* Filters */}
-        <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row items-center gap-3">
+        <div className="bg-white p-2.5 rounded-xl border border-slate-100 flex flex-col md:flex-row items-center gap-2.5">
           <div className="relative flex-1 w-full md:w-auto">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search fee name or group..." className={inputCls + ' pl-10 py-2.5'} />
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search fee name or group..." className={inputCls + ' pl-10 py-2'} />
           </div>
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)} className={selectCls + ' py-2.5 w-full md:w-40'}>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)} className={selectCls + ' py-2 w-full md:w-36'}>
             <option value="all">All Statuses</option>
             <option value="active">Active Only</option>
             <option value="inactive">Inactive</option>
           </select>
-          <select value={filterGroup} onChange={e => setFilterGroup(e.target.value)} className={selectCls + ' py-2.5 w-full md:w-48'}>
+          <select value={filterGroup} onChange={e => setFilterGroup(e.target.value)} className={selectCls + ' py-2 w-full md:w-44'}>
             <option value="all">All Groups</option>
             {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
-          <select value={filterOccurrence} onChange={e => setFilterOccurrence(e.target.value)} className={selectCls + ' py-2.5 w-full md:w-40'}>
+          <select value={filterOccurrence} onChange={e => setFilterOccurrence(e.target.value)} className={selectCls + ' py-2 w-full md:w-36'}>
             <option value="all">All Occurrences</option>
             <option value="periodic">Periodic</option>
             <option value="annually">Annually</option>
@@ -460,31 +545,31 @@ export default function FeeStructuresPage() {
           </select>
         </div>
 
-        {/* Accordion Table */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        {/* Table */}
+        <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
           {loading ? (
-             <div className="p-16 flex flex-col items-center justify-center text-slate-400">
-               <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-4" />
-               <p className="text-sm font-bold">Loading Master Ledger...</p>
+             <div className="p-14 flex flex-col items-center justify-center text-slate-400">
+               <Loader2 className="h-6 w-6 animate-spin text-cyan-600 mb-3" />
+               <p className="text-sm font-semibold">Loading fee structures...</p>
              </div>
           ) : filtered.length === 0 ? (
-             <div className="p-16 flex flex-col items-center justify-center text-slate-400">
-               <Layers className="h-10 w-10 text-slate-300 mb-4" />
-               <p className="text-base font-bold text-slate-600">No structures found</p>
-               <p className="text-sm mt-1">Adjust your filters or create a new fee structure.</p>
+             <div className="p-14 flex flex-col items-center justify-center text-slate-400">
+               <Layers className="h-8 w-8 text-slate-300 mb-3" />
+               <p className="text-sm font-semibold text-slate-600">No structures found</p>
+               <p className="text-xs mt-1">Adjust your filters or create a new fee structure.</p>
              </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[800px]">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100 text-[11px] uppercase tracking-wider text-slate-500 font-bold">
-                    <th className="p-4 pl-6 w-8"></th>
-                    <th className="p-4">Fee Blueprint</th>
-                    <th className="p-4">Financial Group</th>
-                    <th className="p-4">Occurrence</th>
-                    <th className="p-4 text-center">Target Scope</th>
-                    <th className="p-4 text-center">Status</th>
-                    <th className="p-4 pr-6 text-right">Actions</th>
+                  <tr className="bg-slate-50 border-b border-slate-100 text-[10.5px] uppercase tracking-wider text-slate-500 font-bold">
+                    <th className="p-3.5 pl-5 w-8"></th>
+                    <th className="p-3.5">Fee Blueprint</th>
+                    <th className="p-3.5">Financial Group</th>
+                    <th className="p-3.5">Occurrence</th>
+                    <th className="p-3.5 text-center">Target Scope</th>
+                    <th className="p-3.5 text-center">Status</th>
+                    <th className="p-3.5 pr-5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -492,49 +577,58 @@ export default function FeeStructuresPage() {
                     const fee = fees.find(f => f.id === s.fee);
                     const group = groups.find(g => g.id === s.group);
                     const isExpanded = expandedRows.includes(s.id);
+                    const flagged = anomalies.some(a =>
+                      (a.type === 'missing_arm' && a.structure.id === s.id) ||
+                      (a.type === 'double_billing' && (a.a.id === s.id || a.b.id === s.id))
+                    );
 
                     return (
                       <React.Fragment key={s.id}>
                         <tr onClick={() => toggleRow(s.id)} className={`group hover:bg-slate-50/80 cursor-pointer transition-colors ${isExpanded ? 'bg-slate-50/50' : ''}`}>
-                          <td className="p-4 pl-6">
-                            {isExpanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400 group-hover:text-blue-500" />}
+                          <td className="p-3.5 pl-5">
+                            {isExpanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400 group-hover:text-cyan-600" />}
                           </td>
-                          <td className="p-4">
-                            <p className="text-sm font-extrabold text-slate-900">{fee?.name || 'Unknown'}</p>
-                            <p className="text-[10px] font-mono text-slate-400 mt-0.5">{fee?.code}</p>
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-2">
+                              {flagged && <span title="Flagged in anomaly review" className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />}
+                              <div>
+                                <p className="text-sm font-bold text-slate-900">{fee?.name || 'Unknown'}</p>
+                                <p className="text-[10px] font-mono text-slate-400 mt-0.5">{fee?.code}</p>
+                              </div>
+                            </div>
                           </td>
-                          <td className="p-4">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-700 text-[10px] font-bold uppercase rounded-lg border border-slate-200">
-                               <FolderOpen className="h-3 w-3 text-slate-500" /> {group?.name}
+                          <td className="p-3.5">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase rounded-md">
+                               <FolderOpen className="h-3 w-3" /> {group?.name}
                             </span>
                           </td>
-                          <td className="p-4">
-                             <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${fee?.occurrence === 'periodic' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+                          <td className="p-3.5">
+                             <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${fee?.occurrence === 'periodic' ? 'bg-cyan-50 text-cyan-700' : 'bg-amber-50 text-amber-700'}`}>
                                {fee?.occurrence.replace('_', ' ')}
                              </span>
                           </td>
-                          <td className="p-4 text-center">
-                             <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
+                          <td className="p-3.5 text-center">
+                             <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-full">
                                {s.scopes?.length || 0} Assign{(s.scopes?.length || 0) !== 1 ? 'ments' : 'ment'}
                              </span>
                           </td>
-                          <td className="p-4 text-center">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${s.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
+                          <td className="p-3.5 text-center">
+                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold uppercase ${s.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${s.is_active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                               {s.is_active ? 'Active' : 'Disabled'}
                             </span>
                           </td>
-                          <td className="p-4 pr-6 text-right">
-                             <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
-                                <button onClick={() => router.push(`/dashboard/staff/fee/fee-structures/${s.id}`)} title="Configure Prices" className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors">
+                          <td className="p-3.5 pr-5 text-right">
+                             <div className="flex items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
+                                <button onClick={() => router.push(`/dashboard/staff/fee/fee-structures/${s.id}`)} title="Configure Prices" className="p-2 text-cyan-600 hover:bg-cyan-50 rounded-md transition-colors">
                                    <Tag className="h-4 w-4" />
                                 </button>
                                 {canManage && (
                                   <>
-                                    <button onClick={() => setView({ mode: 'edit', structure: s })} title="Edit Scopes" className="p-2 bg-amber-50 text-amber-600 hover:bg-amber-100 rounded-lg transition-colors">
+                                    <button onClick={() => setView({ mode: 'edit', structure: s })} title="Edit Scopes" className="p-2 text-amber-600 hover:bg-amber-50 rounded-md transition-colors">
                                       <Edit2 className="h-4 w-4" />
                                     </button>
-                                    <button onClick={() => setDeleteModal({ open: true, struct: s, isErrorMode: false, errorMsg: '' })} title="Delete Structure" className="p-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg transition-colors">
+                                    <button onClick={() => setDeleteModal({ open: true, struct: s, isErrorMode: false, errorMsg: '' })} title="Delete Structure" className="p-2 text-rose-600 hover:bg-rose-50 rounded-md transition-colors">
                                       <Trash2 className="h-4 w-4" />
                                     </button>
                                   </>
@@ -542,12 +636,11 @@ export default function FeeStructuresPage() {
                              </div>
                           </td>
                         </tr>
-                        {/* Expanded Dropdown */}
                         {isExpanded && (
                           <tr>
                             <td colSpan={7} className="p-0 border-b border-slate-100">
-                              <div className="bg-slate-50/50 p-6 border-l-4 border-blue-500 shadow-inner">
-                                 <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Targeted Scopes Detail</h4>
+                              <div className="bg-slate-50/60 p-5 border-l-2 border-cyan-500">
+                                 <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">Targeted Scopes Detail</h4>
                                  <div className="flex flex-wrap gap-2">
                                     {!s.scopes || s.scopes.length === 0 ? <span className="text-xs italic text-slate-400">No classes assigned.</span> :
                                       s.scopes.map((sc, idx) => {
@@ -555,9 +648,9 @@ export default function FeeStructuresPage() {
                                         const sName = sc.class_section ? sections.find(sec => sec.id === sc.class_section)?.name : 'ALL ARMS';
                                         const isAll = !sc.class_section;
                                         return (
-                                          <div key={idx} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold shadow-sm ${isAll ? 'bg-white border-blue-200 text-blue-800' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                             <Users className={`h-3.5 w-3.5 ${isAll ? 'text-blue-500' : 'text-slate-400'}`} />
-                                             {cName} <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${isAll ? 'bg-blue-100' : 'bg-slate-100'}`}>{sName}</span>
+                                          <div key={idx} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-bold ${isAll ? 'bg-white border-cyan-200 text-cyan-800' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                             <Users className={`h-3.5 w-3.5 ${isAll ? 'text-cyan-500' : 'text-slate-400'}`} />
+                                             {cName} <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${isAll ? 'bg-cyan-100' : 'bg-slate-100'}`}>{sName}</span>
                                           </div>
                                         )
                                       })
@@ -589,53 +682,53 @@ export default function FeeStructuresPage() {
     const visibleClasses = classes.filter(c => c.name.toLowerCase().includes(classSearch.toLowerCase()));
 
     return (
-      <div className="max-w-6xl mx-auto space-y-6 pb-16 animate-in slide-in-from-bottom-4 duration-300">
+      <div className="max-w-6xl mx-auto space-y-5 pb-16 animate-in slide-in-from-bottom-4 duration-300">
 
         {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setView('list')} className="p-2.5 text-slate-400 hover:text-slate-800 hover:bg-slate-50 border border-transparent rounded-xl transition-all">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-slate-100">
+          <div className="flex items-center gap-3.5">
+            <button onClick={() => setView('list')} className="p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-50 rounded-lg transition-colors">
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-200 shrink-0">
-              <Layers className="h-6 w-6 text-white" />
+            <div className="w-10 h-10 rounded-lg bg-slate-900 flex items-center justify-center shrink-0">
+              <Layers className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-900">{isEdit ? 'Update' : 'Setup New'} Fee Structure</h1>
-              <p className="text-xs text-slate-500 font-medium">Link a fee blueprint to specific classes and sections.</p>
+              <h1 className="text-lg font-bold text-slate-900">{isEdit ? 'Update' : 'Setup New'} Fee Structure</h1>
+              <p className="text-xs text-slate-500">Link a fee blueprint to specific classes and sections.</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <button onClick={() => setView('list')} className="flex-1 sm:flex-none px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 shadow-sm transition-colors">Cancel</button>
-            <button onClick={() => processSubmit(false)} disabled={!canSubmit} className="flex-1 sm:flex-none px-6 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl shadow-md shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            <button onClick={() => setView('list')} className="flex-1 sm:flex-none px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
+            <button onClick={() => processSubmit(false)} disabled={!canSubmit} className="flex-1 sm:flex-none px-5 py-2 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save Assignment
             </button>
           </div>
         </div>
 
-        {/* Live double-billing warning — dismissible, resurfaces if the conflict set changes */}
+        {/* Live double-billing warning */}
         {liveConflicts.length > 0 && !dismissedLiveWarning && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 shadow-sm animate-in slide-in-from-top-2">
-            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3 animate-in slide-in-from-top-2">
+            <ShieldAlert className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-bold text-amber-900">Possible double billing ({liveConflicts.length})</p>
+              <p className="text-sm font-bold text-rose-900">Possible double billing ({liveConflicts.length})</p>
               <ul className="mt-1.5 space-y-1">
                 {liveConflicts.map((c, i) => (
-                  <li key={i} className="text-xs text-amber-800 flex items-start gap-1.5"><span className="mt-0.5">•</span><span>{c}</span></li>
+                  <li key={i} className="text-xs text-rose-800 flex items-start gap-1.5"><span className="mt-0.5">•</span><span>{c}</span></li>
                 ))}
               </ul>
             </div>
-            <button onClick={() => setDismissedLiveWarning(true)} className="p-1 text-amber-500 hover:text-amber-700 shrink-0"><X className="h-4 w-4" /></button>
+            <button onClick={() => setDismissedLiveWarning(true)} className="p-1 text-rose-500 hover:text-rose-700 shrink-0"><X className="h-4 w-4" /></button>
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
 
           {/* Left Col: Config */}
-          <div className="lg:col-span-1 space-y-6">
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="lg:col-span-1 space-y-5">
+            <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
               <SectionHeader icon={<Settings className="h-4 w-4" />} title="Master Selection" />
-              <div className="p-6 space-y-5">
+              <div className="p-5 space-y-4">
                 <div>
                   <label className={labelCls}>Fee Blueprint <span className="text-rose-500">*</span></label>
                   <select value={selectedFee} onChange={e => setSelectedFee(e.target.value)} className={selectCls}>
@@ -650,43 +743,43 @@ export default function FeeStructuresPage() {
                     {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                   </select>
                 </div>
-                <div className="pt-5 border-t border-slate-100 flex items-center justify-between">
+                <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
                   <div>
                     <p className="text-sm font-bold text-slate-800">Structure Status</p>
-                    <p className="text-[10px] text-slate-400 font-medium">Toggle active state</p>
+                    <p className="text-[10px] text-slate-400">Toggle active state</p>
                   </div>
                   <Toggle checked={isActive} onChange={setIsActive} />
                 </div>
               </div>
             </div>
-            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 flex gap-3">
-               <Info className="h-5 w-5 text-blue-600 shrink-0" />
-               <p className="text-xs text-blue-800 leading-relaxed font-medium">After saving this structure, you will be redirected to the <strong>Pricing Dashboard</strong> where you will assign the specific monetary amounts for each term/period.</p>
+            <div className="bg-cyan-50 border border-cyan-100 rounded-xl p-4 flex gap-2.5">
+               <Info className="h-4 w-4 text-cyan-600 shrink-0 mt-0.5" />
+               <p className="text-xs text-cyan-900 leading-relaxed">After saving, you'll be redirected to the <strong>Pricing Dashboard</strong> to assign the amounts for each term/period.</p>
             </div>
           </div>
 
-          {/* Right Col: Scope Selection — compact grid, search-filterable, sections collapsed by default */}
+          {/* Right Col: Scope Selection */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col h-[600px]">
-              <SectionHeader icon={<ShieldCheck className="h-4 w-4" />} title="Target Scopes (Classes & Arms)">
+            <div className="bg-white rounded-xl border border-slate-100 flex flex-col h-[600px]">
+              <SectionHeader icon={<ShieldAlert className="h-4 w-4" />} title="Target Scopes (Classes & Arms)">
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={selectAllWholeClasses} className="px-3 py-1.5 bg-blue-50 text-blue-600 text-[10px] font-bold uppercase rounded-lg hover:bg-blue-100 transition-colors border border-blue-100">Select All Classes</button>
-                  <button type="button" onClick={clearAllScopes} className="px-3 py-1.5 bg-slate-50 text-slate-500 text-[10px] font-bold uppercase rounded-lg hover:bg-slate-100 transition-colors border border-slate-200">Clear</button>
+                  <button type="button" onClick={selectAllWholeClasses} className="px-2.5 py-1 bg-cyan-50 text-cyan-700 text-[10px] font-bold uppercase rounded-md hover:bg-cyan-100 transition-colors">Select All</button>
+                  <button type="button" onClick={clearAllScopes} className="px-2.5 py-1 bg-slate-50 text-slate-500 text-[10px] font-bold uppercase rounded-md hover:bg-slate-100 transition-colors">Clear</button>
                 </div>
               </SectionHeader>
 
-              <div className="px-6 pt-4 pb-3 border-b border-slate-100 bg-white">
+              <div className="px-5 pt-3.5 pb-3 border-b border-slate-100 bg-white">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                   <input value={classSearch} onChange={e => setClassSearch(e.target.value)} placeholder="Filter classes by name..."
-                    className="w-full pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500" />
                 </div>
               </div>
 
-              <div className="p-4 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/50">
+              <div className="p-3.5 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/50">
                 {classes.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-slate-400 italic gap-2 opacity-50">
-                    <Users className="h-8 w-8" />
+                    <Users className="h-7 w-7" />
                     <p className="text-sm font-bold">No classes available</p>
                   </div>
                 ) : visibleClasses.length === 0 ? (
@@ -694,7 +787,7 @@ export default function FeeStructuresPage() {
                     <p className="text-sm font-bold">No classes match "{classSearch}"</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {visibleClasses.map(cls => {
                       const isWholeClass = scopes.some(s => s.classId === cls.id && s.sectionId === null);
                       const classSections = sections.filter(sec => !sec.school_section || !cls.school_section || sec.school_section === cls.school_section);
@@ -703,12 +796,12 @@ export default function FeeStructuresPage() {
                       const isExpanded = expandedScopeClasses.includes(cls.id) || selectedSectionIds.length > 0;
 
                       return (
-                        <div key={cls.id} className={`border rounded-xl p-3 transition-all bg-white ${hasSelection ? 'border-blue-300 shadow-sm ring-1 ring-blue-100' : 'border-slate-200'}`}>
+                        <div key={cls.id} className={`border rounded-lg p-2.5 transition-colors bg-white ${hasSelection ? 'border-cyan-300 ring-1 ring-cyan-100' : 'border-slate-200'}`}>
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-bold text-slate-800 text-xs truncate" title={cls.name}>{cls.name}</span>
                             <label className="flex items-center gap-1.5 cursor-pointer shrink-0 group">
-                              <span className={`text-[9px] font-bold uppercase tracking-wider ${isWholeClass ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`}>Whole Class</span>
-                              <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isWholeClass ? 'bg-blue-600 border-blue-600' : 'bg-slate-50 border-slate-300 group-hover:border-blue-400'}`}>
+                              <span className={`text-[9px] font-bold uppercase tracking-wider ${isWholeClass ? 'text-cyan-600' : 'text-slate-400 group-hover:text-slate-600'}`}>Whole Class</span>
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isWholeClass ? 'bg-cyan-600 border-cyan-600' : 'bg-slate-50 border-slate-300 group-hover:border-cyan-400'}`}>
                                 {isWholeClass && <Check className="h-3 w-3 text-white" />}
                               </div>
                               <input type="checkbox" className="hidden" checked={isWholeClass} onChange={() => handleWholeClassToggle(cls.id)} />
@@ -718,16 +811,16 @@ export default function FeeStructuresPage() {
                           {!isWholeClass && classSections.length > 0 && (
                             !isExpanded ? (
                               <button type="button" onClick={() => setExpandedScopeClasses(p => [...p, cls.id])}
-                                className="mt-2 text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors">
+                                className="mt-2 text-[10px] font-bold text-cyan-600 hover:text-cyan-700 transition-colors">
                                 + Assign specific arms
                               </button>
                             ) : (
-                              <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap gap-1.5">
+                              <div className="mt-2 pt-2 border-t border-slate-100 flex flex-wrap gap-1.5">
                                 {classSections.map(sec => {
                                   const isSecSelected = selectedSectionIds.includes(sec.id);
                                   return (
                                     <button key={sec.id} type="button" onClick={() => handleSectionToggle(cls.id, sec.id)}
-                                      className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all border ${isSecSelected ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600'}`}>
+                                      className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors border ${isSecSelected ? 'bg-cyan-50 border-cyan-200 text-cyan-700' : 'bg-white border-slate-200 text-slate-500 hover:border-cyan-300 hover:text-cyan-600'}`}>
                                       {sec.name}
                                     </button>
                                   );
@@ -741,9 +834,9 @@ export default function FeeStructuresPage() {
                   </div>
                 )}
               </div>
-              <div className="px-6 py-3.5 border-t border-slate-100 bg-white flex justify-between items-center shadow-inner">
-                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Scopes Count</span>
-                 <span className="text-xs font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-lg border border-blue-100">{scopes.length} Selected</span>
+              <div className="px-5 py-3 border-t border-slate-100 bg-white flex justify-between items-center">
+                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Scopes</span>
+                 <span className="text-xs font-black text-cyan-700 bg-cyan-50 px-2.5 py-1 rounded-md">{scopes.length} Selected</span>
               </div>
             </div>
           </div>
@@ -753,8 +846,7 @@ export default function FeeStructuresPage() {
   };
 
   // ============================================================================
-  // ROOT RENDER — main content + toasts + all modals, always mounted regardless
-  // of which view (list / create / edit) is currently active.
+  // ROOT RENDER
   // ============================================================================
 
   return (
@@ -766,20 +858,20 @@ export default function FeeStructuresPage() {
       {/* Delete Modal */}
       {deleteModal.open && (
         <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95">
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 border ${deleteModal.isErrorMode ? 'bg-amber-50 border-amber-200 text-amber-600' : 'bg-rose-50 border-rose-200 text-rose-600'}`}>
-               <Ban className="h-6 w-6" />
+          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95">
+            <div className={`w-11 h-11 rounded-full flex items-center justify-center mx-auto mb-4 ${deleteModal.isErrorMode ? 'bg-amber-50 text-amber-600' : 'bg-rose-50 text-rose-600'}`}>
+               <Ban className="h-5 w-5" />
             </div>
-            <h3 className="text-lg font-bold text-slate-900 text-center mb-2">{deleteModal.isErrorMode ? 'Action Restricted' : 'Delete Structure'}</h3>
+            <h3 className="text-base font-bold text-slate-900 text-center mb-2">{deleteModal.isErrorMode ? 'Action Restricted' : 'Delete Structure'}</h3>
             <p className="text-sm text-slate-500 text-center mb-6 leading-relaxed">
               {deleteModal.isErrorMode ? deleteModal.errorMsg : `Are you sure you want to permanently delete this structure? This action cannot be undone.`}
             </p>
             <div className="flex gap-3">
-              <button onClick={() => setDeleteModal({ open: false, struct: null, isErrorMode: false, errorMsg: '' })} className="flex-1 py-2.5 bg-slate-100 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-200">
+              <button onClick={() => setDeleteModal({ open: false, struct: null, isErrorMode: false, errorMsg: '' })} className="flex-1 py-2.5 bg-slate-100 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-200">
                 {deleteModal.isErrorMode ? 'Understood' : 'Cancel'}
               </button>
               {!deleteModal.isErrorMode && (
-                <button onClick={triggerDelete} disabled={isSubmitting} className="flex-1 py-2.5 bg-rose-600 text-white text-sm font-bold rounded-xl hover:bg-rose-700 flex items-center justify-center gap-2">
+                <button onClick={triggerDelete} disabled={isSubmitting} className="flex-1 py-2.5 bg-rose-600 text-white text-sm font-semibold rounded-lg hover:bg-rose-700 flex items-center justify-center gap-2">
                   {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete'}
                 </button>
               )}
@@ -791,63 +883,92 @@ export default function FeeStructuresPage() {
       {/* Double Billing Guard (submit-time, blocking) */}
       {doubleBillingModal.open && (
          <div className="fixed inset-0 z-[60] bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95">
-            <div className="bg-rose-600 p-5 flex items-center gap-3">
-               <AlertTriangle className="h-6 w-6 text-white" />
-               <h3 className="text-lg font-bold text-white">Potential Double Billing</h3>
+          <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95">
+            <div className="bg-rose-600 px-5 py-4 flex items-center gap-3">
+               <ShieldAlert className="h-5 w-5 text-white" />
+               <h3 className="text-base font-bold text-white">Potential Double Billing</h3>
             </div>
-            <div className="p-6">
-               <p className="text-sm text-slate-600 font-medium mb-4 leading-relaxed">
+            <div className="p-5">
+               <p className="text-sm text-slate-600 mb-4 leading-relaxed">
                  You are assigning scopes that overlap with existing active structures for this same fee blueprint. This will cause the system to bill the student twice for the exact same item.
                </p>
-               <div className="bg-rose-50 border border-rose-100 rounded-xl p-4 max-h-48 overflow-y-auto mb-6">
+               <div className="bg-rose-50 border border-rose-100 rounded-lg p-3.5 max-h-48 overflow-y-auto mb-5">
                  <ul className="space-y-2">
                    {doubleBillingModal.conflicts.map((c, i) => (
-                     <li key={i} className="text-xs font-bold text-rose-800 flex items-start gap-2">
+                     <li key={i} className="text-xs font-semibold text-rose-800 flex items-start gap-2">
                        <span className="mt-0.5">•</span> <span>{c}</span>
                      </li>
                    ))}
                  </ul>
                </div>
                <div className="flex gap-3">
-                 <button onClick={() => setDoubleBillingModal({ open: false, conflicts: [] })} className="flex-1 py-3 bg-white border border-slate-200 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-50">Review Scopes</button>
-                 <button onClick={() => processSubmit(true)} className="flex-1 py-3 bg-rose-600 text-white text-sm font-bold rounded-xl hover:bg-rose-700 flex items-center justify-center gap-2">I Understand, Proceed</button>
+                 <button onClick={() => setDoubleBillingModal({ open: false, conflicts: [] })} className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-50">Review Scopes</button>
+                 <button onClick={() => processSubmit(true)} className="flex-1 py-2.5 bg-rose-600 text-white text-sm font-semibold rounded-lg hover:bg-rose-700 flex items-center justify-center gap-2">I Understand, Proceed</button>
                </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Anomaly Analyzer Modal */}
+      {/* Unified Anomaly Review Modal */}
       {showAnomaliesModal && (
         <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl animate-in zoom-in-95">
-            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><ShieldAlert className="h-5 w-5 text-rose-600" /> Structure Anomalies</h3>
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl animate-in zoom-in-95">
+            <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-rose-600" /> Structure Issues</h3>
               <button onClick={() => setShowAnomaliesModal(false)} className="p-1 text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button>
             </div>
-            <div className="p-6 overflow-y-auto flex-1 space-y-6 bg-slate-50/50">
-              {anomalies.map((a, i) => {
-                const fname = fees.find(f => f.id === a.structure.fee)?.name;
+            <div className="p-5 overflow-y-auto flex-1 space-y-4 bg-slate-50/50">
+              {anomalies.map((a) => {
+                if (a.type === 'missing_arm') {
+                  const fname = fees.find(f => f.id === a.structure.fee)?.name;
+                  return (
+                    <div key={a.id} className="bg-white border border-slate-200 rounded-lg p-4">
+                       <div className="flex justify-between items-start mb-3">
+                          <div>
+                             <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-amber-700 bg-amber-50 px-2 py-0.5 rounded mb-1.5">
+                               <Users className="h-3 w-3" /> Uneven arm coverage
+                             </span>
+                             <p className="text-sm font-bold text-slate-800">Fee: {fname}</p>
+                             <p className="text-xs text-slate-500">Group: {groups.find(g => g.id === a.structure.group)?.name}</p>
+                          </div>
+                          <button onClick={() => ignoreAnomaly(a.id)} className="text-[10px] font-bold text-slate-500 hover:text-slate-800 bg-slate-100 px-2.5 py-1.5 rounded-md transition-colors whitespace-nowrap">Ignore</button>
+                       </div>
+                       <div className="space-y-2">
+                         {a.missing.map((m, j) => (
+                           <div key={j} className="bg-amber-50 border border-amber-100 p-2.5 rounded-md flex items-center justify-between">
+                              <span className="text-xs font-bold text-amber-800">Class: {m.cls.name}</span>
+                              <span className="text-xs font-medium text-amber-700 text-right">Missing: {m.missingSecs.map(x => x.name).join(', ')}</span>
+                           </div>
+                         ))}
+                       </div>
+                    </div>
+                  );
+                }
+
+                // double_billing
+                const feeName = fees.find(f => f.id === a.a.fee)?.name;
+                const groupAName = groups.find(g => g.id === a.a.group)?.name;
+                const groupBName = groups.find(g => g.id === a.b.group)?.name;
                 return (
-                  <div key={i} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-                     <div className="flex justify-between items-start mb-4">
+                  <div key={a.id} className="bg-white border border-rose-200 rounded-lg p-4">
+                     <div className="flex justify-between items-start mb-3">
                         <div>
-                           <p className="text-sm font-bold text-slate-800">Fee: {fname}</p>
-                           <p className="text-xs text-slate-500">Group: {groups.find(g=>g.id===a.structure.group)?.name}</p>
+                           <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-rose-700 bg-rose-50 px-2 py-0.5 rounded mb-1.5">
+                             <Copy className="h-3 w-3" /> Possible double billing
+                           </span>
+                           <p className="text-sm font-bold text-slate-800">Fee: {feeName}</p>
+                           <p className="text-xs text-slate-500">"{groupAName}" and "{groupBName}" both bill the same class scope</p>
                         </div>
-                        <button onClick={() => ignoreAnomaly(a.structure.id)} className="text-[10px] font-bold text-slate-500 hover:text-slate-800 bg-slate-100 px-3 py-1.5 rounded-lg transition-colors">Ignore Issue</button>
+                        <button onClick={() => ignoreAnomaly(a.id)} className="text-[10px] font-bold text-slate-500 hover:text-slate-800 bg-slate-100 px-2.5 py-1.5 rounded-md transition-colors whitespace-nowrap">Ignore</button>
                      </div>
-                     <div className="space-y-3">
-                       {a.missing.map((m, j) => (
-                         <div key={j} className="bg-rose-50 border border-rose-100 p-3 rounded-lg flex items-center justify-between">
-                            <span className="text-xs font-bold text-rose-800">Class: {m.cls.name}</span>
-                            <span className="text-xs font-medium text-rose-600 text-right">Missing Arms: {m.missingSecs.map(x=>x.name).join(', ')}</span>
-                         </div>
+                     <div className="bg-rose-50 border border-rose-100 p-2.5 rounded-md flex flex-wrap gap-1.5">
+                       {a.classNames.map((cname, i) => (
+                         <span key={i} className="text-xs font-bold text-rose-800 bg-white border border-rose-200 px-2 py-0.5 rounded">{cname}</span>
                        ))}
                      </div>
                   </div>
-                )
+                );
               })}
             </div>
           </div>
@@ -857,14 +978,14 @@ export default function FeeStructuresPage() {
       {/* Simulator Modal */}
       {simulatorModal && (
         <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95">
-             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-900 rounded-t-2xl">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2"><Calculator className="h-5 w-5 text-blue-400" /> Invoice Simulator</h3>
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95">
+             <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-900 rounded-t-xl">
+              <h3 className="text-base font-bold text-white flex items-center gap-2"><Calculator className="h-4 w-4 text-cyan-400" /> Invoice Simulator</h3>
               <button onClick={() => { setSimulatorModal(false); setSimResults(null); }} className="p-1 text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-               <div className="grid grid-cols-2 gap-4">
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+               <div className="grid grid-cols-2 gap-3.5">
                   <div>
                     <label className={labelCls}>Select Class <span className="text-rose-500">*</span></label>
                     <select value={simState.class_id} onChange={e => setSimState(p => ({...p, class_id: e.target.value}))} className={selectCls}>
@@ -883,14 +1004,14 @@ export default function FeeStructuresPage() {
                     <label className={labelCls}>Academic Term / Period <span className="text-rose-500">*</span></label>
                     <select value={simState.period_id} onChange={e => setSimState(p => ({...p, period_id: e.target.value}))} className={selectCls}>
                       <option value="">Choose Period...</option>
-                      {sortedSimPeriods.map((p: any) => <option key={p.id} value={p.period.id.toString()}>{p.period.name}</option>)}
+                      {sortedSimPeriods.map((p: any) => <option key={p.period.id} value={p.period.id.toString()}>{p.period.name}</option>)}
                     </select>
                   </div>
 
                   {simDiscounts.length > 0 && (
-                    <div className="col-span-2 border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="col-span-2 border border-slate-200 rounded-lg overflow-hidden">
                       <button type="button" onClick={() => setDiscountsOpen(o => !o)}
-                        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors">
+                        className="w-full flex items-center justify-between px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors">
                         <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">
                           Institutional Discounts {simClassId ? `(${applicableDiscounts.length} applicable)` : ''}
                         </span>
@@ -907,8 +1028,8 @@ export default function FeeStructuresPage() {
                               <input type="checkbox" checked={simState.discount_ids.includes(d.id)} onChange={e => {
                                  const arr = e.target.checked ? [...simState.discount_ids, d.id] : simState.discount_ids.filter(x => x !== d.id);
                                  setSimState(p => ({...p, discount_ids: arr}));
-                              }} className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4" />
-                              <span className="text-sm font-bold text-slate-700">{d.title}</span>
+                              }} className="rounded text-cyan-600 focus:ring-cyan-500 w-4 h-4" />
+                              <span className="text-sm font-semibold text-slate-700">{d.title}</span>
                             </label>
                           ))}
                         </div>
@@ -917,24 +1038,24 @@ export default function FeeStructuresPage() {
                   )}
                </div>
 
-               <button onClick={runSimulation} disabled={simLoading} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md shadow-blue-200 hover:bg-blue-700 flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50">
-                 {simLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlayCircle className="h-5 w-5" />} Generate Preview
+               <button onClick={runSimulation} disabled={simLoading} className="w-full py-2.5 bg-cyan-600 text-white font-semibold rounded-lg hover:bg-cyan-700 flex items-center justify-center gap-2 transition-colors active:scale-[0.99] disabled:opacity-50">
+                 {simLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />} Generate Preview
                </button>
 
                {/* Results Area */}
                {simResults && (
-                 <div className="mt-8 border border-slate-200 rounded-2xl overflow-hidden animate-in fade-in">
-                    <div className="bg-slate-50 border-b border-slate-200 p-4 text-center">
+                 <div className="mt-6 border border-slate-200 rounded-xl overflow-hidden animate-in fade-in">
+                    <div className="bg-slate-50 border-b border-slate-200 p-3.5 text-center">
                        <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Expected Invoice Preview</p>
                     </div>
                     {simResults.items.length === 0 ? (
-                       <div className="p-8 text-center text-slate-500 font-medium">No fees map to this specific configuration.</div>
+                       <div className="p-8 text-center text-slate-500 font-medium text-sm">No fees map to this specific configuration.</div>
                     ) : (
                       <table className="w-full text-sm">
                          <tbody className="divide-y divide-slate-100">
                            {simResults.items.map((item: any, i: number) => (
                              <tr key={i} className="bg-white">
-                               <td className="p-4">
+                               <td className="p-3.5">
                                   <p className="font-bold text-slate-800">{item.fee_name}</p>
                                   <div className="flex gap-2 mt-1">
                                     <span className="text-[9px] uppercase font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{item.group_name}</span>
@@ -943,7 +1064,7 @@ export default function FeeStructuresPage() {
                                     ))}
                                   </div>
                                </td>
-                               <td className="p-4 text-right">
+                               <td className="p-3.5 text-right">
                                   {Number(item.discount_amount) > 0 && <p className="text-xs text-rose-500 line-through mb-0.5">{fmtMoney(item.base_amount)}</p>}
                                   <p className="font-black text-slate-900">{fmtMoney(item.final_amount)}</p>
                                </td>
@@ -952,8 +1073,8 @@ export default function FeeStructuresPage() {
                          </tbody>
                          <tfoot className="bg-slate-900 text-white font-black border-t border-slate-900">
                            <tr>
-                             <td className="p-4 uppercase tracking-widest text-xs text-blue-400">Total Billable</td>
-                             <td className="p-4 text-right text-base">{fmtMoney(simResults.total_final)}</td>
+                             <td className="p-3.5 uppercase tracking-widest text-xs text-cyan-400">Total Billable</td>
+                             <td className="p-3.5 text-right text-base">{fmtMoney(simResults.total_final)}</td>
                            </tr>
                          </tfoot>
                       </table>

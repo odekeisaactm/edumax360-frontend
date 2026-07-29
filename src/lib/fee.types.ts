@@ -117,6 +117,7 @@ export interface Discount {
   applicable_classes: number[];
   class_tiers?: ClassDiscountTier[];
   is_protected?: boolean;
+  is_active?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -141,6 +142,7 @@ export interface DiscountApplication {
   period_display?: string;
   discount_type: DiscountType;
   discount_amount: string;
+  tier_snapshots?: Record<string, string>;
   created_at?: string;
 }
 

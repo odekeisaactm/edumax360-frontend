@@ -8,7 +8,8 @@ import { feeAPI, academicAPI } from '@/lib/api';
 import { Discount } from '@/lib/types';
 import {
   Users, Search, X, Check, AlertCircle, Loader2, RefreshCw,
-  ChevronLeft, ChevronRight, Plus, ShieldCheck, UserCircle, Tag
+  ChevronLeft, ChevronRight, Plus, ShieldCheck, UserCircle, Tag,
+  ChevronDown, ChevronUp, AlertTriangle
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -30,7 +31,25 @@ function toTitleCase(str: string): string {
   return str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 }
 
-// ─── Toast Stack ───────────────────────────────────────────────────────────────
+function fmtMoney(v: string | number) {
+  return Number(v).toLocaleString('en-NG', { minimumFractionDigits: 0 });
+}
+
+const isDiscountActive = (d: Pick<Discount, 'id'> & { is_active?: boolean }) => (d as any).is_active !== false;
+
+function getEffectiveRate(discount: Discount | undefined, studentClassId: number | null): number {
+  if (!discount) return 0;
+  const tier = discount.class_tiers?.find(t => t.student_class === studentClassId);
+  const raw = tier ? tier.tier_amount : discount.amount;
+  return parseFloat((raw as any) || '0');
+}
+
+function formatRate(discount: Discount | undefined, studentClassId: number | null): string {
+  if (!discount) return '';
+  const val = getEffectiveRate(discount, studentClassId);
+  return discount.discount_type === 'percentage' ? `${val}%` : `₦${fmtMoney(val)}`;
+}
+
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
     <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
@@ -47,31 +66,29 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 20;
 
 export default function AllDiscountEnrollmentsPage() {
   const router = useRouter();
   const { hasPermission, user } = useAuth();
   const canManage = user?.is_superuser || hasPermission('fee_management.manage_fees');
 
-  const [enrollments, setEnrollments] = useState<any[]>([]);
-  const [total, setTotal]             = useState(0);
-  const [page, setPage]               = useState(1);
-  const [loading, setLoading]         = useState(true);
-  const [pageError, setPageError]     = useState<string | null>(null);
-  const [toasts, setToasts]           = useState<ToastItem[]>([]);
+  const [groupedData, setGroupedData] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [expandedStudents, setExpandedStudents] = useState<Set<number>>(new Set());
 
   // ── Filters ──
   const [search, setSearch] = useState('');
-  const [pendingSearch, setPendingSearch] = useState('');
   const [discountFilter, setDiscountFilter] = useState('');
   const [classFilter, setClassFilter] = useState('');
 
   // ── Reference Data ──
   const [masterDiscounts, setMasterDiscounts] = useState<Discount[]>([]);
-  const [classes, setClasses]                 = useState<any[]>([]);
-
-  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [classes, setClasses] = useState<any[]>([]);
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;
@@ -80,7 +97,6 @@ export default function AllDiscountEnrollmentsPage() {
   };
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  // ── Load Ref Data ──
   useEffect(() => {
     const loadRefs = async () => {
       try {
@@ -97,93 +113,80 @@ export default function AllDiscountEnrollmentsPage() {
     loadRefs();
   }, []);
 
-  const buildParams = useCallback((pg: number) => {
-    const p: Record<string, any> = { page: pg, page_size: PAGE_SIZE, is_active: true };
-    if (pendingSearch)  p.search = pendingSearch;
-    if (discountFilter) p.discount = discountFilter;
-    if (classFilter)    p.student_class = classFilter;
-    return p;
-  }, [pendingSearch, discountFilter, classFilter]);
-
+  // ── Fetch Native Server Grouped Data ──
   const fetchEnrollments = useCallback(async (pg = 1) => {
     setLoading(true); setPageError(null);
     try {
-      const data = await feeAPI.getDiscountEnrollments(buildParams(pg));
-      let results = (data as any)?.results ?? (data as any)?.data ?? data ?? [];
+      const params: any = { page: pg, page_size: PAGE_SIZE, is_active: true };
+      if (search.trim()) params.search = search.trim();
+      if (discountFilter) params.discount = discountFilter;
+      if (classFilter) params.student_class = classFilter;
 
-      // Local fallback filter if backend 'student_class' filter is missing
-      if (classFilter && Array.isArray(results)) {
-         results = results.filter((e: any) => {
-            const stu = e.student || {};
-            const cId = String(stu.current_class || stu.class_id || '');
-            return cId === String(classFilter);
-         });
-      }
+      const data = await feeAPI.getGroupedDiscountEnrollments(params);
 
-      setEnrollments(Array.isArray(results) ? results : []);
-      setTotal((data as any)?.count ?? results.length);
+      setGroupedData(data.results || []);
+      setTotal(data.count || 0);
       setPage(pg);
     } catch (err) {
       setPageError(extractError(err));
-    } finally { setLoading(false); }
-  }, [buildParams, classFilter]);
+    } finally {
+      setLoading(false);
+    }
+  }, [search, discountFilter, classFilter]);
 
-  // ── Auto-Fetch on Filter Change ──
+  // Debounced fetch on filter changes
   useEffect(() => {
-    fetchEnrollments(1);
-  }, [discountFilter, classFilter]); // Auto trigger on dropdown change
+    const t = setTimeout(() => fetchEnrollments(1), 350);
+    return () => clearTimeout(t);
+  }, [fetchEnrollments]);
 
-  // ── Debounce Search ──
-  useEffect(() => {
-    if (searchDebounce.current) clearTimeout(searchDebounce.current);
-    searchDebounce.current = setTimeout(() => {
-      setPendingSearch(search);
-      fetchEnrollments(1);
-    }, 400);
-    return () => { if (searchDebounce.current) clearTimeout(searchDebounce.current); };
-  }, [search]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const resetFilters = () => {
     setSearch('');
-    setPendingSearch('');
     setDiscountFilter('');
     setClassFilter('');
   };
+  const hasFilters = !!(search || discountFilter || classFilter);
 
-  const hasFilters = !!(pendingSearch || discountFilter || classFilter);
-  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const toggleExpanded = (studentId: number) => {
+    setExpandedStudents(prev => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId); else next.add(studentId);
+      return next;
+    });
+  };
 
   return (
-    <div className="space-y-6 pb-16 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="space-y-5 pb-16 max-w-7xl mx-auto animate-in fade-in duration-300">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center shadow-md shadow-indigo-200 shrink-0">
-            <Users className="h-6 w-6 text-white" />
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-xl border border-slate-100">
+        <div className="flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
+            <Users className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-900">Active Discounts Ledger</h1>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">Directory of all students currently enrolled in discount programs.</p>
+            <h1 className="text-lg font-bold text-slate-900">Active Discounts Ledger</h1>
+            <p className="text-xs text-slate-500 mt-0.5">Directory of students currently enrolled in discount programs.</p>
           </div>
         </div>
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
           {canManage && (
-            <button onClick={() => router.push('/dashboard/staff/fee/discount-enrollment')} className="flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-slate-800 transition-all shadow-sm whitespace-nowrap">
-              <Plus className="h-4 w-4" /> Manage Student
+            <button onClick={() => router.push('/dashboard/staff/fee/discount-enrollment')} className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap">
+              <Plus className="h-4 w-4" /> Assign Discount
             </button>
           )}
         </div>
       </div>
 
       {/* ── List Card ── */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
 
         {/* ── Inline Filters Toolbar ── */}
-        <div className="px-5 py-4 border-b border-slate-50 flex flex-col lg:flex-row lg:items-center gap-3 bg-slate-50/50">
+        <div className="px-4 py-3.5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center gap-2.5 bg-slate-50/60">
 
-          {/* Search */}
           <div className="relative flex-1 w-full min-w-[200px]">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
@@ -191,45 +194,42 @@ export default function AllDiscountEnrollmentsPage() {
               placeholder="Search student or Reg No..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-10 pr-10 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white shadow-sm"
+              className="w-full pl-10 pr-9 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white"
             />
             {search && (
-              <button onClick={() => setSearch('')} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                 <X className="h-4 w-4" />
               </button>
             )}
           </div>
 
-          {/* Discount Dropdown */}
           <div className="flex-1 w-full min-w-[180px]">
             <select
               value={discountFilter}
               onChange={e => setDiscountFilter(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-sm font-semibold border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-slate-700 bg-white transition-all appearance-none shadow-sm cursor-pointer"
+              className="w-full px-3 py-2 text-sm font-medium border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 bg-white transition-all appearance-none cursor-pointer"
             >
               <option value="">All Discount Programs</option>
               {masterDiscounts.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
             </select>
           </div>
 
-          {/* Class Dropdown */}
           <div className="flex-1 w-full min-w-[150px]">
             <select
               value={classFilter}
               onChange={e => setClassFilter(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-sm font-semibold border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-slate-700 bg-white transition-all appearance-none shadow-sm cursor-pointer"
+              className="w-full px-3 py-2 text-sm font-medium border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 bg-white transition-all appearance-none cursor-pointer"
             >
               <option value="">All Classes</option>
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex items-center gap-2">
             {hasFilters && (
               <button
                 onClick={resetFilters}
-                className="flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold text-rose-600 bg-rose-50 border border-rose-100 rounded-xl hover:bg-rose-100 transition-colors whitespace-nowrap"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-100 rounded-lg hover:bg-rose-100 transition-colors whitespace-nowrap"
               >
                 <X className="h-3.5 w-3.5" /> Clear
               </button>
@@ -237,127 +237,144 @@ export default function AllDiscountEnrollmentsPage() {
             <button
               onClick={() => fetchEnrollments(page)}
               title="Refresh"
-              className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50 bg-white transition-colors shadow-sm"
+              className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-white bg-white transition-colors"
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
 
         {/* Body */}
         {loading ? (
-          <div className="p-16 text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-indigo-600 mx-auto" />
-            <p className="mt-3 text-sm font-bold text-slate-400 uppercase tracking-widest">Loading Enrollments...</p>
+          <div className="p-14 text-center">
+            <Loader2 className="h-6 w-6 animate-spin text-indigo-600 mx-auto" />
+            <p className="mt-3 text-xs font-semibold text-slate-400 uppercase tracking-widest">Loading Enrollments...</p>
           </div>
         ) : pageError ? (
           <div className="p-10 text-center">
-            <AlertCircle className="h-10 w-10 text-rose-400 mx-auto mb-3" />
-            <p className="text-sm font-bold text-rose-600 mb-4">{pageError}</p>
-            <button onClick={() => fetchEnrollments(1)} className="text-sm font-bold text-indigo-600 underline inline-flex items-center gap-1.5">
+            <AlertCircle className="h-8 w-8 text-rose-400 mx-auto mb-3" />
+            <p className="text-sm font-semibold text-rose-600 mb-4">{pageError}</p>
+            <button onClick={() => fetchEnrollments(page)} className="text-sm font-bold text-indigo-600 underline inline-flex items-center gap-1.5">
               <RefreshCw className="h-3.5 w-3.5" /> Retry Connection
             </button>
           </div>
-        ) : enrollments.length === 0 ? (
-          <div className="p-16 text-center bg-slate-50/30">
-            <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-indigo-100">
-              <Tag className="h-8 w-8 text-indigo-300" />
+        ) : groupedData.length === 0 ? (
+          <div className="p-14 text-center bg-slate-50/30">
+            <div className="w-14 h-14 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Tag className="h-7 w-7 text-indigo-300" />
             </div>
-            <h3 className="font-bold text-slate-700 mb-1 text-lg">
-              {hasFilters ? 'No enrollments match your filters' : 'No active discount enrollments'}
+            <h3 className="font-bold text-slate-700 mb-1 text-base">
+              {hasFilters ? 'No students match your filters' : 'No active discount enrollments'}
             </h3>
             <p className="text-sm text-slate-400 mb-6">
-              {hasFilters ? 'Try adjusting your search or clearing the filters.' : 'Use the "Manage Student" button to assign the first discount.'}
+              {hasFilters ? 'Try adjusting your search or clearing the filters.' : 'Use "Assign Discount" to enroll the first student.'}
             </p>
             {hasFilters && (
-               <button onClick={resetFilters} className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-xl hover:bg-indigo-100 transition-colors">
+               <button onClick={resetFilters} className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
                   <X className="h-4 w-4" /> Clear all filters
                 </button>
             )}
           </div>
         ) : (
           <>
-            {/* Table header */}
-            <div className="hidden sm:grid items-center gap-4 px-6 py-3.5 bg-slate-50 border-b border-slate-100"
-              style={{ gridTemplateColumns: '2.5rem 1fr 140px 180px 100px 80px' }}>
-              <span />
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Student Profile</span>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Class</span>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Discount Program</span>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Enrolled On</span>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Actions</span>
-            </div>
-
             <div className="divide-y divide-slate-50">
-              {enrollments.map(e => {
-                const student = e.student || {};
+              {groupedData.map(({ student, enrollments }) => {
                 const fullName = toTitleCase(student.full_name || `${student.first_name || ''} ${student.last_name || ''}`.trim() || `Student #${student.id || ''}`);
                 const classLabel = [student.current_class_name, student.current_class_section_name].filter(Boolean).join(' ') || 'N/A';
+                const studentClassId = student.current_class ?? student.class_id ?? null;
+                const isExpanded = expandedStudents.has(student.id);
+                const anyStale = enrollments.some((e: any) => {
+                  const master = masterDiscounts.find(d => d.id === e.discount);
+                  return master && !isDiscountActive(master);
+                });
 
                 return (
-                  <div key={e.id}
-                    className="flex sm:grid items-center gap-4 px-6 py-4 hover:bg-slate-50/80 transition-colors group"
-                    style={{ gridTemplateColumns: '2.5rem 1fr 140px 180px 100px 80px' }}>
+                  <div key={student.id}>
+                    {/* Student header row */}
+                    <div
+                      onClick={() => toggleExpanded(student.id)}
+                      className="flex items-center gap-3.5 px-5 py-3.5 bg-slate-50/70 hover:bg-slate-100/70 cursor-pointer transition-colors group"
+                    >
+                      {isExpanded ? <ChevronUp className="h-4 w-4 text-slate-400 shrink-0" /> : <ChevronDown className="h-4 w-4 text-slate-400 group-hover:text-indigo-500 shrink-0" />}
 
-                    {/* Avatar */}
-                    <div className="flex-shrink-0">
                       {student.image_url ? (
-                        <img src={student.image_url} alt={fullName}
-                          className="w-10 h-10 rounded-xl object-cover border border-slate-100 shadow-sm"
-                          onError={ev => { (ev.target as HTMLImageElement).style.display = 'none'; }} />
+                        <img src={student.image_url} alt={fullName} className="w-9 h-9 rounded-lg object-cover border border-slate-200 shrink-0" onError={ev => { (ev.target as HTMLImageElement).style.display = 'none'; }} />
                       ) : (
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center shadow-inner">
+                        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center shrink-0">
                           <UserCircle className="h-5 w-5 text-indigo-500" />
                         </div>
                       )}
-                    </div>
 
-                    {/* Name & Reg */}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-slate-900 text-sm truncate group-hover:text-indigo-600 transition-colors">{fullName}</p>
-                      <span className="text-[11px] font-mono font-semibold text-slate-400 mt-0.5 inline-block">{student.registration_number || 'N/A'}</span>
-                    </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-slate-900 text-sm truncate">{fullName}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[11px] font-mono text-slate-400">{student.registration_number || 'N/A'}</span>
+                          <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">{classLabel}</span>
+                        </div>
+                      </div>
 
-                    {/* Class */}
-                    <div className="hidden sm:block min-w-0">
-                      <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md truncate inline-block max-w-full">
-                        {classLabel}
+                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-1 rounded-full whitespace-nowrap">
+                        {enrollments.length} Discount{enrollments.length !== 1 ? 's' : ''}
                       </span>
-                    </div>
+                      {anyStale && (
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-1 rounded-full whitespace-nowrap flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" /> Review
+                        </span>
+                      )}
 
-                    {/* Discount */}
-                    <div className="hidden sm:block min-w-0">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-black uppercase rounded-lg border border-emerald-100 truncate max-w-full">
-                        <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0" /> {e.discount_title || `Discount #${e.discount}`}
-                      </span>
-                    </div>
-
-                    {/* Date */}
-                    <div className="hidden sm:block">
-                      <p className="text-xs font-semibold text-slate-500">{new Date(e.created_at || Date.now()).toLocaleDateString('en-GB')}</p>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center justify-end gap-1 flex-shrink-0">
-                      <button onClick={() => router.push(`/dashboard/staff/fee/discount-enrollment?student_id=${student.id}`)}
-                        className="px-4 py-2 bg-white border-2 border-slate-100 text-slate-700 text-xs font-bold rounded-xl hover:border-indigo-200 hover:text-indigo-700 shadow-sm transition-all">
-                        Manage
+                      <button
+                        onClick={e => { e.stopPropagation(); router.push(`/dashboard/staff/fee/discount-enrollment?student_id=${student.id}`); }}
+                        className="px-3.5 py-1.5 bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg hover:border-indigo-300 hover:text-indigo-700 transition-colors shrink-0"
+                      >
+                        Manage Discounts
                       </button>
                     </div>
+
+                    {/* Nested discount rows */}
+                    {isExpanded && (
+                      <div className="bg-white">
+                        {enrollments.map((e: any) => {
+                          const master = masterDiscounts.find(d => d.id === e.discount);
+                          const stale = master && !isDiscountActive(master);
+                          const rate = formatRate(master, studentClassId);
+                          return (
+                            <div key={e.id} className={`flex items-center gap-3 pl-14 pr-5 py-2.5 border-t border-slate-50 ${stale ? 'bg-amber-50/40' : ''}`}>
+                              <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 border ${stale ? 'bg-amber-50 border-amber-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                                {stale ? <AlertTriangle className="h-3.5 w-3.5 text-amber-600" /> : <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-semibold text-slate-800">{e.discount_title || master?.title || `Discount #${e.discount}`}</span>
+                                  {rate && (
+                                    <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded border border-indigo-100">{rate}</span>
+                                  )}
+                                  {stale && (
+                                    <span className="text-[10px] font-bold text-amber-700">Discount deactivated — consider revoking</span>
+                                  )}
+                                </div>
+                              </div>
+                              <span className="text-xs font-medium text-slate-400 shrink-0">
+                                {new Date(e.created_at || Date.now()).toLocaleDateString('en-GB')}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
 
             {/* Pagination */}
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-4 flex-wrap">
+            <div className="px-5 py-3.5 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between gap-4 flex-wrap">
               <p className="text-xs font-semibold text-slate-500">
-                Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} of{' '}
-                <span className="font-bold text-slate-700">{total}</span> record{total !== 1 ? 's' : ''}
+                Showing {total === 0 ? 0 : ((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} of{' '}
+                <span className="font-bold text-slate-700">{total}</span> student{total !== 1 ? 's' : ''}
               </p>
               {totalPages > 1 && (
                 <div className="flex items-center gap-1.5">
-                  <button onClick={() => fetchEnrollments(page - 1)} disabled={page === 1}
+                  <button onClick={() => fetchEnrollments(Math.max(1, page - 1))} disabled={page === 1}
                     className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-40 transition-colors bg-transparent">
                     <ChevronLeft className="h-4 w-4" />
                   </button>
@@ -369,13 +386,13 @@ export default function AllDiscountEnrollmentsPage() {
                     return (
                       <button key={pg} onClick={() => fetchEnrollments(pg)}
                         className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
-                          pg === page ? 'bg-indigo-600 text-white shadow-md' : 'border border-slate-200 text-slate-600 hover:bg-white bg-transparent'
+                          pg === page ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600 hover:bg-white bg-transparent'
                         }`}>
                         {pg}
                       </button>
                     );
                   })}
-                  <button onClick={() => fetchEnrollments(page + 1)} disabled={page === totalPages}
+                  <button onClick={() => fetchEnrollments(Math.min(totalPages, page + 1))} disabled={page === totalPages}
                     className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-40 transition-colors bg-transparent">
                     <ChevronRight className="h-4 w-4" />
                   </button>

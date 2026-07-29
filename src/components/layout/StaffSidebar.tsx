@@ -11,9 +11,9 @@ import {
   CreditCard, PieChart, Bot, Star, Layout, FileSpreadsheet, UserPlus, Activity,
   KeyRound, Clock, ArrowUpCircle, MessageSquare, Crown, Building, ArrowRightLeft,
   TrendingUp, FolderOpen, Tag, Plus, Columns, Layers, RefreshCw, Ban, Banknote,
-  HelpCircle, Tags, Database, List, CheckSquare, Video, BarChart, Store,
+  HelpCircle, Tags, Database, List, CheckSquare, Video, BarChart, Store, AlertCircle,Bell,
   BarChart2, Archive, Edit, Send, Info, Smartphone, Cpu, Sliders, SlidersHorizontal,
-  ArrowRight, Award, Printer, Shield, Upload, Download, CalendarDays,
+  ArrowRight, Award, Printer, Shield, Upload, Download, CalendarDays, PlusCircle,
   FileSearch, Package, User, Zap, MapPin, Gift, TrendingDown, Wallet, History
 } from 'lucide-react';
 
@@ -502,7 +502,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             },
 
             {
-              name: 'Bulk Billing Jobs',
+              name: 'Invoice Generation',
               href: '/dashboard/staff/fee/generation-jobs',
               icon: <Layers className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/fee/generation-jobs'),
@@ -524,39 +524,39 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           icon: <CreditCard className="h-4 w-4" />,
           children: [
             {
-              name: 'Student Payments',
+              name: 'New Payment',
+              href: '/dashboard/staff/fee/payments/new',
+              icon: <PlusCircle className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/fee/payments/new'),
+              requiredPermissions: ['fee_management.confirm_payment'],
+            },
+            {
+              name: 'View Payments',
               href: '/dashboard/staff/fee/payments',
               icon: <CreditCard className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/fee/payments'),
               requiredPermissions: ['fee_management.confirm_payment'],
             },
             {
-              name: 'Family Payments',
-              href: '/dashboard/staff/fee/family-payments',
-              icon: <Users className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/fee/family-payments'),
-              requiredPermissions: ['fee_management.confirm_payment'],
-            },
-            {
-              name: 'Ancillary Debts (Fines)',
-              href: '/dashboard/staff/fee/other-payments',
-              icon: <TrendingDown className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/fee/other-payments'),
+              name: 'Debtors',
+              href: '/dashboard/staff/fee/debtors',
+              icon: <AlertCircle className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/fee/debtors'),
               requiredPermissions: ['fee_management.manage_fees'],
             },
             {
-              name: 'Debt Clearances',
-              href: '/dashboard/staff/fee/other-payment-clearances',
-              icon: <CheckSquare className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/fee/other-payment-clearances'),
-              requiredPermissions: ['fee_management.confirm_payment'],
-            },
-            {
-              name: 'Fee Waivers',
+              name: 'Waivers',
               href: '/dashboard/staff/fee/waivers',
               icon: <Shield className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/fee/waivers'),
               requiredPermissions: ['fee_management.approve_fee_waiver'],
+            },
+            {
+              name: 'Notifications & Reminders',
+              href: '/dashboard/staff/fee/reminders',
+              icon: <Bell className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/fee/reminders'),
+              requiredPermissions: ['fee_management.manage_fees'],
             },
           ],
         },
