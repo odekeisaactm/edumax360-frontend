@@ -45,6 +45,7 @@ interface StaffFormState {
   genotype: string;
   medical_conditions: string;
   staff_type: 'academic' | 'non_academic' | 'both';
+  status: 'active' | 'inactive' | 'on_leave' | 'suspended' | 'terminated';
   department: number | null;
   position: number | null;
   employment_date: string;
@@ -223,7 +224,7 @@ export default function StaffEditPage() {
     date_of_birth: '', gender: 'male', marital_status: '', religion: '',
     state: '', lga: '',
     blood_group: '', genotype: '', medical_conditions: '',
-    staff_type: 'academic', department: null, position: null,
+    staff_type: 'academic', status: 'active', department: null, position: null,
     employment_date: '', group: null,
     bank_name: '', bank_code: '', account_number: '', account_name: '',
     extra_fields: {},
@@ -283,6 +284,7 @@ setBanks(Array.isArray(bankList) ? bankList : []);
         genotype:          toStr(staff.genotype),
         medical_conditions: toStr(staff.medical_conditions),
         staff_type:        (staff.staff_type as StaffFormState['staff_type']) ?? 'academic',
+        status:            (staff.status as StaffFormState['status']) ?? 'active',
         department:        toNum(typeof staff.department === 'object' ? (staff.department as any)?.id : staff.department),
         position:          toNum(typeof staff.position === 'object' ? (staff.position as any)?.id : staff.position),
         employment_date:   toStr(staff.employment_date),
@@ -527,6 +529,20 @@ setBanks(Array.isArray(bankList) ? bankList : []);
             <input type="date" value={form.employment_date}
               onChange={e => set('employment_date', e.target.value)}
               className={inputCls} />
+          </div>
+          <div>
+              <label className={labelCls}>
+                Status <span className="text-red-400 normal-case font-normal">*</span>
+              </label>
+              <select required value={form.status}
+                onChange={e => set('status', e.target.value as StaffFormState['status'])}
+                className={inputCls + ' cursor-pointer'}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="on_leave">On Leave</option>
+                <option value="suspended">Suspended</option>
+                <option value="terminated">Terminated</option>
+              </select>
           </div>
         </div>
       </Section>

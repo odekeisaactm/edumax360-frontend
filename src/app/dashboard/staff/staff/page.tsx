@@ -20,6 +20,7 @@ function extractError(err: any): string {
   const d = err?.response?.data;
   if (d) {
     if (typeof d === 'string') return d;
+    if (d.error) return String(d.error);        // ← add this
     if (d.detail) return String(d.detail);
     if (d.details) {
       const details = d.details;
