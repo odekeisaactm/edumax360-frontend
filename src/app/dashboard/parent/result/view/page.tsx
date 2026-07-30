@@ -94,22 +94,27 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 // ─── Template Components ───────────────────────────────────────────────────────
 const templateComponents: Record<string, any> = {
   'score_1_default': nextDynamic(() => import('@/components/result/templates/score/1_default/preview'), {
-    loading: () => <div className="p-12 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-indigo-500 mb-3" /><p className="text-slate-500 font-medium">Loading template...</p></div>,
+    loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
     ssr: false,
   }),
   'score_2_modern': nextDynamic(() => import('@/components/result/templates/score/2_modern/preview'), {
-    loading: () => <div className="p-12 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-indigo-500 mb-3" /><p className="text-slate-500 font-medium">Loading template...</p></div>,
+    loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
     ssr: false,
   }),
   'score_3_minimal': nextDynamic(() => import('@/components/result/templates/score/3_minimal/preview'), {
-    loading: () => <div className="p-12 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-indigo-500 mb-3" /><p className="text-slate-500 font-medium">Loading template...</p></div>,
+    loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
     ssr: false,
   }),
   'text_1_default': nextDynamic(() => import('@/components/result/templates/text/1_default/preview'), {
-    loading: () => <div className="p-12 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-indigo-500 mb-3" /><p className="text-slate-500 font-medium">Loading template...</p></div>,
+    loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
+    ssr: false,
+  }),
+  'text_2_modern': nextDynamic(() => import('@/components/result/templates/text/2_modern/preview'), {
+    loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
     ssr: false,
   }),
 };
+
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function ParentResultViewPage() {
