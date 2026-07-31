@@ -472,11 +472,11 @@ export default function DefaultScoreTemplate({
           padding: '5px 10px', gap: 16, fontSize: 11, backgroundColor: secondaryColor, whiteSpace: 'nowrap',
         }}>
           {grades.map((g: any, i: number) => {
-            const minRaw = Math.round(g.min_score ?? g.end_of_term_min_mark ?? 0);
-            const max = Math.round(g.max_score ?? g.end_of_term_max_mark ?? 0);
+            const min = Math.round(g.min_score ?? g.end_of_term_min_mark ?? 0);
+            const maxRaw = Math.round(g.max_score ?? g.end_of_term_max_mark ?? 0);
 
-            // Add 1 to the minimum score for display, UNLESS it is 0
-            const min = minRaw > 0 ? minRaw + 1 : minRaw;
+            // Subtract 1 from the max score for display, UNLESS it's the highest grade band
+            const max = i < grades.length - 1 ? maxRaw - 1 : maxRaw;
 
             const label = g.grade || g.end_of_term_name || '—';
             return (
