@@ -435,8 +435,12 @@ export default function ModernScoreTemplate({
       <div style={{ border: '1px solid #e2e8f0', borderTop: 'none' }}>
         <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', padding: '4px 10px', gap: 14, fontSize: 10.5, backgroundColor: secondaryColor, whiteSpace: 'nowrap' }}>
           {grades.map((g: any, i: number) => {
-            const min = Math.round(g.min_score ?? g.end_of_term_min_mark ?? 0);
+            const minRaw = Math.round(g.min_score ?? g.end_of_term_min_mark ?? 0);
             const max = Math.round(g.max_score ?? g.end_of_term_max_mark ?? 0);
+
+            // Add 1 to the minimum score for display, UNLESS it is 0
+            const min = minRaw > 0 ? minRaw + 1 : minRaw;
+
             const label = g.grade || g.end_of_term_name || '—';
             return (
               <span key={i}>
