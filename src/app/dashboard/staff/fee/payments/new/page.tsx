@@ -8,7 +8,7 @@ import {
   Users, Search, ArrowLeft, X, Loader2, UserCircle,
   Check, AlertCircle, ShoppingCart, Eye, FileText,
   Upload, Building2, Calendar, ShieldMinus, Wallet, Info,
-  ChevronDown, ChevronUp, AlertTriangle, CreditCard, Percent, UserCheck
+  ChevronDown, ChevronUp, AlertTriangle, CreditCard, Percent, UserCheck, Phone
 } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -20,6 +20,31 @@ function fmtMoney(amount: number | string): string {
 function toTitleCase(str: string): string {
   if (!str) return '';
   return str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+// Same intent as toTitleCase, but preserves short all-caps tokens (acronyms like
+// "PTA", "ICT") instead of flattening them to "Pta"/"Ict". Used for fee/line-item
+// descriptions, where acronyms are common and meaningful.
+function smartTitleCase(str: string): string {
+  if (!str) return '';
+  return str
+    .split(' ')
+    .filter(Boolean)
+    .map(word => {
+      // Word is already all-uppercase letters, 2-6 chars long — treat as an acronym.
+      if (/^[A-Z]{2,6}$/.test(word)) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
+// Fee-master descriptions come from the backend as "<name> — <fee category>", e.g.
+// "PTA — Junior student fees". The category half is low-value noise on this page
+// (cashiers already see the term/session context elsewhere), so we drop everything
+// from the em dash onward and smart-title-case what's left.
+function cleanFeeDescription(desc: string): string {
+  if (!desc) return '';
+  const dashIdx = desc.indexOf('—');
+  const base = (dashIdx >= 0 ? desc.slice(0, dashIdx) : desc).trim();
+  return smartTitleCase(base);
 }
 function extractError(err: any): string {
   const d = err?.response?.data;
@@ -72,6 +97,7 @@ interface CartItem {
 interface CartGroup {
   groupId: string;
   groupName: string;
+  groupMeta?: string; // e.g. "LEA-0002 • SS 1 GOLD" — reg no / class / section, shown next to the name
   isFamily: boolean;
   items: CartItem[];
 }
@@ -319,7 +345,7 @@ export default function POSCheckoutPage() {
               if (Number(line.balance) > 0) {
                 items.push({
                   uid: `invoice_${line.id}`, targetType: 'invoice', targetId: line.id,
-                  description: line.description, balance: Number(line.balance), allocated: '', included: true, rawObj: line
+                  description: cleanFeeDescription(line.description), balance: Number(line.balance), allocated: '', included: true, rawObj: line
                 });
               }
             });
@@ -329,14 +355,17 @@ export default function POSCheckoutPage() {
               if (Number(op.balance) > 0) {
                 items.push({
                   uid: `ancillary_debt_${op.id}`, targetType: 'ancillary_debt', targetId: op.id,
-                  description: `${op.description} (${op.category_display})`, balance: Number(op.balance), allocated: '', included: true, rawObj: op
+                  description: `${cleanFeeDescription(op.description)} (${smartTitleCase(op.category_display || '')})`, balance: Number(op.balance), allocated: '', included: true, rawObj: op
                 });
               }
             });
           }
           if (items.length > 0) {
-            const name = toTitleCase(stData.student?.full_name || stData.__str__ || 'Student');
-            groups.push({ groupId: `stu_${stData.student_id || stData.id}`, groupName: name, isFamily: false, items });
+            const st = stData.student || {};
+            const name = toTitleCase(st.full_name || stData.__str__ || 'Student');
+            const classInfo = [st.current_class_name, st.current_class_section_name].filter(Boolean).join(' ');
+            const groupMeta = [st.registration_number, classInfo].filter(Boolean).join(' • ');
+            groups.push({ groupId: `stu_${stData.student_id || stData.id}`, groupName: name, groupMeta, isFamily: false, items });
           }
         });
 
@@ -346,7 +375,7 @@ export default function POSCheckoutPage() {
             if (Number(line.balance) > 0) {
               items.push({
                 uid: `family_invoice_${line.id}`, targetType: 'family_invoice', targetId: line.id,
-                description: line.description, balance: Number(line.balance), allocated: '', included: true, rawObj: line
+                description: cleanFeeDescription(line.description), balance: Number(line.balance), allocated: '', included: true, rawObj: line
               });
             }
           });
@@ -464,7 +493,7 @@ export default function POSCheckoutPage() {
 
   const handleWalletAmountChange = (studentId: number, rawValue: string, maxBalance: number) => {
     setWalletContributions(prev => {
-      const clamped = rawValue === '' ? '0' : String(Math.min(Math.max(0, Number(rawValue) || 0), maxBalance));
+      const clamped = rawValue === '' ? '' : String(Math.min(Math.max(0, Number(rawValue) || 0), maxBalance));
       return { ...prev, [studentId]: clamped };
     });
   };
@@ -575,13 +604,6 @@ export default function POSCheckoutPage() {
   //    but no wallet contribution was selected and cash/transfer/POS is being used instead.
   const getPreSubmitWarnings = (): string[] => {
     const warnings: string[] = [];
-
-    if (manualCount > 0 && tenderedTouched && tenderedKobo > manualSumKobo) {
-      warnings.push(
-        `Amount Tendered (${fmtMoney(fromKobo(tenderedKobo))}) is more than the ${fmtMoney(fromKobo(manualSumKobo))} you allocated to line items. The extra ${fmtMoney(fromKobo(tenderedKobo - manualSumKobo))} will be recorded as an overpayment / wallet credit. Continue?`
-      );
-    }
-
     wards.forEach((w: any) => {
       const sid = w.student.id;
       if (walletContributions[sid] !== undefined) return; // already pulling from this ward's wallet
@@ -615,10 +637,10 @@ export default function POSCheckoutPage() {
   const handleSubmit = async () => {
     setAttemptedSubmit(true);
     if (!canConfirm) {
-      if (totalAvailableKobo <= 0) setError('Enter a tendered amount or select a wallet source before confirming.');
-      else if (bankRequired && !bankAccountId) setError('Please select which bank account received this payment.');
-      else if (proofRequired && !proofFile) setError('Proof of payment is required for this payment method.');
-      else if (overpaymentNeedsTarget) setError('Select which ward should receive the excess wallet credit.');
+      if (totalAvailableKobo <= 0) showToast('error', 'Enter a tendered amount or select a wallet source before confirming.');
+      else if (bankRequired && !bankAccountId) showToast('error', 'Please select which bank account received this payment.');
+      else if (proofRequired && !proofFile) showToast('error', 'Proof of payment is required for this payment method.');
+      else if (overpaymentNeedsTarget) showToast('error', 'Select which ward should receive the excess wallet credit.');
       return;
     }
     setIsSubmitting(true);
@@ -639,7 +661,7 @@ export default function POSCheckoutPage() {
 
       const fundingSources: any[] = [];
       Object.entries(walletContributions).forEach(([sid, amt]) => {
-        if (parseFloat(amt) > 0) {
+        if (parseFloat(amt || '0') > 0) {
           fundingSources.push({ source_type: 'wallet', wallet_student_id: Number(sid), wallet_type: 'fee', amount: amt });
         }
       });
@@ -695,7 +717,8 @@ export default function POSCheckoutPage() {
         await handleSelectProfile(selectedPerson, searchType);
       }
     } catch (err: any) {
-      setError(extractError(err));
+      showToast('error', extractError(err)); // Fixes the invisible error state
+      setError(extractError(err)); // Optional: keep this if you still want it at the top too
     } finally {
       setIsSubmitting(false);
     }
@@ -776,7 +799,10 @@ export default function POSCheckoutPage() {
                   <div key={st.id} className="border border-slate-100 rounded-xl overflow-hidden">
                     <div className="px-4 py-2.5 bg-slate-100 flex items-center justify-between">
                       <span className="text-xs font-black text-slate-700">{toTitleCase(st.full_name)}</span>
-                      <span className="text-[10px] font-bold text-slate-500">{st.current_class_name} {st.current_class_section_name || ''}</span>
+                      <span className="text-[10px] font-bold text-slate-500">
+                        {st.registration_number}{st.registration_number && (st.current_class_name || st.current_class_section_name) ? ' • ' : ''}
+                        {st.current_class_name} {st.current_class_section_name || ''}
+                      </span>
                     </div>
                     <div className="p-3 space-y-2">
                       {items.length === 0 && adhoc.length === 0 ? (
@@ -785,13 +811,13 @@ export default function POSCheckoutPage() {
                         <>
                           {items.map((it: any) => (
                             <div key={it.id} className="flex justify-between items-start text-xs">
-                              <span className="font-bold text-slate-700 pr-2">{it.description}</span>
+                              <span className="font-bold text-slate-700 pr-2">{cleanFeeDescription(it.description)}</span>
                               <span className="font-bold text-slate-600 shrink-0">{fmtMoney(it.balance)}</span>
                             </div>
                           ))}
                           {adhoc.map((op: any) => (
                             <div key={op.id} className="flex justify-between items-start text-xs">
-                              <span className="font-bold text-amber-700 pr-2">{op.description} ({op.category_display})</span>
+                              <span className="font-bold text-amber-700 pr-2">{cleanFeeDescription(op.description)} ({smartTitleCase(op.category_display || '')})</span>
                               <span className="font-bold text-amber-600 shrink-0">{fmtMoney(op.balance)}</span>
                             </div>
                           ))}
@@ -811,7 +837,7 @@ export default function POSCheckoutPage() {
                   <div className="p-3 space-y-2">
                     {(rawParentData.family_invoice.items || []).map((it: any) => (
                       <div key={it.id} className="flex justify-between items-start text-xs">
-                        <span className="font-bold text-slate-700 pr-2">{it.description}</span>
+                        <span className="font-bold text-slate-700 pr-2">{cleanFeeDescription(it.description)}</span>
                         <span className="font-bold text-slate-600 shrink-0">{fmtMoney(it.balance)}</span>
                       </div>
                     ))}
@@ -922,6 +948,41 @@ export default function POSCheckoutPage() {
           </div>
           <h1 className="text-lg font-black text-slate-900">Receive Payment</h1>
         </div>
+
+        {/* ── Parent / Student Info Banner — shown as soon as a profile is selected ── */}
+        {step === 'cart' && rawParentData && (
+          <div className="mb-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 bg-indigo-100 rounded-xl flex items-center justify-center shrink-0">
+                <UserCircle className="w-6 h-6 text-indigo-600" />
+              </div>
+              <div>
+                <p className="text-sm font-black text-slate-900">
+                  {toTitleCase(rawParentData.parent_name || selectedPerson?.full_name || '')}
+                </p>
+                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                  <span className="text-[10px] font-black uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                    {searchType === 'parent' ? 'Parent / Guardian' : 'Student'}
+                  </span>
+                  {rawParentData.phone && (
+                    <span className="text-xs font-medium text-slate-400 flex items-center gap-1">
+                      <Phone className="w-3 h-3" /> {rawParentData.phone}
+                    </span>
+                  )}
+                  {searchType === 'parent' && wards.length > 0 && (
+                    <span className="text-xs font-medium text-slate-400">
+                      {wards.length} ward{wards.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Grand Total Outstanding</p>
+              <p className="text-lg font-black text-rose-600">{fmtMoney(rawParentData.grand_total_outstanding || 0)}</p>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="mb-5 flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
@@ -1039,12 +1100,12 @@ export default function POSCheckoutPage() {
                   {loadingLedger ? (
                     <div className="flex items-center justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-indigo-500"/></div>
                   ) : (
-                    <table className="w-full text-left whitespace-nowrap">
+                    <table className="w-full text-left whitespace-nowrap table-fixed">
                       <thead className="sticky top-0 z-10">
                         <tr className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b-2 border-slate-200">
                           <th className="px-3 py-3 w-8 bg-slate-100"></th>
                           <th className="px-4 py-3 w-1/2 bg-slate-100">Description</th>
-                          <th className="px-4 py-3 text-right bg-slate-100">Balance Due</th>
+                          <th className="px-4 py-3 text-right w-32 bg-slate-100">Balance Due</th>
                           <th className="px-4 py-3 text-right w-40 bg-slate-100">Allocated Pay</th>
                         </tr>
                       </thead>
@@ -1055,9 +1116,15 @@ export default function POSCheckoutPage() {
                           finalGroups.map(group => (
                             <React.Fragment key={group.groupId}>
                               <tr className={group.isFamily ? "bg-purple-50 border-y border-purple-100" : "bg-slate-50 border-y border-slate-200"}>
-                                <td colSpan={4} className={`px-4 py-2 text-xs font-black flex items-center gap-2 ${group.isFamily ? 'text-purple-900' : 'text-slate-800'}`}>
-                                  {group.isFamily ? <Building2 className="w-4 h-4 text-purple-400"/> : <UserCircle className="w-4 h-4 text-slate-400"/>}
-                                  {group.groupName}
+                                <td className="px-3 py-2"></td>
+                                <td colSpan={3} className={`px-4 py-2 text-xs font-black ${group.isFamily ? 'text-purple-900' : 'text-slate-800'}`}>
+                                  <div className="flex items-center gap-2">
+                                    {group.isFamily ? <Building2 className="w-4 h-4 text-purple-400 shrink-0"/> : <UserCircle className="w-4 h-4 text-slate-400 shrink-0"/>}
+                                    <span className="truncate">{group.groupName}</span>
+                                    {group.groupMeta && (
+                                      <span className="text-[10px] font-bold text-slate-400 normal-case shrink-0">• {group.groupMeta}</span>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
 

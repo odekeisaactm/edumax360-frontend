@@ -85,14 +85,14 @@ export function ParentSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: (
       moduleCode: 'fee',
       children: [
         {
-          name: 'Due Invoices',
+          name: 'Invoices',
           href: '/dashboard/parent/fees',
           icon: <CreditCard className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/parent/fees'),
         },
         {
           name: 'Make Payment',
-          href: '/dashboard/parent/fees/upload',
+          href: '/dashboard/parent/fees/checkout',
           icon: <Upload className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/parent/fees/upload'),
         },

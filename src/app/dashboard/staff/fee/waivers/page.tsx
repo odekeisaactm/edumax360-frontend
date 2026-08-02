@@ -233,6 +233,8 @@ function WaiversContent() {
   const [isNewWaiverOpen, setIsNewWaiverOpen] = useState(false);
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
   const [studentSearchResults, setStudentSearchResults] = useState<any[]>([]);
+  const [isSearchingStudents, setIsSearchingStudents] = useState(false);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [includeInactiveStudents, setIncludeInactiveStudents] = useState(false);
   const [waivableItems, setWaivableItems] = useState<any[]>([]);
@@ -244,6 +246,7 @@ function WaiversContent() {
   const [confirmBulkModal, setConfirmModal] = useState(false);
 
   const requestIdRef = useRef(0);
+  const studentSearchRef = useRef<HTMLDivElement>(null);
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const showToast = (type: 'success' | 'error', message: string) => {
@@ -261,6 +264,46 @@ function WaiversContent() {
       setIsNewWaiverOpen(false);
     }
   }, [returnTo, returnStudentId, router]);
+
+  // ─── Lock background page scroll whenever any drawer/modal is open ────────
+  // Previously the page behind the drawer stayed scrollable at the same time as
+  // the drawer body and the items list inside it — three scrollable regions
+  // active at once. Locking body scroll here removes that outer layer.
+  useEffect(() => {
+    const anyOverlayOpen = isNewWaiverOpen || isDrawerOpen || confirmBulkModal || approveModal.open || rejectModal.open;
+    if (anyOverlayOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [isNewWaiverOpen, isDrawerOpen, confirmBulkModal, approveModal.open, rejectModal.open]);
+
+  // ─── Escape key closes the topmost open overlay ────────────────────────────
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (confirmBulkModal) setConfirmModal(false);
+      else if (approveModal.open) setApproveModal({ open: false, item: null });
+      else if (rejectModal.open) setRejectModal({ open: false, item: null });
+      else if (isDrawerOpen) setIsDrawerOpen(false);
+      else if (isNewWaiverOpen) closeNewWaiverDrawer();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmBulkModal, approveModal.open, rejectModal.open, isDrawerOpen, isNewWaiverOpen]);
+
+  // ─── Close the student search dropdown on outside click ───────────────────
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (studentSearchRef.current && !studentSearchRef.current.contains(e.target as Node)) {
+        setShowSearchDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     academicCalendarAPI.listSessions()
@@ -335,6 +378,7 @@ function WaiversContent() {
     setSelectedStudent(student);
     setStudentSearchQuery('');
     setStudentSearchResults([]);
+    setShowSearchDropdown(false);
     setWaiverSelections({});
     setLoadingWaivables(true);
     try {
@@ -386,8 +430,10 @@ function WaiversContent() {
   useEffect(() => {
     if (!studentSearchQuery.trim()) {
       setStudentSearchResults([]);
+      setIsSearchingStudents(false);
       return;
     }
+    setIsSearchingStudents(true);
     const timer = setTimeout(async () => {
       try {
         const res = await studentsAPI.list({
@@ -399,6 +445,8 @@ function WaiversContent() {
         setStudentSearchResults(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error("Student search failed", err);
+      } finally {
+        setIsSearchingStudents(false);
       }
     }, 300);
     return () => clearTimeout(timer);
@@ -418,6 +466,32 @@ function WaiversContent() {
           description: item.description,
           group: item.group_label
         };
+      }
+      return copy;
+    });
+  };
+
+  // Select or deselect every item within one fee group in a single click,
+  // instead of ticking each item individually.
+  const toggleSelectAllInGroup = (items: any[]) => {
+    setWaiverSelections(prev => {
+      const copy = { ...prev };
+      const allSelected = items.every((it: any) => !!copy[it.id]);
+      if (allSelected) {
+        items.forEach((it: any) => { delete copy[it.id]; });
+      } else {
+        items.forEach((it: any) => {
+          if (!copy[it.id]) {
+            copy[it.id] = {
+              id: it.id,
+              type: it.type,
+              amount: it.balance,
+              max: parseFloat(it.balance),
+              description: it.description,
+              group: it.group_label
+            };
+          }
+        });
       }
       return copy;
     });
@@ -822,6 +896,9 @@ function WaiversContent() {
               </button>
             </div>
 
+            {/* Single scrollable body — the items list below no longer carries its
+                own nested scroll container, so this is the only scroll region
+                inside the drawer (background page scroll is locked separately). */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
               {deepLinkLoading && (
@@ -838,15 +915,70 @@ function WaiversContent() {
 
                 {!selectedStudent ? (
                   <div className="space-y-3">
-                    <div className="relative">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Search by student name or registration number..."
-                        value={studentSearchQuery}
-                        onChange={(e) => setStudentSearchQuery(e.target.value)}
-                        className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-medium text-slate-800"
-                      />
+                    {/* Search input + floating results overlay live inside this
+                        ref'd wrapper so outside clicks can close the dropdown,
+                        and the results no longer push page content around or
+                        add a permanent nested scroll region. */}
+                    <div className="relative" ref={studentSearchRef}>
+                      <div className="relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search by student name or registration number..."
+                          value={studentSearchQuery}
+                          onChange={(e) => { setStudentSearchQuery(e.target.value); setShowSearchDropdown(true); }}
+                          onFocus={() => setShowSearchDropdown(true)}
+                          className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-medium text-slate-800"
+                        />
+                        {isSearchingStudents && (
+                          <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500 animate-spin" />
+                        )}
+                      </div>
+
+                      {showSearchDropdown && studentSearchQuery.trim() && (
+                        <div className="absolute z-20 top-full left-0 right-0 mt-2 border border-slate-200 rounded-2xl bg-white shadow-lg overflow-hidden max-h-60 overflow-y-auto divide-y divide-slate-100">
+                          {isSearchingStudents ? (
+                            <div className="p-6 text-center text-slate-400">
+                              <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2 text-emerald-500" />
+                              <p className="text-xs font-semibold">Searching...</p>
+                            </div>
+                          ) : studentSearchResults.length > 0 ? (
+                            studentSearchResults.map((st: any) => {
+                              const studentName = toTitleCase(st.full_name || `${st.first_name || ''} ${st.last_name || ''}`.trim());
+                              const regNo = st.registration_number || st.reg_no || 'No Reg No';
+                              const classLabel = st.current_class_name || st.current_class || '';
+
+                              return (
+                                <div
+                                  key={st.id}
+                                  onClick={() => loadWaivableItemsFor(st)}
+                                  className="p-3.5 hover:bg-emerald-50/70 cursor-pointer flex items-center justify-between transition-colors gap-3"
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    {st.image_url ? (
+                                      <img src={getImageUrl(st.image_url)} alt="" className="w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0" />
+                                    ) : (
+                                      <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs shrink-0">
+                                        <GraduationCap className="h-4 w-4 text-emerald-600" />
+                                      </div>
+                                    )}
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-bold text-slate-900 truncate">{studentName}</p>
+                                      <p className="text-xs font-mono text-slate-400 truncate">{regNo}</p>
+                                      {classLabel && <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 truncate">{classLabel}</p>}
+                                    </div>
+                                  </div>
+                                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase shrink-0 ${st.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                                    {st.status || 'Active'}
+                                  </span>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="p-6 text-center text-slate-400 text-xs font-medium">No students found</div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <label className="flex items-center gap-2.5 text-xs text-slate-600 font-medium px-1 cursor-pointer select-none">
@@ -858,42 +990,6 @@ function WaiversContent() {
                       />
                       Include graduated / inactive students (Alumni)
                     </label>
-
-                    {studentSearchResults.length > 0 && (
-                      <div className="border border-slate-200 rounded-2xl bg-white shadow-lg overflow-hidden max-h-60 overflow-y-auto divide-y divide-slate-100">
-                        {studentSearchResults.map((st: any) => {
-                          const studentName = toTitleCase(st.full_name || `${st.first_name || ''} ${st.last_name || ''}`.trim());
-                          const regNo = st.registration_number || st.reg_no || 'No Reg No';
-                          const classLabel = st.current_class_name || st.current_class || '';
-
-                          return (
-                            <div
-                              key={st.id}
-                              onClick={() => loadWaivableItemsFor(st)}
-                              className="p-3.5 hover:bg-emerald-50/70 cursor-pointer flex items-center justify-between transition-colors gap-3"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                {st.image_url ? (
-                                  <img src={getImageUrl(st.image_url)} alt="" className="w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0" />
-                                ) : (
-                                  <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs shrink-0">
-                                    <GraduationCap className="h-4 w-4 text-emerald-600" />
-                                  </div>
-                                )}
-                                <div className="min-w-0">
-                                  <p className="text-sm font-bold text-slate-900 truncate">{studentName}</p>
-                                  <p className="text-xs font-mono text-slate-400 truncate">{regNo}</p>
-                                  {classLabel && <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 truncate">{classLabel}</p>}
-                                </div>
-                              </div>
-                              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase shrink-0 ${st.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                                {st.status || 'Active'}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <div className="p-4 bg-emerald-50/50 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3">
@@ -951,18 +1047,31 @@ function WaiversContent() {
                       This student has no outstanding debts or unpaid invoice items to waive.
                     </div>
                   ) : (
-                    <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
+                    /* No longer its own scroll container — flows within the drawer's
+                       single scrollable body above, removing one nested scroll region. */
+                    <div className="space-y-4">
                       {Object.entries(
                         waivableItems.reduce((acc: any, item: any) => {
                           acc[item.group_label] = acc[item.group_label] || [];
                           acc[item.group_label].push(item);
                           return acc;
                         }, {})
-                      ).map(([groupLabel, items]: [string, any]) => (
+                      ).map(([groupLabel, items]: [string, any]) => {
+                        const allGroupSelected = items.every((it: any) => !!waiverSelections[it.id]);
+                        return (
                         <div key={groupLabel} className="border border-slate-200 rounded-2xl p-4 bg-white space-y-3 shadow-2xs">
-                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5" /> {groupLabel}
-                          </h4>
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5" /> {groupLabel}
+                            </h4>
+                            <button
+                              type="button"
+                              onClick={() => toggleSelectAllInGroup(items)}
+                              className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 uppercase tracking-wide transition-colors"
+                            >
+                              {allGroupSelected ? 'Deselect all' : 'Select all'}
+                            </button>
+                          </div>
                           <div className="space-y-2">
                             {items.map((item: any) => {
                               const isSelected = !!waiverSelections[item.id];
@@ -998,7 +1107,7 @@ function WaiversContent() {
                                             value={currentVal}
                                             onChange={(e) => handleUpdateWaiverAmount(item.id, e.target.value)}
                                             placeholder={item.balance}
-                                            className={`w-28 px-3 py-1.5 text-xs font-black text-slate-900 bg-white border rounded-xl outline-none focus:ring-2 text-right shadow-2xs ${isInvalid ? 'border-rose-400 focus:ring-rose-400' : 'border-emerald-300 focus:ring-emerald-500'}`}
+                                            className={`w-28 px-3 py-1.5 text-xs font-black text-slate-900 bg-white border rounded-xl outline-none focus:ring-2 text-right shadow-2xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isInvalid ? 'border-rose-400 focus:ring-rose-400' : 'border-emerald-300 focus:ring-emerald-500'}`}
                                           />
                                         </div>
                                         {isInvalid && <span className="text-[10px] font-bold text-rose-500">Enter an amount</span>}
@@ -1010,7 +1119,8 @@ function WaiversContent() {
                             })}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
