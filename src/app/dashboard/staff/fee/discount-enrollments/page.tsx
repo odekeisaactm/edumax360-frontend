@@ -39,7 +39,7 @@ const isDiscountActive = (d: Pick<Discount, 'id'> & { is_active?: boolean }) => 
 
 function getEffectiveRate(discount: Discount | undefined, studentClassId: number | null): number {
   if (!discount) return 0;
-  const tier = discount.class_tiers?.find(t => t.student_class === studentClassId);
+  const tier = discount.class_tiers?.find(t => Number(t.student_class) === Number(studentClassId));
   const raw = tier ? tier.tier_amount : discount.amount;
   return parseFloat((raw as any) || '0');
 }

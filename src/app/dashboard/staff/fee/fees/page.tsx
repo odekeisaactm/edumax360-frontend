@@ -596,81 +596,85 @@ export default function FeesPage() {
           </div>
         ) : (
           <>
-            {/* Table header */}
-            <div className="grid grid-cols-[1fr_130px_110px_130px_80px_120px_90px] items-center gap-3 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Name</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Code</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Occurrence</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Utility</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Family</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Period</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</span>
-            </div>
+            <div className="overflow-x-auto">
+                <div className="min-w-[900px]">
+                    {/* Table header */}
+                    <div className="grid grid-cols-[1fr_130px_110px_130px_80px_120px_90px] items-center gap-3 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Name</span>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Code</span>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Occurrence</span>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Utility</span>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Family</span>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Period</span>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</span>
+                    </div>
 
-            <div className="divide-y divide-slate-50">
-              {filtered.map(f => (
-                <div key={f.id}
-                  className="grid grid-cols-[1fr_130px_110px_130px_80px_120px_90px] items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 transition-colors">
+                    <div className="divide-y divide-slate-50">
+                      {filtered.map(f => (
+                        <div key={f.id}
+                          className="grid grid-cols-[1fr_130px_110px_130px_80px_120px_90px] items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 transition-colors">
 
-                  {/* Name */}
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-semibold text-slate-900 truncate">{f.name}</span>
-                    {f.is_protected && (
-                        <span title="Protected — cannot be deleted" >
-                         <Lock className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
-                         </span>
-                    )}
-                  </div>
+                          {/* Name */}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-semibold text-slate-900 truncate">{f.name}</span>
+                            {f.is_protected && (
+                                <span title="Protected — cannot be deleted" >
+                                 <Lock className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+                                 </span>
+                            )}
+                          </div>
 
-                  {/* Code */}
-                  <span className="font-mono text-xs text-slate-500 truncate">{f.code}</span>
+                          {/* Code */}
+                          <span className="font-mono text-xs text-slate-500 truncate">{f.code}</span>
 
-                  {/* Occurrence */}
-                  <span className={`inline-flex w-fit px-2.5 py-1 rounded-full text-xs font-semibold
-                    ${f.occurrence === 'periodic'  ? 'bg-blue-100 text-blue-700'   :
-                      f.occurrence === 'annually'  ? 'bg-amber-100 text-amber-700' :
-                                                     'bg-slate-100 text-slate-600'}`}>
-                    {OCC_LABELS[f.occurrence] || f.occurrence}
-                  </span>
+                          {/* Occurrence */}
+                          <span className={`inline-flex w-fit px-2.5 py-1 rounded-full text-xs font-semibold
+                            ${f.occurrence === 'periodic'  ? 'bg-blue-100 text-blue-700'   :
+                              f.occurrence === 'annually'  ? 'bg-amber-100 text-amber-700' :
+                                                             'bg-slate-100 text-slate-600'}`}>
+                            {OCC_LABELS[f.occurrence] || f.occurrence}
+                          </span>
 
-                  {/* Utility */}
-                  <span className="text-xs text-slate-500 truncate">
-                    {f.required_utility_name
-                      ? <span className="px-2 py-0.5 bg-teal-50 text-teal-700 rounded-full font-medium">{f.required_utility_name}</span>
-                      : <span className="text-slate-300">—</span>}
-                  </span>
+                          {/* Utility */}
+                          <span className="text-xs text-slate-500 truncate">
+                            {f.required_utility_name
+                              ? <span className="px-2 py-0.5 bg-teal-50 text-teal-700 rounded-full font-medium">{f.required_utility_name}</span>
+                              : <span className="text-slate-300">—</span>}
+                          </span>
 
-                  {/* Family bound */}
-                  {f.parent_bound
-                    ? <span className="inline-flex w-fit px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-semibold">Yes</span>
-                    : <span className="text-slate-300 text-sm">—</span>}
+                          {/* Family bound */}
+                          {f.parent_bound
+                            ? <span className="inline-flex w-fit px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-semibold">Yes</span>
+                            : <span className="text-slate-300 text-sm">—</span>}
 
-                  {/* Payment Period */}
-                  <span className="text-xs text-slate-500 truncate">
-                    {f.payment_period_name
-                      ? <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full font-medium">{f.payment_period_name}</span>
-                      : <span className="text-slate-300">—</span>}
-                  </span>
+                          {/* Payment Period */}
+                          <span className="text-xs text-slate-500 truncate">
+                            {f.payment_period_name
+                              ? <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full font-medium">{f.payment_period_name}</span>
+                              : <span className="text-slate-300">—</span>}
+                          </span>
 
-                  {/* Actions — always visible */}
-                  <div className="flex items-center gap-1">
-                    {canManage && (
-                      <>
-                        <button onClick={() => openEdit(f)} title="Edit"
-                          className="p-2 rounded-lg text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all">
-                          <Edit3 className="h-3.5 w-3.5" />
-                        </button>
-                        <button onClick={() => setDeletingFee(f)} title="Delete" disabled={f.is_protected}
-                          className="p-2 rounded-lg text-red-600 bg-red-50 border border-red-100 hover:bg-red-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </>
-                    )}
-                  </div>
+                          {/* Actions — always visible */}
+                          <div className="flex items-center gap-1">
+                            {canManage && (
+                              <>
+                                <button onClick={() => openEdit(f)} title="Edit"
+                                  className="p-2 rounded-lg text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all">
+                                  <Edit3 className="h-3.5 w-3.5" />
+                                </button>
+                                <button onClick={() => setDeletingFee(f)} title="Delete" disabled={f.is_protected}
+                                  className="p-2 rounded-lg text-red-600 bg-red-50 border border-red-100 hover:bg-red-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
                 </div>
-              ))}
             </div>
-
             {/* Footer count */}
             <div className="px-5 py-3 border-t border-slate-50 bg-slate-50/40">
               <p className="text-xs text-slate-400">
