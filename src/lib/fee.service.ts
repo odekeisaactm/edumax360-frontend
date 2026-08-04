@@ -599,6 +599,15 @@ export const receiptsAPI = {
     }
   },
 
+  decline: async (id: number, reason: string): Promise<PaymentReceipt> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/checkouts/${id}/decline/`, { reason });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+
   revert: async (id: number, reason: string): Promise<PaymentReceipt> => {
     try {
       const response = await api.post(`${FEE_API_BASE}/checkouts/${id}/revert/`, { reason });
@@ -615,6 +624,10 @@ export const receiptsAPI = {
     } catch (error: any) {
       throw new Error(getDrfError(error));
     }
+  },
+  getPublicBanks: async (): Promise<any[]> => {
+    const response = await api.get(`${FEE_API_BASE}/public-banks/`);
+    return response.data;
   },
 };
 

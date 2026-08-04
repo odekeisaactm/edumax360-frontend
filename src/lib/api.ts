@@ -2242,9 +2242,11 @@ export const feeAPI = {
   checkout: newFeeAPI.receipts.checkout,
   confirmReceipt: newFeeAPI.receipts.confirm,
   revertReceipt: newFeeAPI.receipts.revert,
+  declineReceipt: newFeeAPI.receipts.decline,
   getReceipts: newFeeAPI.receipts.list,
   getPendingReceipts: newFeeAPI.receipts.listPending,
   emailReceipt: newFeeAPI.receipts.emailReceipt,
+  getBankAccounts: newFeeAPI.receipts.getPublicBanks,
   // Wallets (UI calls Fee, but we route to Finance backend)
   getWalletTransactions: async (p?: any) => financeAPI.auditLedgers?.getStudentWalletLedger(p) || [],
   fundWallet: financeAPI.studentFunding.create,

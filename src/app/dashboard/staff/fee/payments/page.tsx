@@ -347,7 +347,7 @@ export default function PaymentsPage() {
     if (!declineModal.item) return;
     setActionLoading(true);
     try {
-      const updated = await feeAPI.revertReceipt(declineModal.item.id, reason);
+      const updated = await feeAPI.declineReceipt(declineModal.item.id, reason);
       showToast('success', 'Payment declined and reverted.');
       setDeclineModal({ open: false, item: null });
       setIsDrawerOpen(false);
