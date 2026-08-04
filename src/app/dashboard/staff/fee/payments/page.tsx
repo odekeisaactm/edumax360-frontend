@@ -695,29 +695,29 @@ export default function PaymentsPage() {
                   <button disabled={actionLoading} onClick={() => setConfirmModal({ open: true, item: selectedPayment })} className="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> Approve Payment</button>
                 </>
               )}
-              {selectedPayment.status === 'confirmed' && (
-                <>
-                  {selectedPayment.proof_of_payment && (
-                    <a href={getImageUrl(selectedPayment.proof_of_payment)} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-sm">
-                      <FileText className="w-4 h-4" /> View Proof
-                    </a>
-                  )}
-                  <button onClick={() => openPrintView(selectedPayment)} className="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-sm">
-                    <Printer className="w-4 h-4" /> Print Receipt
-                  </button>
-                  <button onClick={() => handleEmailReceipt(selectedPayment.id)} className="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-sm">
-                    <Mail className="w-4 h-4" /> Email
-                  </button>
-                  {(() => {
-                    const isExpired = isReversalExpired(selectedPayment, settings);
-                    return (
-                      <button disabled={isExpired} onClick={() => setRevertModal({ open: true, item: selectedPayment })} title={isExpired ? 'Reversal Expired' : 'Revert Payment'} className="px-4 py-2 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 disabled:opacity-40">
-                        <RotateCcw className="w-4 h-4" /> Revert
-                      </button>
-                    );
-                  })()}
-                </>
-              )}
+              {selectedPayment.proof_of_payment && (
+                  <a href={getImageUrl(selectedPayment.proof_of_payment)} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-sm">
+                    <FileText className="w-4 h-4" /> View Proof
+                  </a>
+                )}
+                {selectedPayment.status === 'confirmed' && (
+                  <>
+                    <button onClick={() => openPrintView(selectedPayment)} className="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-sm">
+                      <Printer className="w-4 h-4" /> Print Receipt
+                    </button>
+                    <button onClick={() => handleEmailReceipt(selectedPayment.id)} className="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-sm">
+                      <Mail className="w-4 h-4" /> Email
+                    </button>
+                    {(() => {
+                      const isExpired = isReversalExpired(selectedPayment, settings);
+                      return (
+                        <button disabled={isExpired} onClick={() => setRevertModal({ open: true, item: selectedPayment })} title={isExpired ? 'Reversal Expired' : 'Revert Payment'} className="px-4 py-2 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 disabled:opacity-40">
+                          <RotateCcw className="w-4 h-4" /> Revert
+                        </button>
+                      );
+                    })()}
+                  </>
+                )}
             </div>
 
           </div>
