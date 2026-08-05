@@ -196,7 +196,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onMenuClick }) => {
                     )}
                   </div>
                   <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/50">
-                    
+
                   </div>
                 </div>
               )}

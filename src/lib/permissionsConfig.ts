@@ -277,35 +277,67 @@ export const MODULES: ModuleDef[] = [
   ],
 },
     {
-    key: 'finance',
-    label: 'Finance',
-    description: 'General ledger, student funding, expenses, and finance settings',
-    areas: [
-      {
-        key: 'ledger_funding',
-        label: 'Ledger & Funding',
-        description: 'Income, expenses, and student funding records',
-        permissions: [
-          { codename: 'view_expensemodel',        label: 'View Ledger',          desc: 'Read income and expense entries' },
-          { codename: 'add_expensemodel',         label: 'Add Ledger Entries',   desc: 'Create new income or expense entries' },
-          { codename: 'change_expensemodel',      label: 'Edit Ledger Entries',  desc: 'Update existing ledger entries' },
-          { codename: 'delete_expensemodel',      label: 'Delete Ledger Entries',desc: 'Permanently remove ledger entries' },
-          { codename: 'view_studentfundingmodel',   label: 'View Student Funding',  desc: 'Read student funding records' },
-          { codename: 'add_studentfundingmodel',    label: 'Add Student Funding',   desc: 'Create new student funding records' },
-          { codename: 'change_studentfundingmodel', label: 'Edit Student Funding',  desc: 'Update existing student funding records' },
-        ],
-      },
-      {
-        key: 'finance_settings',
-        label: 'Finance Settings',
-        description: 'Singleton finance configuration',
-        permissions: [
-          { codename: 'view_financesettingmodel',   label: 'View Finance Settings',   desc: 'Read finance configuration settings' },
-          { codename: 'change_financesettingmodel', label: 'Manage Finance Settings', desc: 'Update finance configuration settings' },
-        ],
-      },
-    ],
-  },
+  key: 'finance',
+  label: 'Finance & Ledger',
+  description: 'Income, expenses, wallet funding, procurement, and banking ledgers',
+  areas: [
+    {
+      key: 'income_expenses',
+      label: 'Income & Expenses',
+      description: 'Manage general school income and expenditure records',
+      permissions: [
+        { codename: 'view_incomemodel',    label: 'View Income',   desc: 'Read general income records and categories' },
+        { codename: 'add_incomemodel',     label: 'Manage Income', desc: 'Create and edit income records' },
+        { codename: 'view_expensemodel',   label: 'View Expenses', desc: 'Read general expense records and categories' },
+        { codename: 'add_expensemodel',    label: 'Manage Expenses', desc: 'Create and edit expense records' },
+      ],
+    },
+    {
+      key: 'wallet_funding',
+      label: 'Wallet Activities',
+      description: 'Fund student and staff wallets, and manage internal transfers',
+      permissions: [
+        { codename: 'view_studentfundingmodel',  label: 'View Student Funding', desc: 'Read student wallet deposits' },
+        { codename: 'add_studentfundingmodel',   label: 'Fund Student Wallets', desc: 'Create and confirm student wallet deposits' },
+        { codename: 'view_stafffundingmodel',    label: 'View Staff Funding',   desc: 'Read staff wallet deposits' },
+        { codename: 'add_stafffundingmodel',     label: 'Fund Staff Wallets',   desc: 'Create and confirm staff wallet deposits' },
+        { codename: 'view_wallettransfermodel',  label: 'View Wallet Transfers',desc: 'Read cross-wallet and sibling transfers' },
+        { codename: 'add_wallettransfermodel',   label: 'Manage Wallet Transfers',desc: 'Process internal wallet transfers' },
+      ],
+    },
+    {
+      key: 'procurement',
+      label: 'Procurement & Advances',
+      description: 'Settle purchase orders and manage staff purchase advances',
+      permissions: [
+        { codename: 'view_supplierpaymentmodel',          label: 'View Supplier Payments',  desc: 'Read payments made to suppliers' },
+        { codename: 'add_supplierpaymentmodel',           label: 'Manage Supplier Payments',desc: 'Record payments against purchase orders' },
+        { codename: 'view_purchaseadvancepaymentmodel',   label: 'View Advance Payments',   desc: 'Read staff purchase advance disbursements' },
+        { codename: 'add_purchaseadvancepaymentmodel',    label: 'Manage Advance Payments', desc: 'Disburse purchase advances and process settlements' },
+      ],
+    },
+    {
+      key: 'banking_ledger',
+      label: 'Banking & Audit Ledger',
+      description: 'Manage school bank accounts, physical cash vaults, and view immutable ledgers',
+      permissions: [
+        { codename: 'view_schoolbankdetailmodel', label: 'View Bank Accounts', desc: 'Read school bank accounts and cash vaults' },
+        { codename: 'add_schoolbankdetailmodel',  label: 'Manage Bank Accounts', desc: 'Create/edit bank accounts and perform manual balance adjustments' },
+        { codename: 'view_banktransactionmodel',  label: 'View Audit Ledgers', desc: 'Read the immutable bank, cash, and wallet transaction ledgers' },
+      ],
+    },
+    {
+      key: 'finance_settings',
+      label: 'Finance Configuration',
+      description: 'Manage global finance rules and payment gateways',
+      permissions: [
+        { codename: 'view_financesettingmodel',     label: 'View Settings',    desc: 'Read finance policies and active payment gateways' },
+        { codename: 'change_financesettingmodel',   label: 'Manage Settings',  desc: 'Update global finance rules, reversal windows, and auto-confirm settings' },
+        { codename: 'add_paymentgatewayconfigmodel',label: 'Manage Gateways',  desc: 'Add and configure online payment gateway credentials' },
+      ],
+    },
+  ],
+},
   {
     key: 'salary_management',
     label: 'Salary Management',
