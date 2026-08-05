@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // Added useEffect
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
@@ -24,15 +24,6 @@ export function ParentSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: (
   const pathname = usePathname();
   const { activeModules, logout } = useAuth();
 
-  // Open Results and Fees by default
-  const [expandedItems, setExpandedItems] = useState<string[]>(['Results', 'Fee Management']);
-
-  const toggleExpanded = (name: string) => {
-    setExpandedItems(prev =>
-      prev.includes(name) ? prev.filter(i => i !== name) : [...prev, name]
-    );
-  };
-
   const isCurrentPath = (href: string) => {
     if (href === '#') return false;
     if (href === pathname) return true;
@@ -40,7 +31,6 @@ export function ParentSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: (
     return false;
   };
 
-  // Only check module code, bypass permission checks for parents
   const hasAccess = (item: NavItem): boolean => {
     if (item.moduleCode && !activeModules.some(m => m.code === item.moduleCode)) {
       return false;
@@ -51,6 +41,7 @@ export function ParentSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: (
     return true;
   };
 
+  // Moved above state so we can determine the active parent on mount
   const navItems: NavItem[] = [
     {
       name: 'Dashboard',
@@ -74,7 +65,7 @@ export function ParentSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: (
           name: 'Cumulative Result',
           href: '/dashboard/parent/result/cumulative',
           icon: <Layers className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/parent/cumulative'),
+          current: isCurrentPath('/dashboard/parent/result/cumulative'),
         }
       ],
     },
@@ -124,32 +115,38 @@ export function ParentSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: (
         },
       ],
     },
-    {
-      name: 'Profile',
-      href: '#',
-      icon: <User className="h-5 w-5" />,
-      children: [
-        {
-          name: 'My Profile',
-          href: '/dashboard/parent/profile',
-          icon: <User className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/parent/profile'),
-        },
-        {
-          name: 'Ward Profile',
-          href: '/dashboard/parent/ward-profile',
-          icon: <Users className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/parent/ward-profile'),
-        },
-      ],
-    },
-    {
-      name: 'Contact School',
-      href: '/dashboard/parent/contact',
-      icon: <Phone className="h-5 w-5" />,
-      current: isCurrentPath('/dashboard/parent/contact'),
-    },
   ];
+
+  // Helper to find which parent group contains the current active route
+  const getActiveParent = () => {
+    for (const item of navItems) {
+      if (item.children && item.children.length > 0) {
+        for (const child of item.children) {
+          if (isCurrentPath(child.href)) {
+            return item.name;
+          }
+        }
+      }
+    }
+    return null;
+  };
+
+  // Initialize with ONLY the active parent open (fixes the hardcoded issue)
+  const [expandedItems, setExpandedItems] = useState<string[]>(() => {
+    const active = getActiveParent();
+    return active ? [active] : [];
+  });
+
+  // Sync open dropdowns dynamically when navigating client-side
+  useEffect(() => {
+    const active = getActiveParent();
+    setExpandedItems(active ? [active] : []);
+  }, [pathname]);
+
+  // Accordion behavior: clicking an open item closes it, clicking a closed one opens it (and closes others)
+  const toggleExpanded = (name: string) => {
+    setExpandedItems(prev => prev.includes(name) ? [] : [name]);
+  };
 
   const renderNavItem = (item: NavItem, level = 0) => {
     const hasChildren = item.children && item.children.length > 0;
