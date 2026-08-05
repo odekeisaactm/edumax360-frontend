@@ -7,7 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import api, { feeAPI, academicCalendarAPI } from '@/lib/api';
 import {
   ArrowLeft, Loader2, Check, AlertCircle, Upload, Wallet, X,
-  Building2, UserCircle, Eye, AlertTriangle, Info, UserCheck, Percent
+  Building2, UserCircle, Eye, AlertTriangle, Info, UserCheck, Percent, HelpCircle
 } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -91,6 +91,46 @@ interface CartGroup {
   items: CartItem[];
 }
 
+// ─── Help content ──────────────────────────────────────────────────────────
+const HELP_STEPS: [string, string][] = [
+  ['1. Choose what to pay', 'Every fee is ticked by default. Untick anything you don\u2019t want to pay right now.'],
+  ['2. Type the amount you deposited', 'Enter the total you sent to the bank at the bottom of the page. It automatically fills your fees in order, starting with the first one.'],
+  ['3. Or pay a specific fee', 'Want to control exactly how much goes to one fee? Type an amount directly into that fee\u2019s box \u2014 everything else still fills automatically around it.'],
+  ['4. Use wallet credit (optional)', 'If a ward already has money in their wallet, tick it to use that instead of a new deposit.'],
+  ['5. Add your proof', 'Select the bank account you paid into and upload your receipt or screenshot.'],
+  ['6. Preview, then submit', 'Tap "Preview Allocation" to check everything looks right, then "Submit Proof". The school will confirm it shortly after.'],
+];
+
+function HelpModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={onClose}>
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-indigo-100 bg-indigo-50 flex items-center justify-between">
+          <h3 className="font-black text-indigo-900 text-sm flex items-center gap-2">
+            <HelpCircle className="w-4 h-4" /> How This Page Works
+          </h3>
+          <button onClick={onClose} className="p-1 hover:bg-indigo-100 rounded-md" aria-label="Close">
+            <X className="w-4 h-4 text-indigo-600" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
+          {HELP_STEPS.map(([title, body]) => (
+            <div key={title}>
+              <p className="text-xs font-black text-slate-800">{title}</p>
+              <p className="text-[11px] text-slate-500 font-medium leading-relaxed mt-0.5">{body}</p>
+            </div>
+          ))}
+        </div>
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+          <button onClick={onClose} className="px-5 py-2.5 font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700">
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ParentCheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -140,6 +180,7 @@ function ParentCheckoutContent() {
   // ─── State: Modals ───
   const [showPreview, setShowPreview] = useState(false);
   const [warningModal, setWarningModal] = useState<{ warnings: string[]; action: 'preview' | 'submit' } | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   // ─── INIT ───
   useEffect(() => {
@@ -573,6 +614,9 @@ function ParentCheckoutContent() {
     <div className="max-w-5xl mx-auto space-y-5 pb-32 px-4 sm:px-6">
       <ToastStack toasts={toasts} onDismiss={id => setToasts(p => p.filter(t => t.id !== id))} />
 
+      {/* ── Help Modal ── */}
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+
       {/* ── Warning Modal ── */}
       {warningModal && (
         <div className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
@@ -694,10 +738,17 @@ function ParentCheckoutContent() {
         <button onClick={() => router.back()} className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors shrink-0">
           <ArrowLeft className="h-4 w-4 text-slate-600" />
         </button>
-        <div>
+        <div className="flex-1 min-w-0">
           <h1 className="text-lg font-black text-slate-900">Upload Payment Proof</h1>
           <p className="text-xs text-slate-400">Allocate your bank transfer across your wards securely.</p>
         </div>
+        <button
+          onClick={() => setShowHelp(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-bold hover:bg-indigo-100 transition-colors shrink-0"
+        >
+          <HelpCircle className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">How this works</span>
+        </button>
       </div>
 
       {/* ── Term Selector ── */}
@@ -733,7 +784,7 @@ function ParentCheckoutContent() {
       ) : (
         <div className="space-y-6">
 
-          {/* Line Items Table */}
+          {/* Line Items */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-2">
               <div className="flex items-center gap-3 flex-wrap">
@@ -754,68 +805,78 @@ function ParentCheckoutContent() {
                 Uncheck an item to exclude it, or type an amount directly into a box — everything else fills automatically based on your deposit amount.
               </p>
             </div>
-            <div className="overflow-x-auto min-h-[160px]">
-              <table className="w-full text-left whitespace-nowrap table-fixed">
-                <thead className="sticky top-0 z-10">
-                  <tr className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b-2 border-slate-200">
-                    <th className="px-3 py-3 w-8 bg-slate-100"></th>
-                    <th className="px-4 py-3 w-1/2 bg-slate-100">Description</th>
-                    <th className="px-4 py-3 text-right w-32 bg-slate-100">Balance Due</th>
-                    <th className="px-4 py-3 text-right w-40 bg-slate-100">Allocated Pay</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {finalGroups.map(group => (
-                    <React.Fragment key={group.groupId}>
-                      <tr className={group.isFamily ? "bg-purple-50 border-y border-purple-100" : "bg-slate-50 border-y border-slate-200"}>
-                        <td className="px-3 py-2"></td>
-                        <td colSpan={3} className={`px-4 py-2 text-xs font-black ${group.isFamily ? 'text-purple-900' : 'text-slate-800'}`}>
-                          <div className="flex items-center gap-2">
-                            {group.isFamily ? <Building2 className="w-4 h-4 text-purple-400 shrink-0"/> : <UserCircle className="w-4 h-4 text-slate-400 shrink-0"/>}
-                            <span className="truncate">{group.groupName}</span>
-                            {group.groupMeta && (
-                              <span className="text-[10px] font-bold text-slate-400 normal-case shrink-0">• {group.groupMeta}</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                      {group.items.map(item => {
-                        const excluded = item.included === false;
-                        return (
-                          <tr key={item.uid} className={`transition-colors ${excluded ? 'opacity-40' : group.isFamily ? 'hover:bg-purple-50/50' : 'hover:bg-slate-50'} ${item.targetType === 'ancillary_debt' ? 'bg-amber-50/20' : ''}`}>
-                            <td className="px-3 py-2.5">
-                              <input
-                                type="checkbox"
-                                checked={!excluded}
-                                onChange={() => toggleItemIncluded(item.uid)}
-                                className="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer"
-                              />
-                            </td>
-                            <td className={`px-4 py-2.5 text-xs font-bold text-slate-700 pl-2 relative ${excluded ? 'line-through' : ''}`}>
-                              {item.targetType === 'ancillary_debt' && <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] mr-2">FINE</span>}
-                              {item.description}
-                            </td>
-                            <td className="px-4 py-2.5 text-xs font-black text-rose-600 text-right">{formatCurrency(item.balance)}</td>
-                            <td className="px-4 py-2.5 text-right">
-                              {excluded ? (
-                                <span className="text-[10px] text-slate-300 italic">excluded</span>
-                              ) : (
-                                <input
-                                  type="number"
-                                  value={item.allocated}
-                                  onChange={e => handleManualAllocation(item.uid, e.target.value)}
-                                  placeholder="0.00"
-                                  className="w-full px-2 py-1.5 text-xs font-bold border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none text-right shadow-sm bg-white"
-                                />
+
+            {/* Column headers — desktop/tablet only, mobile stacks instead */}
+            <div className="hidden sm:flex items-center gap-3 px-5 py-2.5 bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest border-y-2 border-slate-200">
+              <div className="w-6"></div>
+              <div className="flex-1">Description</div>
+              <div className="w-28 text-right">Balance Due</div>
+              <div className="w-36 text-right">Allocated Pay</div>
+            </div>
+
+            <div className="divide-y divide-slate-100 min-h-[120px]">
+              {finalGroups.map(group => (
+                <div key={group.groupId}>
+                  <div className={`flex items-center gap-2 px-5 py-2 ${group.isFamily ? 'bg-purple-50 border-y border-purple-100' : 'bg-slate-50 border-y border-slate-200'}`}>
+                    {group.isFamily ? <Building2 className="w-4 h-4 text-purple-400 shrink-0"/> : <UserCircle className="w-4 h-4 text-slate-400 shrink-0"/>}
+                    <span className={`text-xs font-black truncate ${group.isFamily ? 'text-purple-900' : 'text-slate-800'}`}>{group.groupName}</span>
+                    {group.groupMeta && (
+                      <span className="text-[10px] font-bold text-slate-400 normal-case shrink-0">• {group.groupMeta}</span>
+                    )}
+                  </div>
+
+                  {group.items.map(item => {
+                    const excluded = item.included === false;
+                    return (
+                      <div
+                        key={item.uid}
+                        className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-5 py-3 transition-colors ${excluded ? 'opacity-40' : group.isFamily ? 'hover:bg-purple-50/50' : 'hover:bg-slate-50'} ${item.targetType === 'ancillary_debt' ? 'bg-amber-50/20' : ''}`}
+                      >
+                        {/* Checkbox + description (+ balance on mobile) */}
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={!excluded}
+                            onChange={() => toggleItemIncluded(item.uid)}
+                            className="w-3.5 h-3.5 mt-0.5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer shrink-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className={`text-xs font-bold text-slate-700 break-words ${excluded ? 'line-through' : ''}`}>
+                              {item.targetType === 'ancillary_debt' && (
+                                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] mr-1.5 align-middle">FINE</span>
                               )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
+                              {item.description}
+                            </p>
+                            <p className="text-[11px] font-black text-rose-600 sm:hidden mt-0.5">
+                              Balance: {formatCurrency(item.balance)}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Balance due — desktop/tablet only */}
+                        <div className="hidden sm:block w-28 text-right text-xs font-black text-rose-600 shrink-0">
+                          {formatCurrency(item.balance)}
+                        </div>
+
+                        {/* Allocated input */}
+                        <div className="w-full sm:w-36 shrink-0 pl-6 sm:pl-0">
+                          {excluded ? (
+                            <span className="text-[10px] text-slate-300 italic">excluded</span>
+                          ) : (
+                            <input
+                              type="number"
+                              value={item.allocated}
+                              onChange={e => handleManualAllocation(item.uid, e.target.value)}
+                              placeholder="0.00"
+                              className="w-full px-2 py-1.5 text-xs font-bold border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none text-right shadow-sm bg-white"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           </div>
 
