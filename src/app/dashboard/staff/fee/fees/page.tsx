@@ -7,6 +7,7 @@ import { Fee, Utility, AcademicPeriod, FeeOccurrence } from '@/lib/types';
 import {
   List, Plus, Edit3, Trash2, Check, X, AlertCircle,
   AlertTriangle, Loader2, Search, Lock, RefreshCw, HelpCircle,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -32,6 +33,8 @@ function extractError(err: any): string {
   }
   return err?.message || 'An unexpected error occurred.';
 }
+
+const PAGE_SIZE = 20;
 
 // ─── Toast Stack ───────────────────────────────────────────────────────────────
 
@@ -223,7 +226,6 @@ function FeeModal({ editing, utilities, periods, isSaving, onSave, onClose }: {
   const set = <K extends keyof FeeFormData>(key: K, value: FeeFormData[K]) =>
     setForm(prev => ({ ...prev, [key]: value }));
 
-  // Clear payment_period when switching back to periodic
   const handleOccurrenceChange = (val: string) => {
     set('occurrence', val);
     if (val === 'periodic') set('payment_period', '');
@@ -247,7 +249,6 @@ function FeeModal({ editing, utilities, periods, isSaving, onSave, onClose }: {
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: '92vh' }}>
 
-        {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
             <List className="h-4 w-4" />
@@ -259,7 +260,6 @@ function FeeModal({ editing, utilities, periods, isSaving, onSave, onClose }: {
           </button>
         </div>
 
-        {/* Error */}
         {formError && (
           <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 flex items-start gap-2 flex-shrink-0">
             <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
@@ -270,11 +270,8 @@ function FeeModal({ editing, utilities, periods, isSaving, onSave, onClose }: {
           </div>
         )}
 
-        {/* Form */}
         <form id="fee-form" onSubmit={handleSubmit} className="overflow-y-auto flex-1 min-h-0">
           <div className="p-6 space-y-5">
-
-            {/* Name + Code */}
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2 sm:col-span-1">
                 <label className={labelCls}>Name <span className="text-red-400 normal-case">*</span></label>
@@ -290,7 +287,6 @@ function FeeModal({ editing, utilities, periods, isSaving, onSave, onClose }: {
               </div>
             </div>
 
-            {/* Occurrence + Payment Period */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={labelCls}>Occurrence <span className="text-red-400 normal-case">*</span></label>
@@ -320,7 +316,6 @@ function FeeModal({ editing, utilities, periods, isSaving, onSave, onClose }: {
               </div>
             </div>
 
-            {/* Required Utility */}
             <div>
               <label className={labelCls}>Required Utility <span className="text-slate-300 normal-case font-normal">(optional)</span></label>
               <select value={form.required_utility}
@@ -334,7 +329,6 @@ function FeeModal({ editing, utilities, periods, isSaving, onSave, onClose }: {
               <p className="text-xs text-slate-400 mt-1">Only students subscribed to this utility will be billed.</p>
             </div>
 
-            {/* Parent-bound toggle */}
             <div className="border-t border-slate-100 pt-5">
               <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-100">
                 <div>
@@ -349,7 +343,6 @@ function FeeModal({ editing, utilities, periods, isSaving, onSave, onClose }: {
               </div>
             </div>
 
-            {/* Description */}
             <div>
               <label className={labelCls}>Description <span className="text-slate-300 normal-case font-normal">(optional)</span></label>
               <textarea value={form.description} onChange={e => set('description', e.target.value)}
@@ -360,7 +353,6 @@ function FeeModal({ editing, utilities, periods, isSaving, onSave, onClose }: {
           </div>
         </form>
 
-        {/* Footer */}
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex-shrink-0">
           <button type="button" onClick={onClose} disabled={isSaving}
             className="px-4 py-2 text-sm border border-slate-200 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
@@ -385,11 +377,14 @@ export default function FeesPage() {
   const canManage = user?.is_superuser || hasPermission('fee_management.manage_fees');
 
   const [fees, setFees]               = useState<Fee[]>([]);
+  const [total, setTotal]             = useState(0);
+  const [page, setPage]               = useState(1);
   const [utilities, setUtilities]     = useState<Utility[]>([]);
   const [periods, setPeriods]         = useState<AcademicPeriod[]>([]);
   const [loading, setLoading]         = useState(true);
   const [pageError, setPageError]     = useState<string | null>(null);
   const [search, setSearch]           = useState('');
+
   const [showHelper, setShowHelper]   = useState(false);
   const [showModal, setShowModal]     = useState(false);
   const [editingFee, setEditingFee]   = useState<Fee | null>(null);
@@ -405,26 +400,58 @@ export default function FeesPage() {
   };
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  const fetchData = useCallback(async () => {
+  // 1. Reset page to 1 when search changes
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
+  // 2. Fetch Reference Data (Utilities & Periods) ONCE
+  useEffect(() => {
+    const fetchRefData = async () => {
+      try {
+        const [utilitiesData, periodTypesData] = await Promise.all([
+          utilitiesAPI.list(),
+          academicCalendarAPI.listPeriodTypes(),
+        ]);
+        setUtilities(utilitiesData);
+        const active = periodTypesData.find((pt: any) => pt.is_active);
+        setPeriods(active ? active.periods.slice().sort((a: any, b: any) => a.order - b.order) : []);
+      } catch (err) {
+        console.error("Failed to load reference data", err);
+      }
+    };
+    fetchRefData();
+  }, []);
+
+  // 3. Fetch Paginated Fees
+  const fetchFees = useCallback(async () => {
     setLoading(true); setPageError(null);
     try {
-      const [feesData, utilitiesData, periodTypesData] = await Promise.all([
-        feeAPI.getFees(),
-        utilitiesAPI.list(),
-        academicCalendarAPI.listPeriodTypes(),
-      ]);
-      setFees(feesData);
-      setUtilities(utilitiesData);
-      const active = periodTypesData.find((pt: any) => pt.is_active);
-      setPeriods(active ? active.periods.slice().sort((a: any, b: any) => a.order - b.order) : []);
+      const res = await feeAPI.getFees({
+        page,
+        search: search.trim(),
+        page_size: PAGE_SIZE
+      } as any);
+
+      const data = Array.isArray(res) ? res : (res.results || res.data || []);
+      const count = typeof (res as any)?.count === 'number' ? (res as any).count : data.length;
+
+      setFees(data);
+      setTotal(count);
     } catch (err) {
       setPageError(extractError(err));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, search]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // 4. Trigger debounced fetch
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      fetchFees();
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [fetchFees]);
 
   const openCreate = () => { setEditingFee(null); setShowModal(true); };
   const openEdit   = (f: Fee) => { setEditingFee(f); setShowModal(true); };
@@ -433,21 +460,20 @@ export default function FeesPage() {
     setIsSaving(true);
     try {
       const payload = {
-      ...data,
-      occurrence:       data.occurrence as FeeOccurrence,
-      payment_period:   data.payment_period   || undefined,
-      required_utility: data.required_utility || undefined,
-    };
+        ...data,
+        occurrence:       data.occurrence as FeeOccurrence,
+        payment_period:   data.payment_period   || undefined,
+        required_utility: data.required_utility || undefined,
+      };
       if (editingFee) {
-        const updated = await feeAPI.updateFee(editingFee.id, payload);
-        setFees(prev => prev.map(f => f.id === editingFee.id ? updated : f));
-        showToast('success', `"${updated.name}" updated successfully`);
+        await feeAPI.updateFee(editingFee.id, payload);
+        showToast('success', `"${data.name}" updated successfully`);
       } else {
-        const created = await feeAPI.createFee(payload);
-        setFees(prev => [created, ...prev]);
-        showToast('success', `"${created.name}" created successfully`);
+        await feeAPI.createFee(payload);
+        showToast('success', `"${data.name}" created successfully`);
       }
       setShowModal(false);
+      fetchFees(); // Re-fetch to guarantee accurate pagination limits
     } catch (err) {
       throw err;
     } finally {
@@ -460,9 +486,9 @@ export default function FeesPage() {
     setIsDeleting(true);
     try {
       await feeAPI.deleteFee(deletingFee.id);
-      setFees(prev => prev.filter(f => f.id !== deletingFee.id));
       showToast('success', `"${deletingFee.name}" deleted`);
       setDeletingFee(null);
+      fetchFees(); // Re-fetch
     } catch (err) {
       showToast('error', extractError(err));
       setDeletingFee(null);
@@ -470,12 +496,6 @@ export default function FeesPage() {
       setIsDeleting(false);
     }
   };
-
-  const filtered = fees.filter(f =>
-    !search ||
-    f.name.toLowerCase().includes(search.toLowerCase()) ||
-    f.code.toLowerCase().includes(search.toLowerCase())
-  );
 
   const periodicCount  = fees.filter(f => f.occurrence === 'periodic').length;
   const annualCount    = fees.filter(f => f.occurrence === 'annually').length;
@@ -528,18 +548,18 @@ export default function FeesPage() {
       {/* ── Stat Chips ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Total Fee Types', value: fees.length,              color: 'from-blue-500 to-blue-600'     },
-          { label: 'Periodic',        value: periodicCount,            color: 'from-violet-500 to-purple-600' },
-          { label: 'Annual / One-Time', value: annualCount + oneTimeCount, color: 'from-amber-400 to-orange-500' },
-          { label: 'Family-bound',    value: familyCount,              color: 'from-emerald-500 to-teal-600'  },
+          { label: 'Total (All)', value: total,                             color: 'from-blue-500 to-blue-600'     },
+          { label: 'Periodic (Pg)', value: periodicCount,                   color: 'from-violet-500 to-purple-600' },
+          { label: 'Annual / One-Time (Pg)', value: annualCount + oneTimeCount, color: 'from-amber-400 to-orange-500' },
+          { label: 'Family-bound (Pg)', value: familyCount,                 color: 'from-emerald-500 to-teal-600'  },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
             <div className={`w-9 h-9 bg-gradient-to-br ${color} rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm`}>
               <List className="h-4 w-4 text-white" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-slate-400 truncate">{label}</p>
-              <p className="text-lg font-bold text-slate-800">{loading ? '—' : value}</p>
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest truncate">{label}</p>
+              <p className="text-lg font-black text-slate-800">{loading && page === 1 ? '—' : value}</p>
             </div>
           </div>
         ))}
@@ -554,37 +574,37 @@ export default function FeesPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input type="text" placeholder="Search by name or code..." value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
+              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-slate-50 focus:bg-white transition-colors" />
           </div>
-          <button onClick={fetchData}
-            className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors" title="Refresh">
-            <RefreshCw className="h-4 w-4" />
+          <button onClick={fetchFees}
+            className="p-2.5 border border-slate-200 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors shadow-sm" title="Refresh">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
           </button>
         </div>
 
         {/* States */}
-        {loading ? (
+        {loading && page === 1 ? (
           <div className="p-16 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto" />
-            <p className="mt-2 text-sm text-slate-400">Loading fee types...</p>
+            <p className="mt-2 text-sm font-medium text-slate-400">Loading fee types...</p>
           </div>
         ) : pageError ? (
           <div className="p-10 text-center">
             <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-2" />
-            <p className="text-sm text-red-600 mb-3">{pageError}</p>
-            <button onClick={fetchData} className="text-sm text-blue-600 underline inline-flex items-center gap-1">
+            <p className="text-sm font-bold text-red-600 mb-3">{pageError}</p>
+            <button onClick={fetchFees} className="text-sm font-bold text-blue-600 hover:text-blue-700 underline inline-flex items-center gap-1">
               <RefreshCw className="h-3.5 w-3.5" /> Retry
             </button>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : fees.length === 0 ? (
           <div className="p-16 text-center">
             <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <List className="h-7 w-7 text-blue-300" />
             </div>
-            <h3 className="font-semibold text-slate-700 mb-1">
+            <h3 className="font-bold text-slate-800 mb-1">
               {search ? 'No fee types match your search' : 'No fee types yet'}
             </h3>
-            <p className="text-sm text-slate-400 mb-5">
+            <p className="text-sm font-medium text-slate-400 mb-5">
               {search ? 'Try a different name or code.' : 'Add your first fee type to get started.'}
             </p>
             {!search && canManage && (
@@ -596,27 +616,27 @@ export default function FeesPage() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto min-h-[300px]">
                 <div className="min-w-[900px]">
                     {/* Table header */}
-                    <div className="grid grid-cols-[1fr_130px_110px_130px_80px_120px_90px] items-center gap-3 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Name</span>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Code</span>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Occurrence</span>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Utility</span>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Family</span>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Period</span>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</span>
+                    <div className="grid grid-cols-[1fr_130px_110px_130px_80px_120px_90px] items-center gap-3 px-5 py-3.5 bg-slate-50/60 border-b border-slate-100">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Name</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Code</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Occurrence</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Utility</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Family</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Period</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Actions</span>
                     </div>
 
                     <div className="divide-y divide-slate-50">
-                      {filtered.map(f => (
+                      {fees.map(f => (
                         <div key={f.id}
-                          className="grid grid-cols-[1fr_130px_110px_130px_80px_120px_90px] items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 transition-colors">
+                          className="grid grid-cols-[1fr_130px_110px_130px_80px_120px_90px] items-center gap-3 px-5 py-3 hover:bg-slate-50/70 transition-colors">
 
                           {/* Name */}
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-semibold text-slate-900 truncate">{f.name}</span>
+                            <span className="font-bold text-sm text-slate-900 truncate">{f.name}</span>
                             {f.is_protected && (
                                 <span title="Protected — cannot be deleted" >
                                  <Lock className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
@@ -625,46 +645,46 @@ export default function FeesPage() {
                           </div>
 
                           {/* Code */}
-                          <span className="font-mono text-xs text-slate-500 truncate">{f.code}</span>
+                          <span className="font-mono text-[11px] font-semibold text-slate-500 truncate">{f.code}</span>
 
                           {/* Occurrence */}
-                          <span className={`inline-flex w-fit px-2.5 py-1 rounded-full text-xs font-semibold
-                            ${f.occurrence === 'periodic'  ? 'bg-blue-100 text-blue-700'   :
-                              f.occurrence === 'annually'  ? 'bg-amber-100 text-amber-700' :
-                                                             'bg-slate-100 text-slate-600'}`}>
+                          <span className={`inline-flex w-fit px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider
+                            ${f.occurrence === 'periodic'  ? 'bg-blue-50 text-blue-700 border border-blue-200'   :
+                              f.occurrence === 'annually'  ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                                             'bg-slate-50 text-slate-600 border border-slate-200'}`}>
                             {OCC_LABELS[f.occurrence] || f.occurrence}
                           </span>
 
                           {/* Utility */}
                           <span className="text-xs text-slate-500 truncate">
                             {f.required_utility_name
-                              ? <span className="px-2 py-0.5 bg-teal-50 text-teal-700 rounded-full font-medium">{f.required_utility_name}</span>
+                              ? <span className="px-2 py-0.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-md text-[10px] font-bold uppercase tracking-wider">{f.required_utility_name}</span>
                               : <span className="text-slate-300">—</span>}
                           </span>
 
                           {/* Family bound */}
                           {f.parent_bound
-                            ? <span className="inline-flex w-fit px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-semibold">Yes</span>
+                            ? <span className="inline-flex w-fit px-2.5 py-0.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-md text-[10px] font-black uppercase tracking-wider">Yes</span>
                             : <span className="text-slate-300 text-sm">—</span>}
 
                           {/* Payment Period */}
                           <span className="text-xs text-slate-500 truncate">
                             {f.payment_period_name
-                              ? <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full font-medium">{f.payment_period_name}</span>
+                              ? <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md text-[10px] font-bold uppercase border border-amber-200">{f.payment_period_name}</span>
                               : <span className="text-slate-300">—</span>}
                           </span>
 
                           {/* Actions — always visible */}
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1.5">
                             {canManage && (
                               <>
                                 <button onClick={() => openEdit(f)} title="Edit"
-                                  className="p-2 rounded-lg text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all">
-                                  <Edit3 className="h-3.5 w-3.5" />
+                                  className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 transition-colors">
+                                  <Edit3 className="h-4 w-4" />
                                 </button>
                                 <button onClick={() => setDeletingFee(f)} title="Delete" disabled={f.is_protected}
-                                  className="p-2 rounded-lg text-red-600 bg-red-50 border border-red-100 hover:bg-red-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                  <Trash2 className="h-4 w-4" />
                                 </button>
                               </>
                             )}
@@ -672,14 +692,33 @@ export default function FeesPage() {
                         </div>
                       ))}
                     </div>
-
                 </div>
             </div>
-            {/* Footer count */}
-            <div className="px-5 py-3 border-t border-slate-50 bg-slate-50/40">
-              <p className="text-xs text-slate-400">
-                Showing {filtered.length} of {fees.length} fee type{fees.length !== 1 ? 's' : ''}
-              </p>
+
+            {/* ── Footer Pagination ── */}
+            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs font-bold text-slate-500">
+              <span>
+                Showing Page {page} (Total: {total} record{total !== 1 ? 's' : ''})
+              </span>
+
+              {Math.ceil(total / PAGE_SIZE) > 1 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm"
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => setPage(p => p + 1)}
+                    disabled={page * PAGE_SIZE >= total}
+                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           </>
         )}
