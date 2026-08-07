@@ -133,9 +133,9 @@ export const feeGroupsAPI = {
 // ============================================================
 
 export const feesAPI = {
-  list: async (filters?: FeeListFilters): Promise<any> => {
+  list: async (filters?: FeeListFilters): Promise<Fee[]> => {
     const response = await api.get(`${FEE_API_BASE}/fees/`, { params: filters });
-    return response.data;
+    return response.data?.results || response.data || [];
   },
 
   create: async (data: Partial<Fee>): Promise<Fee> => {
