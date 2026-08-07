@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { feeAPI, utilitiesAPI, academicCalendarAPI } from '@/lib/api';
+import { api, feeAPI, utilitiesAPI, academicCalendarAPI } from '@/lib/api';
 import { Fee, Utility, AcademicPeriod, FeeOccurrence } from '@/lib/types';
+
 import {
   List, Plus, Edit3, Trash2, Check, X, AlertCircle,
   AlertTriangle, Loader2, Search, Lock, RefreshCw, HelpCircle,
@@ -424,17 +425,25 @@ export default function FeesPage() {
   }, []);
 
   // 3. Fetch Paginated Fees
+
+
   const fetchFees = useCallback(async () => {
     setLoading(true); setPageError(null);
     try {
-      const res = await feeAPI.getFees({
-        page,
-        search: search.trim(),
-        page_size: PAGE_SIZE
-      } as any);
+      // 1. Make a direct API call to bypass the array-only wrapper
+      const response = await api.get('/api/fee/fees/', {
+        params: {
+          page,
+          search: search.trim(),
+          page_size: PAGE_SIZE
+        }
+      });
 
-      const data = Array.isArray(res) ? res : (res.results || res.data || []);
-      const count = typeof (res as any)?.count === 'number' ? (res as any).count : data.length;
+      const resData = response.data;
+
+      // 2. Safely extract the array and the count
+      const data = resData.results || resData || [];
+      const count = typeof resData.count === 'number' ? resData.count : data.length;
 
       setFees(data);
       setTotal(count);
