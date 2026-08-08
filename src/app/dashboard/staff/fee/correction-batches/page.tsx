@@ -355,9 +355,10 @@ export default function CorrectionBatchesPage() {
     setInvoicesLoading(true);
     try {
       const params: any = { session: filterSessionId, period: filterPeriodId, page_size: 1000 };
+      
       if (scopeType === 'class') {
-        params.student_class = filterClassId;
-        if (filterSectionId) params.class_section = filterSectionId;
+       params.student__current_class = filterClassId;
+       if (filterSectionId) params.student__current_class_section = filterSectionId;
       }
       if (scopeType === 'student') params.search = studentSearchInput.trim();
 
