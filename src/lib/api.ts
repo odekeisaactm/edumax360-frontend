@@ -2208,6 +2208,7 @@ export const feeAPI = {
   getCorrectionBatches: newFeeAPI.invoices.listCorrectionBatches,
   getCorrectionBatchDetail: newFeeAPI.invoices.getCorrectionBatchDetails,
   executeAtomicRebill: newFeeAPI.invoices.atomicRebill,
+  getRebillStatus: newFeeAPI.invoices.getRebillStatus,
 
   // Banks & Gateways (UI calls Fee, but we route to Finance backend)
   getBankAccounts: financeAPI.bankDetails.list,

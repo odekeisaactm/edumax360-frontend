@@ -14,7 +14,8 @@ import {
   HelpCircle, Tags, Database, List, CheckSquare, Video, BarChart, Store, AlertCircle,Bell,
   BarChart2, Archive, Edit, Send, Info, Smartphone, Cpu, Sliders, SlidersHorizontal,
   ArrowRight, Award, Printer, Shield, Upload, Download, CalendarDays, PlusCircle,
-  FileSearch, Package, User, Zap, MapPin, Gift, TrendingDown, Wallet, History
+  FileSearch, Package, User, Zap, MapPin, Gift, TrendingDown, Wallet, History,
+  ClipboardCheck, Radio, ListChecks, ScanLine, IdCard, Fingerprint
 } from 'lucide-react';
 
 interface NavItem {
@@ -1136,6 +1137,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
         },
       ],
     },
+
     {
       name: 'HR Management',
       href: '#',
@@ -1182,6 +1184,106 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           icon: <Settings className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/hr-settings'),
           requiredPermissions: ['human_resource.view_hrsettingmodel'],
+        },
+      ],
+    },
+    {
+      name: 'Attendance',
+      href: '#',
+      icon: <ClipboardCheck className="h-5 w-5" />,
+      moduleCode: 'attendance',
+      children: [
+        {
+          name: 'Live Gate Feed',
+          href: '/dashboard/staff/attendance/gate',
+          icon: <Radio className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/attendance/gate'),
+          requiredPermissions: ['attendance.view_attendancedailyrecordmodel'],
+        },
+        {
+          name: 'Missing Credentials',
+          href: '/dashboard/staff/attendance/gate/missing',
+          icon: <AlertCircle className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/attendance/gate/missing'),
+          requiredPermissions: ['attendance.view_attendancedailyrecordmodel'],
+        },
+        {
+          name: 'Daily Records',
+          href: '/dashboard/staff/attendance/records',
+          icon: <ListChecks className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/attendance/records'),
+          requiredPermissions: ['attendance.view_attendancedailyrecordmodel'],
+        },
+        {
+          name: 'Manual Roll Call',
+          href: '/dashboard/staff/attendance/manual',
+          icon: <Edit className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/attendance/manual'),
+          requiredPermissions: ['attendance.add_attendanceeventmodel'],
+        },
+        {
+          name: 'Exceptions & Excursions',
+          href: '/dashboard/staff/attendance/exceptions',
+          icon: <MapPin className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/attendance/exceptions'),
+          requiredPermissions: ['attendance.view_attendanceexceptionmodel'],
+        },
+        {
+          name: 'Pickups',
+          href: '/dashboard/staff/attendance/pickups',
+          icon: <UserCheck className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/attendance/pickups'),
+          requiredPermissions: ['attendance.view_pickuplogmodel'],
+        },
+        {
+          name: 'Visitors',
+          href: '/dashboard/staff/attendance/visitors',
+          icon: <Users className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/attendance/visitors'),
+          requiredPermissions: ['attendance.view_visitorlogmodel'],
+        },
+        {
+          name: 'Event Attendance',
+          href: '/dashboard/staff/attendance/events',
+          icon: <Calendar className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/attendance/events'),
+          requiredPermissions: ['attendance.view_eventattendancerecordmodel'],
+        },
+
+        {
+          name: 'Configuration',
+          href: '#',
+          icon: <Settings className="h-4 w-4" />,
+          children: [
+            {
+              name: 'Devices',
+              href: '/dashboard/staff/attendance/devices',
+              icon: <ScanLine className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/attendance/devices'),
+              requiredPermissions: ['attendance.view_attendancedevicemodel'],
+            },
+            {
+              name: 'Credentials',
+              href: '/dashboard/staff/attendance/credentials',
+              icon: <Fingerprint className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/attendance/credentials'),
+              requiredPermissions: ['attendance.view_devicecredentialmodel'],
+            },
+            {
+              name: 'Known Visitors',
+              href: '/dashboard/staff/attendance/known-visitors',
+              icon: <IdCard className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/attendance/known-visitors'),
+              requiredPermissions: ['attendance.view_knownvisitormodel'],
+            },
+            {
+              name: 'Settings',
+              href: '/dashboard/staff/attendance/settings',
+              icon: <Settings className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/attendance/settings'),
+              requiredPermissions: ['attendance.view_attendancesettingmodel'],
+            },
+          ],
         },
       ],
     },

@@ -458,6 +458,80 @@ export const MODULES: ModuleDef[] = [
       },
     ],
   },
+ {
+  key: 'attendance',
+  label: 'Attendance Management',
+  description: 'Gate/class attendance, devices, exceptions, pickups, visitors, and settings',
+  areas: [
+    {
+      key: 'attendance_records',
+      label: 'Attendance Records',
+      description: 'Daily gate, class, and subject attendance records',
+      permissions: [
+        { codename: 'view_attendancedailyrecordmodel', label: 'View Records',   desc: 'Read student and staff daily attendance records' },
+        { codename: 'view_attendanceeventmodel',        label: 'View Raw Events', desc: 'Read the raw tap/scan/manual event log' },
+        { codename: 'add_attendanceeventmodel',         label: 'Record Manual Attendance', desc: 'Enter manual roll call and correction entries' },
+      ],
+    },
+    {
+      key: 'attendance_devices',
+      label: 'Devices & Credentials',
+      description: 'Gate hardware and PIN-to-person mapping',
+      permissions: [
+        { codename: 'view_attendancedevicemodel',   label: 'View Devices',       desc: 'Read registered gate/enrollment devices' },
+        { codename: 'add_attendancedevicemodel',    label: 'Manage Devices',     desc: 'Add, edit, and remove devices' },
+        { codename: 'view_devicecredentialmodel',   label: 'View Credentials',   desc: 'Read PIN-to-student/staff/parent mappings' },
+        { codename: 'add_devicecredentialmodel',    label: 'Manage Credentials', desc: 'Enroll and edit device PIN mappings' },
+      ],
+    },
+    {
+      key: 'attendance_exceptions',
+      label: 'Exceptions & Excursions',
+      description: 'Planned overrides for trips, bus departures, and approved early pickups',
+      permissions: [
+        { codename: 'view_attendanceexceptionmodel',   label: 'View Exceptions',   desc: 'Read excursion/exception records' },
+        { codename: 'add_attendanceexceptionmodel',    label: 'Manage Exceptions', desc: 'Create and edit excursion/exception records' },
+      ],
+    },
+    {
+      key: 'attendance_pickups',
+      label: 'Pickup Log',
+      description: 'Who collected a student and when',
+      permissions: [
+        { codename: 'view_pickuplogmodel', label: 'View Pickups',   desc: 'Read pickup records' },
+        { codename: 'add_pickuplogmodel',  label: 'Record Pickups', desc: 'Log a student pickup' },
+      ],
+    },
+    {
+      key: 'attendance_visitors',
+      label: 'Visitor Management',
+      description: 'Front-desk sign-in/out and repeat-visitor identities',
+      permissions: [
+        { codename: 'view_visitorlogmodel',   label: 'View Visitor Log', desc: 'Read visitor sign-in/out records' },
+        { codename: 'add_visitorlogmodel',    label: 'Manage Visitor Log', desc: 'Sign visitors in and out' },
+        { codename: 'view_knownvisitormodel', label: 'View Known Visitors', desc: 'Read repeat-visitor identities' },
+        { codename: 'add_knownvisitormodel',  label: 'Manage Known Visitors', desc: 'Register and edit repeat-visitor identities' },
+      ],
+    },
+    {
+      key: 'attendance_events',
+      label: 'Event Attendance',
+      description: 'Check-in for physical, online, and hybrid events',
+      permissions: [
+        { codename: 'view_eventattendancerecordmodel', label: 'View Event Attendance', desc: 'Read event check-in/join records' },
+      ],
+    },
+    {
+      key: 'attendance_settings',
+      label: 'Attendance Settings',
+      description: 'Time windows, methods per scope, escalation timers, notification rules',
+      permissions: [
+        { codename: 'view_attendancesettingmodel',      label: 'View Settings',   desc: 'Read attendance settings' },
+        { codename: 'manage_attendance_settings',       label: 'Manage Settings', desc: 'Update attendance settings' },
+      ],
+    },
+  ],
+},
    {
     key: 'assessment',
     label: 'Assessment Permissions',

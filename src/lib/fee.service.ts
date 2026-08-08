@@ -500,10 +500,21 @@ export const invoicesAPI = {
   return response.data;
 },
 
-  atomicRebill: async (data: { invoice_ids: number[], reason: string, auto_reapply: boolean }) => {
-    const response = await api.post(`${FEE_API_BASE}/invoice-correction-batches/atomic-rebill/`, data);
-    return response.data;
-  },
+atomicRebill: async (data: {
+  title: string;
+  reason: string;
+  execution_mode: string;
+  student_invoice_ids: number[];
+  family_invoice_ids: number[];
+}) => {
+  const response = await api.post(`${FEE_API_BASE}/invoice-correction-batches/atomic-rebill/`, data);
+  return response.data;
+},
+
+getRebillStatus: async (batchId: number) => {
+  const response = await api.get(`${FEE_API_BASE}/invoice-correction-batches/${batchId}/rebill-status/`);
+  return response.data;
+},
 
   getPendingStudents: async (params: { session_id: number; period_id: number }): Promise<{ count: number; students: any[] }> => {
     const response = await api.get(`${FEE_API_BASE}/invoices/pending-students/`, { params });
