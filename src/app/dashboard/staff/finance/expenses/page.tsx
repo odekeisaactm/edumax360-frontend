@@ -129,6 +129,9 @@ function EditExpenseModal({ open, item, onClose, onSave, loading, categories, ba
   const inputCls = "w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 outline-none";
   const labelCls = "block text-xs font-semibold text-slate-500 uppercase mb-1";
 
+  // Safeguard against missing banks array
+  const safeBanks = Array.isArray(banks) ? banks : [];
+
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
       <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
@@ -172,7 +175,7 @@ function EditExpenseModal({ open, item, onClose, onSave, loading, categories, ba
               <label className={labelCls}>Source Account</label>
               <select value={form.bank_account || ''} onChange={e => setForm({ ...form, bank_account: e.target.value })} className={inputCls} required={form.payment_method !== 'cash' && settings?.track_bank_balance} disabled={form.payment_method === 'cash'}>
                 <option value="">{form.payment_method === 'cash' ? 'Auto: Cash Vault' : 'Select Bank...'}</option>
-                {banks.filter((b: any) => b.account_type !== 'cash_vault').map((b: any) => <option key={b.id} value={b.id}>{b.bank_name}</option>)}
+                {safeBanks.filter((b: any) => b.account_type !== 'cash_vault').map((b: any) => <option key={b.id} value={b.id}>{b.bank_name}</option>)}
               </select>
             </div>
           </div>
@@ -235,7 +238,7 @@ function AuditDrawer({ item, onClose, onDelete, onEdit, canDelete, canEdit, setP
 
           <div className="space-y-3"><h4 className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Source Routing</h4>
             <div className="p-4 rounded-2xl border border-slate-100 bg-white flex items-center gap-3.5 shadow-sm"><div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center flex-shrink-0">{item.payment_method === 'cash' ? <Wallet className="h-5 w-5" /> : <Landmark className="h-5 w-5" />}</div>
-            <div><p className="font-bold text-slate-900 text-sm">{item.bank_account_name || 'Assigned Physical Cash Vault'}</p><p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">Disbursed on {formatDate(item.expense_date)}</p></div></div>
+            <div><p className="font-bold text-slate-900 text-sm">{cleanName(item.bank_account_name, 'Assigned Physical Cash Vault')}</p><p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">Disbursed on {formatDate(item.expense_date)}</p></div></div>
           </div>
 
           <div className="space-y-3"><h4 className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Signatory Routing</h4>
@@ -277,8 +280,8 @@ export default function ConsolidatedExpensePage() {
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const canViewExpense   = user?.is_superuser || hasPermission('finance.view_expensemodel');
-  const canEditExpense   = user?.is_superuser || hasPermission('finance.add_expensemodel');
-  const canDeleteExpense = user?.is_superuser || hasPermission('finance.add_expensemodel');
+  const canEditExpense   = user?.is_superuser || hasPermission('finance.change_expensemodel') || hasPermission('finance.add_expensemodel');
+  const canDeleteExpense = user?.is_superuser || hasPermission('finance.delete_expensemodel') || hasPermission('finance.add_expensemodel');
   const canCreateExpense = user?.is_superuser || hasPermission('finance.add_expensemodel');
 
   // Filter State
@@ -297,6 +300,7 @@ export default function ConsolidatedExpensePage() {
   const [pageError, setPageError]           = useState<string | null>(null);
 
   const [categories, setCategories]         = useState<any[]>([]);
+  const [banks, setBanks]                   = useState<any[]>([]);
   const [sessionPeriods, setSessionPeriods] = useState<any[]>([]);
   const [sessions, setSessions]             = useState<any[]>([]);
   const [settings, setSettings]             = useState<any>(null);
@@ -324,12 +328,14 @@ export default function ConsolidatedExpensePage() {
   useEffect(() => {
     Promise.all([
       expenseCategoriesAPI.list({ page_size: 1000 }).catch(() => []),
+      bankDetailsAPI.list({ is_active: true }).catch(() => []),
       academicCalendarAPI.listSessions().catch(() => []),
       academicCalendarAPI.listSessionPeriods().catch(() => []),
       financeSettingsAPI.get().catch(() => ({})),
       schoolInfoAPI.get().catch(() => ({})),
-    ]).then(([catsData, sessData, spData, settingsData, sData]) => {
+    ]).then(([catsData, banksData, sessData, spData, settingsData, sData]) => {
       setCategories(Array.isArray(catsData) ? catsData : (catsData as any)?.results ?? []);
+      setBanks(Array.isArray(banksData) ? banksData : (banksData as any)?.results ?? []);
       setSessions(Array.isArray(sessData) ? sessData : (sessData as any)?.results ?? []);
       setSessionPeriods(Array.isArray(spData) ? spData : (spData as any)?.results ?? []);
       setSettings(settingsData);
@@ -458,7 +464,9 @@ export default function ConsolidatedExpensePage() {
         setPrintA4Item={setPrintA4Item} setPrintThermalItem={setPrintThermalItem}
       />
 
-      <EditExpenseModal open={editModal.open} item={editModal.item} onClose={() => setEditModal({ open: false, item: null })} onSave={handleEditSave} loading={actionLoading} categories={categories} settings={settings} />
+      {/* THE FIX: Passed banks to EditExpenseModal */}
+      <EditExpenseModal open={editModal.open} item={editModal.item} onClose={() => setEditModal({ open: false, item: null })} onSave={handleEditSave} loading={actionLoading} categories={categories} banks={banks} settings={settings} />
+
       <ConfirmDeleteModal open={deleteModal.open} item={deleteModal.item} onConfirm={handleDeleteSubmit} onCancel={() => setDeleteModal({ open: false, item: null })} loading={actionLoading} />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -585,7 +593,7 @@ export default function ConsolidatedExpensePage() {
                       </td>
                       <td className="px-3 sm:px-4 py-3 hidden sm:table-cell">
                         <span className="text-[11px] sm:text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-1 sm:px-2.5 sm:py-1 rounded-md">
-                          {item.bank_account_name || 'Physical Cash Vault'}
+                          {cleanName(item.bank_account_name, 'Physical Cash Vault')}
                         </span>
                       </td>
                       <td className="px-3 sm:px-4 py-3 text-right font-black text-slate-900 text-xs sm:text-sm">
@@ -702,7 +710,7 @@ export default function ConsolidatedExpensePage() {
                   <div className="w-[45%]"><span className="font-bold inline-block w-[120px]">Vote & Sub-head:</span><span className="font-semibold border-b border-black pb-0.5 inline-block w-[200px]">{printA4Item.vote_and_subhead || 'N/A'}</span></div>
                 </div>
                 <div className="flex justify-between mb-4">
-                  <div className="w-[45%]"><span className="font-bold inline-block w-[120px]">Source Account:</span><span className="font-semibold border-b border-black pb-0.5 inline-block w-[200px]">{printA4Item.bank_account_name || 'Physical Cash Vault'}</span></div>
+                  <div className="w-[45%]"><span className="font-bold inline-block w-[120px]">Source Account:</span><span className="font-semibold border-b border-black pb-0.5 inline-block w-[200px]">{cleanName(printA4Item.bank_account_name, 'Physical Cash Vault')}</span></div>
                   <div className="w-[45%]"><span className="font-bold inline-block w-[120px]">Authorised By:</span><span className="font-semibold border-b border-black pb-0.5 inline-block w-[200px]">{cleanName(printA4Item.authorised_by_name, '______________________')}</span></div>
                 </div>
               </div>
