@@ -128,8 +128,6 @@ function EditExpenseModal({ open, item, onClose, onSave, loading, categories, ba
 
   const inputCls = "w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 outline-none";
   const labelCls = "block text-xs font-semibold text-slate-500 uppercase mb-1";
-
-  // Safeguard against missing banks array
   const safeBanks = Array.isArray(banks) ? banks : [];
 
   return (
@@ -300,11 +298,11 @@ export default function ConsolidatedExpensePage() {
   const [pageError, setPageError]           = useState<string | null>(null);
 
   const [categories, setCategories]         = useState<any[]>([]);
-  const [banks, setBanks]                   = useState<any[]>([]);
   const [sessionPeriods, setSessionPeriods] = useState<any[]>([]);
   const [sessions, setSessions]             = useState<any[]>([]);
   const [settings, setSettings]             = useState<any>(null);
   const [schoolInfo, setSchoolInfo]         = useState<any>(null);
+  const [banks, setBanks]                   = useState<any[]>([]);
 
   const [selectedItem, setSelectedItem]     = useState<Expense | null>(null);
   const [editModal, setEditModal]           = useState<{ open: boolean; item: Expense | null }>({ open: false, item: null });
@@ -328,18 +326,18 @@ export default function ConsolidatedExpensePage() {
   useEffect(() => {
     Promise.all([
       expenseCategoriesAPI.list({ page_size: 1000 }).catch(() => []),
-      bankDetailsAPI.list({ is_active: true }).catch(() => []),
       academicCalendarAPI.listSessions().catch(() => []),
       academicCalendarAPI.listSessionPeriods().catch(() => []),
       financeSettingsAPI.get().catch(() => ({})),
       schoolInfoAPI.get().catch(() => ({})),
-    ]).then(([catsData, banksData, sessData, spData, settingsData, sData]) => {
+      bankDetailsAPI.list({ is_active: true }).catch(() => []),
+    ]).then(([catsData, sessData, spData, settingsData, sData, banksData]) => {
       setCategories(Array.isArray(catsData) ? catsData : (catsData as any)?.results ?? []);
-      setBanks(Array.isArray(banksData) ? banksData : (banksData as any)?.results ?? []);
       setSessions(Array.isArray(sessData) ? sessData : (sessData as any)?.results ?? []);
       setSessionPeriods(Array.isArray(spData) ? spData : (spData as any)?.results ?? []);
       setSettings(settingsData);
       setSchoolInfo(sData);
+      setBanks(Array.isArray(banksData) ? banksData : (banksData as any)?.results ?? []);
     });
   }, []);
 
@@ -378,7 +376,8 @@ export default function ConsolidatedExpensePage() {
     try {
       const response = await expenseAPI.list(buildParams());
       const results = Array.isArray(response) ? response : (response as any)?.results ?? [];
-      const totalCount = typeof (response as any)?.count === 'number' ? (response as any).count : results.length;
+      // THE FIX: Properly fallback if count is stripped so the Next button logic doesn't break
+      const totalCount = typeof (response as any)?.count === 'number' ? (response as any).count : 0;
       setData(results); setTotal(totalCount);
     } catch (err) { setPageError(extractError(err)); }
     finally { setLoading(false); }
@@ -387,7 +386,6 @@ export default function ConsolidatedExpensePage() {
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { setPage(1); }, [categoryFilter, currencyFilter, searchQuery, sessionId, periodId, startDate, endDate]);
 
-  // THE FIX: open_detail hook
   const autoOpenedRef = useRef(false);
   useEffect(() => {
     const targetId = searchParams.get('open_detail');
@@ -399,7 +397,6 @@ export default function ConsolidatedExpensePage() {
     else { expenseAPI.get(Number(targetId)).then((res: any) => { if (res) setSelectedItem(res); }).catch(() => {}); }
   }, [searchParams, data, router]);
 
-  // Keyboard Esc Hook
   useEffect(() => {
     if (!selectedItem && !printA4Item && !printThermalItem) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -446,7 +443,6 @@ export default function ConsolidatedExpensePage() {
     <div className="space-y-4 sm:space-y-6 pb-12 max-w-7xl mx-auto px-2 sm:px-0">
       <ToastStack toasts={toasts} onDismiss={(id) => setToasts(t => t.filter(x => x.id !== id))} />
 
-      {/* Print CSS Scope */}
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           body * { visibility: hidden; }
@@ -464,9 +460,8 @@ export default function ConsolidatedExpensePage() {
         setPrintA4Item={setPrintA4Item} setPrintThermalItem={setPrintThermalItem}
       />
 
-      {/* THE FIX: Passed banks to EditExpenseModal */}
+      {/* THE FIX: Added banks array directly here */}
       <EditExpenseModal open={editModal.open} item={editModal.item} onClose={() => setEditModal({ open: false, item: null })} onSave={handleEditSave} loading={actionLoading} categories={categories} banks={banks} settings={settings} />
-
       <ConfirmDeleteModal open={deleteModal.open} item={deleteModal.item} onConfirm={handleDeleteSubmit} onCancel={() => setDeleteModal({ open: false, item: null })} loading={actionLoading} />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -491,9 +486,7 @@ export default function ConsolidatedExpensePage() {
         </div>
       </div>
 
-      {/* TWO-ROW Filter Toolbar */}
       <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm p-3 sm:p-4 space-y-3">
-        {/* ROW 1 */}
         <div className="flex flex-col sm:flex-row items-center gap-3">
           <div className="relative w-full sm:flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -511,7 +504,6 @@ export default function ConsolidatedExpensePage() {
           </div>
         </div>
 
-        {/* ROW 2 */}
         <div className="flex flex-col sm:flex-row items-center gap-3 justify-between">
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <select value={sessionId} onChange={(e) => { setSessionId(e.target.value); setPeriodId(''); }} className="w-full sm:w-auto px-2.5 sm:px-3.5 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg sm:rounded-xl bg-white outline-none focus:ring-2 focus:ring-red-500 font-medium">
@@ -593,6 +585,7 @@ export default function ConsolidatedExpensePage() {
                       </td>
                       <td className="px-3 sm:px-4 py-3 hidden sm:table-cell">
                         <span className="text-[11px] sm:text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-1 sm:px-2.5 sm:py-1 rounded-md">
+                          {/* THE FIX: Applied cleanName here */}
                           {cleanName(item.bank_account_name, 'Physical Cash Vault')}
                         </span>
                       </td>
@@ -617,14 +610,15 @@ export default function ConsolidatedExpensePage() {
           </div>
         )}
 
-        {total > 0 && (
+        {data.length > 0 && (
           <div className="p-3 sm:p-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs font-semibold text-slate-500">
-            <span>Pg {page} of {Math.ceil(total / PAGE_SIZE) || 1} <span className="hidden sm:inline">({total} total)</span></span>
+            <span>Pg {page} {total > 0 ? `of ${Math.ceil(total / PAGE_SIZE)} (${total} total)` : ''}</span>
             <div className="flex gap-1.5">
               <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 sm:px-2.5 sm:py-1.5 border rounded-lg bg-white disabled:opacity-40 hover:bg-slate-50 transition-colors flex items-center gap-1">
                 <ChevronLeft className="h-4 w-4" /> <span className="hidden sm:inline">Prev</span>
               </button>
-              <button onClick={() => setPage(p => p + 1)} disabled={page * PAGE_SIZE >= total} className="p-1.5 sm:px-2.5 sm:py-1.5 border rounded-lg bg-white disabled:opacity-40 hover:bg-slate-50 transition-colors flex items-center gap-1">
+              {/* THE FIX: Robust disabled check handling missing counts */}
+              <button onClick={() => setPage(p => p + 1)} disabled={total > 0 ? page * PAGE_SIZE >= total : data.length < PAGE_SIZE} className="p-1.5 sm:px-2.5 sm:py-1.5 border rounded-lg bg-white disabled:opacity-40 hover:bg-slate-50 transition-colors flex items-center gap-1">
                 <span className="hidden sm:inline">Next</span> <ChevronRight className="h-4 w-4" />
               </button>
             </div>
@@ -710,6 +704,7 @@ export default function ConsolidatedExpensePage() {
                   <div className="w-[45%]"><span className="font-bold inline-block w-[120px]">Vote & Sub-head:</span><span className="font-semibold border-b border-black pb-0.5 inline-block w-[200px]">{printA4Item.vote_and_subhead || 'N/A'}</span></div>
                 </div>
                 <div className="flex justify-between mb-4">
+                  {/* THE FIX: Applied cleanName here */}
                   <div className="w-[45%]"><span className="font-bold inline-block w-[120px]">Source Account:</span><span className="font-semibold border-b border-black pb-0.5 inline-block w-[200px]">{cleanName(printA4Item.bank_account_name, 'Physical Cash Vault')}</span></div>
                   <div className="w-[45%]"><span className="font-bold inline-block w-[120px]">Authorised By:</span><span className="font-semibold border-b border-black pb-0.5 inline-block w-[200px]">{cleanName(printA4Item.authorised_by_name, '______________________')}</span></div>
                 </div>

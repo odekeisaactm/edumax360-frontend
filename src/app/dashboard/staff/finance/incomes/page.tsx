@@ -31,6 +31,12 @@ function extractError(err: any): string {
   return err?.message || 'An unexpected error occurred.';
 }
 
+// THE FIX: Clean Name Helper to remove <method-wrapper...> bugs
+function cleanName(name: string | null | undefined, fallback = '—'): string {
+  if (!name || String(name).includes('<method-wrapper')) return fallback;
+  return String(name);
+}
+
 function fmtMoney(amount: string | number, symbol = '₦'): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
   if (isNaN(num)) return `${symbol}0.00`;
@@ -185,7 +191,7 @@ function EditIncomeModal({ open, item, onClose, onSave, loading, categories, ban
               <label className={labelCls}>Destination Account</label>
               <select value={form.bank_account || ''} onChange={e => setForm({ ...form, bank_account: e.target.value })} className={inputCls} required={form.payment_method !== 'cash' && settings?.track_bank_balance} disabled={form.payment_method === 'cash'}>
                 <option value="">{form.payment_method === 'cash' ? 'Auto: Cash Vault' : 'Select Bank...'}</option>
-                {banks.filter((b: any) => b.account_type !== 'cash_vault').map((b: any) => <option key={b.id} value={b.id}>{b.bank_name}</option>)}
+                {(Array.isArray(banks) ? banks : []).filter((b: any) => b.account_type !== 'cash_vault').map((b: any) => <option key={b.id} value={b.id}>{b.bank_name}</option>)}
               </select>
             </div>
           </div>
@@ -221,7 +227,7 @@ export default function ConsolidatedIncomePage() {
   const canViewIncome   = user?.is_superuser || hasPermission('finance.view_incomemodel');
   const canDeleteIncome = user?.is_superuser || hasPermission('finance.add_incomemodel');
   const canCreateIncome = user?.is_superuser || hasPermission('finance.add_incomemodel');
-  const canEditIncome   = user?.is_superuser || hasPermission('finance.add_incomemodel');
+  const canEditIncome   = user?.is_superuser || hasPermission('finance.change_incomemodel') || hasPermission('finance.add_incomemodel');
 
   const [categoryFilter, setCategoryFilter] = useState('');
   const [searchQuery, setSearchQuery]       = useState('');
@@ -304,7 +310,8 @@ export default function ConsolidatedIncomePage() {
     try {
       const response = await incomeAPI.list(buildParams());
       const results = Array.isArray(response) ? response : (response as any)?.results ?? [];
-      const totalCount = typeof (response as any)?.count === 'number' ? (response as any).count : results.length;
+      // THE FIX: Properly fallback if count is stripped so the Next button logic doesn't break
+      const totalCount = typeof (response as any)?.count === 'number' ? (response as any).count : 0;
       setData(results); setTotal(totalCount);
     } catch (err) { setPageError(extractError(err)); }
     finally { setLoading(false); }
@@ -324,7 +331,6 @@ export default function ConsolidatedIncomePage() {
     else { incomeAPI.get(Number(targetId)).then((res: any) => { if (res) setSelectedItem(res); }).catch(() => {}); }
   }, [searchParams, data, router]);
 
-  // Drawer Keyboard Esc Hook
   useEffect(() => {
     if (!selectedItem && !printA4Item && !printThermalItem) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -333,7 +339,6 @@ export default function ConsolidatedIncomePage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedItem, printA4Item, printThermalItem]);
-
 
   const handleEditSave = async (id: number, payload: any) => {
     setActionLoading(true);
@@ -366,7 +371,7 @@ export default function ConsolidatedIncomePage() {
     const results = Array.isArray(response) ? response : (response as any)?.results ?? [];
     return results.map((item: Income) => ({
       id: item.id, categoryName: item.category_name || 'General Revenue', source: item.source || '—',
-      paymentMethod: formatPaymentMethod(item.payment_method), bankAccountName: item.bank_account_name || 'Physical Cash Vault',
+      paymentMethod: formatPaymentMethod(item.payment_method), bankAccountName: cleanName(item.bank_account_name, 'Physical Cash Vault'),
       amount: item.amount, incomeDate: formatDate(item.income_date), reference: item.reference || `INC-${item.id}`, notes: item.notes || '—',
     }));
   }, [buildParams]);
@@ -485,10 +490,6 @@ export default function ConsolidatedIncomePage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {data.map((item) => {
-                  const windowHours = settings?.reversal_window_hours ?? 24;
-                  const hoursOld = (Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60);
-                  const isExpired = windowHours > 0 && hoursOld > windowHours;
-
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="px-3 sm:px-4 py-3">
@@ -497,7 +498,8 @@ export default function ConsolidatedIncomePage() {
                       </td>
                       <td className="px-3 sm:px-4 py-3 hidden sm:table-cell">
                         <span className="text-[11px] sm:text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-1 sm:px-2.5 sm:py-1 rounded-md">
-                          {item.bank_account_name || 'Physical Cash Vault'}
+                          {/* THE FIX: Applied cleanName here */}
+                          {cleanName(item.bank_account_name, 'Physical Cash Vault')}
                         </span>
                       </td>
                       <td className="px-3 sm:px-4 py-3 text-right font-black text-slate-900 text-xs sm:text-sm">
@@ -524,14 +526,15 @@ export default function ConsolidatedIncomePage() {
           </div>
         )}
 
-        {total > 0 && (
+        {data.length > 0 && (
           <div className="p-3 sm:p-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs font-semibold text-slate-500">
-            <span>Pg {page} of {Math.ceil(total / PAGE_SIZE) || 1} <span className="hidden sm:inline">({total} total)</span></span>
+            <span>Pg {page} {total > 0 ? `of ${Math.ceil(total / PAGE_SIZE)} (${total} total)` : ''}</span>
             <div className="flex gap-1.5">
               <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 sm:px-2.5 sm:py-1.5 border rounded-lg bg-white disabled:opacity-40 hover:bg-slate-50 transition-colors flex items-center gap-1">
                 <ChevronLeft className="h-4 w-4" /> <span className="hidden sm:inline">Prev</span>
               </button>
-              <button onClick={() => setPage(p => p + 1)} disabled={page * PAGE_SIZE >= total} className="p-1.5 sm:px-2.5 sm:py-1.5 border rounded-lg bg-white disabled:opacity-40 hover:bg-slate-50 transition-colors flex items-center gap-1">
+              {/* THE FIX: Robust disabled check handling missing counts */}
+              <button onClick={() => setPage(p => p + 1)} disabled={total > 0 ? page * PAGE_SIZE >= total : data.length < PAGE_SIZE} className="p-1.5 sm:px-2.5 sm:py-1.5 border rounded-lg bg-white disabled:opacity-40 hover:bg-slate-50 transition-colors flex items-center gap-1">
                 <span className="hidden sm:inline">Next</span> <ChevronRight className="h-4 w-4" />
               </button>
             </div>
@@ -571,7 +574,8 @@ export default function ConsolidatedIncomePage() {
                     {selectedItem.payment_method === 'cash' ? <Wallet className="h-5 w-5" /> : <Landmark className="h-5 w-5" />}
                   </div>
                   <div>
-                    <p className="font-bold text-slate-900 text-sm">{selectedItem.bank_account_name || 'Assigned Physical Cash Vault'}</p>
+                    {/* THE FIX: Applied cleanName here */}
+                    <p className="font-bold text-slate-900 text-sm">{cleanName(selectedItem.bank_account_name, 'Assigned Physical Cash Vault')}</p>
                     <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">Posted on {formatDate(selectedItem.created_at)}</p>
                   </div>
                 </div>
@@ -583,7 +587,7 @@ export default function ConsolidatedIncomePage() {
                   <div className="p-3.5 flex justify-between"><span className="text-slate-500">Source</span><span className="font-bold text-slate-800 text-right">{selectedItem.source || '—'}</span></div>
                   <div className="p-3.5 flex justify-between"><span className="text-slate-500">Income Date</span><span className="font-semibold text-slate-800">{formatDate(selectedItem.income_date)}</span></div>
                   <div className="p-3.5 flex justify-between"><span className="text-slate-500">Reference</span><span className="font-mono font-bold text-slate-800">{selectedItem.reference || '—'}</span></div>
-                  <div className="p-3.5 flex justify-between"><span className="text-slate-500">Recorded By</span><span className="font-medium text-slate-800">{selectedItem.created_by_name || 'System User'}</span></div>
+                  <div className="p-3.5 flex justify-between"><span className="text-slate-500">Recorded By</span><span className="font-medium text-slate-800">{cleanName(selectedItem.created_by_name, 'System User')}</span></div>
                   {selectedItem.notes && (
                     <div className="p-3.5 bg-slate-50/50 rounded-b-xl">
                       <span className="text-slate-500 font-bold block mb-1">Remarks</span>
@@ -594,7 +598,6 @@ export default function ConsolidatedIncomePage() {
               </div>
             </div>
 
-            {/* ACTION FOOTER */}
             <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
               <div className="flex gap-2">
                  <button onClick={() => setPrintThermalItem(selectedItem)} title="Print POS Thermal Slip" className="px-3 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-sm">
@@ -661,7 +664,8 @@ export default function ConsolidatedIncomePage() {
                   <p className="text-base font-black text-slate-900 truncate">{printA4Item.source || 'Institutional Inflow'}</p>
                   <div className="flex items-center gap-1.5 flex-wrap mt-1">
                     <span className="text-[9px] font-bold uppercase text-indigo-600 bg-white px-1.5 py-0.5 rounded border border-indigo-100">{formatPaymentMethod(printA4Item.payment_method)}</span>
-                    <span className="text-[9px] font-bold text-slate-500">Routing: {printA4Item.bank_account_name || 'Cash Vault'}</span>
+                    {/* THE FIX: Applied cleanName here */}
+                    <span className="text-[9px] font-bold text-slate-500">Routing: {cleanName(printA4Item.bank_account_name, 'Cash Vault')}</span>
                   </div>
                 </div>
                 <p className="text-2xl font-black text-indigo-700 shrink-0 whitespace-nowrap">{fmtMoney(printA4Item.amount, baseCurrencySymbol)}</p>
@@ -690,7 +694,7 @@ export default function ConsolidatedIncomePage() {
 
               <div className="grid grid-cols-2 gap-8 mt-8 text-[11px]">
                 <div className="text-center border-t border-slate-300 pt-2">
-                  <p className="font-bold text-slate-700">{printA4Item.created_by_name || 'System User'}</p>
+                  <p className="font-bold text-slate-700">{cleanName(printA4Item.created_by_name, 'System User')}</p>
                   <p className="text-slate-400 font-medium">Processed By</p>
                 </div>
                 <div className="text-center border-t border-slate-300 pt-2">
@@ -698,10 +702,6 @@ export default function ConsolidatedIncomePage() {
                   <p className="text-slate-400 font-medium">Authorized Signature &amp; Stamp</p>
                 </div>
               </div>
-
-              <p className="text-center text-[9px] font-medium text-slate-400 uppercase tracking-widest mt-8">
-                This is a computer-generated receipt and confirms payment received.
-              </p>
             </div>
           </div>
         </div>
@@ -715,7 +715,6 @@ export default function ConsolidatedIncomePage() {
               <button onClick={() => window.print()} className="px-3 py-1.5 bg-slate-900 text-white text-[11px] font-bold rounded-lg shadow-sm">Print Slip</button>
             </div>
 
-            {/* POS THERMAL STYLING */}
             <div className="p-4 print:p-2 text-black font-mono" style={{ fontSize: '11px', lineHeight: '1.4' }}>
               <div className="text-center mb-3">
                 <h2 className="font-black text-sm uppercase mb-0.5">{schoolInfo?.name || 'SCHOOL NAME'}</h2>
@@ -746,7 +745,7 @@ export default function ConsolidatedIncomePage() {
 
               <div className="border-b border-dashed border-black mb-3 mt-3"></div>
               <div className="text-center">
-                <p className="text-[9px] mt-2 font-bold">Processed by {printThermalItem.created_by_name || 'System'}</p>
+                <p className="text-[9px] mt-2 font-bold">Processed by {cleanName(printThermalItem.created_by_name, 'System')}</p>
                 <p className="text-[8px] mt-1 text-slate-500">Printed: {new Date().toLocaleString()}</p>
               </div>
             </div>
