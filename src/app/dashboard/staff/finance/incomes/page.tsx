@@ -219,9 +219,9 @@ export default function ConsolidatedIncomePage() {
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const canViewIncome   = user?.is_superuser || hasPermission('finance.view_incomemodel');
-  const canDeleteIncome = user?.is_superuser || hasPermission('finance.delete_incomemodel');
+  const canDeleteIncome = user?.is_superuser || hasPermission('finance.add_incomemodel');
   const canCreateIncome = user?.is_superuser || hasPermission('finance.add_incomemodel');
-  const canEditIncome   = user?.is_superuser || hasPermission('finance.change_incomemodel') || hasPermission('finance.add_incomemodel');
+  const canEditIncome   = user?.is_superuser || hasPermission('finance.add_incomemodel');
 
   const [categoryFilter, setCategoryFilter] = useState('');
   const [searchQuery, setSearchQuery]       = useState('');

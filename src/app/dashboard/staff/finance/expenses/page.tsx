@@ -277,8 +277,8 @@ export default function ConsolidatedExpensePage() {
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const canViewExpense   = user?.is_superuser || hasPermission('finance.view_expensemodel');
-  const canEditExpense   = user?.is_superuser || hasPermission('finance.change_expensemodel') || hasPermission('finance.add_expensemodel');
-  const canDeleteExpense = user?.is_superuser || hasPermission('finance.delete_expensemodel') || hasPermission('finance.add_expensemodel');
+  const canEditExpense   = user?.is_superuser || hasPermission('finance.add_expensemodel');
+  const canDeleteExpense = user?.is_superuser || hasPermission('finance.add_expensemodel');
   const canCreateExpense = user?.is_superuser || hasPermission('finance.add_expensemodel');
 
   // Filter State

@@ -201,7 +201,7 @@ export default function IncomeCategoriesPage() {
   // Permissions mapped to actual models
   const canCreate = user?.is_superuser || hasPermission('finance.add_incomemodel');
   const canEdit   = user?.is_superuser || hasPermission('finance.change_incomemodel') || hasPermission('finance.add_incomemodel');
-  const canDelete = user?.is_superuser || hasPermission('finance.delete_incomemodel');
+  const canDelete = user?.is_superuser || hasPermission('finance.add_incomemodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

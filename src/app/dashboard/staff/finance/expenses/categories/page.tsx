@@ -200,8 +200,8 @@ export default function ExpenseCategoriesPage() {
 
   // THE FIX: Using underlying finance permissions so Accountant roles map correctly
   const canCreate = user?.is_superuser || hasPermission('finance.add_expensemodel');
-  const canEdit   = user?.is_superuser || hasPermission('finance.change_expensemodel') || hasPermission('finance.add_expensemodel');
-  const canDelete = user?.is_superuser || hasPermission('finance.delete_expensemodel') || hasPermission('finance.add_expensemodel');
+  const canEdit   = user?.is_superuser || hasPermission('finance.add_expensemodel');
+  const canDelete = user?.is_superuser || hasPermission('finance.add_expensemodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;
