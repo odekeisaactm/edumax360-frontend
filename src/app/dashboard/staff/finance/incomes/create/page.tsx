@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -17,7 +17,7 @@ import type {
 } from '@/lib/finance.types';
 import {
   TrendingUp, ArrowLeft, Check, AlertCircle, Loader2, UploadCloud,
-  DollarSign, Wallet, FileText, Tag, Lock
+  DollarSign, Wallet, FileText, Tag, Lock, Search, ChevronDown, X
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -38,6 +38,11 @@ function extractErrorMessage(err: any): string {
   return err?.message || 'An unexpected error occurred while saving.';
 }
 
+function titleCase(str: string): string {
+  if (!str) return '';
+  return str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+}
+
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
     <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
@@ -51,6 +56,89 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
           <button onClick={() => onDismiss(t.id)} className="opacity-50 hover:opacity-100 flex-shrink-0 ml-2">×</button>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Searchable Category Picker ────────────────────────────────────────────────
+function CategoryPicker({
+  label, value, onChange, categories, placeholder = 'Search category...'
+}: {
+  label: string; value: number | ''; onChange: (id: number | '') => void;
+  categories: IncomeCategory[]; placeholder?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const selectedCategory = useMemo(() => categories.find(c => c.id === Number(value)), [categories, value]);
+
+  const filtered = useMemo(() => {
+    // If no search, return full list. The DOM internal scroll will handle the length smoothly.
+    if (!search.trim()) return categories;
+    const q = search.toLowerCase();
+    return categories.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.description || '').toLowerCase().includes(q)
+    );
+  }, [categories, search]);
+
+  return (
+    <div className="relative">
+      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{label} <span className="text-red-500">*</span></label>
+      {selectedCategory ? (
+        <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800">
+          <div className="min-w-0">
+            <span className="font-bold truncate">{titleCase(selectedCategory.name)}</span>
+          </div>
+          <button type="button" onClick={() => onChange('')} className="p-1 text-slate-400 hover:text-red-600 transition-colors shrink-0">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+        <div>
+          <div
+            onClick={() => setIsOpen(!isOpen)}
+            className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl bg-white text-slate-400 cursor-pointer flex items-center justify-between hover:border-slate-300 transition-colors"
+          >
+            <span className="truncate">{placeholder}</span>
+            <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+          </div>
+
+          {isOpen && (
+            <div className="absolute z-50 left-0 right-0 mt-1 bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="p-2 border-b border-slate-100 flex items-center gap-2 bg-slate-50/50">
+                <Search className="h-4 w-4 text-slate-400 ml-1 shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Type to filter categories..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="w-full bg-transparent text-xs outline-none font-medium text-slate-700 py-1"
+                  autoFocus
+                />
+              </div>
+              {/* Internal scroll limit: max-h-60 ensures it never overflows the screen height */}
+              <div className="max-h-60 overflow-y-auto divide-y divide-slate-50">
+                {filtered.length === 0 ? (
+                  <div className="p-3 text-center text-xs text-slate-400 font-medium">No matches found</div>
+                ) : (
+                  filtered.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => { onChange(c.id); setIsOpen(false); setSearch(''); }}
+                      className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50 flex items-center justify-between transition-colors"
+                    >
+                      <span className="font-bold text-slate-800 truncate pr-2">{titleCase(c.name)}</span>
+                      {c.description && <span className="text-[10px] text-slate-400 truncate max-w-[120px] hidden sm:block">{c.description}</span>}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -100,14 +188,17 @@ export default function IncomeCreatePage() {
   const fetchReferences = useCallback(async () => {
     setLoadingRefs(true);
     try {
-      const [catsData, banksData, settingsData] = await Promise.all([
-        incomeCategoriesAPI.list(),
+      const [catsRes, banksRes, settingsData] = await Promise.all([
+        incomeCategoriesAPI.list({ page_size: 1000 }), // Safely load all categories
         bankDetailsAPI.list({ is_active: true }),
         financeSettingsAPI.get()
       ]);
 
-      setCategories(catsData.filter(c => c.is_active));
-      setBanks(banksData);
+      const listCats = Array.isArray(catsRes) ? catsRes : (catsRes as any)?.results || [];
+      const listBanks = Array.isArray(banksRes) ? banksRes : (banksRes as any)?.results || [];
+
+      setCategories(listCats.filter((c: any) => c.is_active));
+      setBanks(listBanks);
       setSettings(settingsData);
 
       if (settingsData?.currency_config?.base_currency) {
@@ -129,12 +220,10 @@ export default function IncomeCreatePage() {
     if (!baseCurrencyCode) return;
 
     if (paymentMethod === 'cash') {
-      // Cash strictly locks to base currency
       setSelectedCurrency(baseCurrencyCode);
       setForeignAmount('');
       setExchangeRate('');
     } else if (bankAccount) {
-      // Bank transfers strictly lock to the selected bank's currency
       const selectedBank = banks.find(b => b.id === Number(bankAccount));
       const targetCurrency = selectedBank?.currency || baseCurrencyCode;
       setSelectedCurrency(targetCurrency);
@@ -152,9 +241,10 @@ export default function IncomeCreatePage() {
         }
       }
     }
-  }, [paymentMethod, bankAccount, banks, baseCurrencyCode, settings]);
+  }, [paymentMethod, bankAccount, banks, baseCurrencyCode, settings, foreignAmount]);
 
-  const isForeign = selectedCurrency !== baseCurrencyCode;
+  // THE FIX: Explicitly check if strict multi currency is enabled before locking into FX UI
+  const isForeign = !!settings?.strict_multi_currency && selectedCurrency !== baseCurrencyCode;
 
   // Handle Foreign Amount Typing -> Direct Multiplier Math
   const handleForeignAmountChange = (val: string) => {
@@ -202,7 +292,6 @@ export default function IncomeCreatePage() {
     if (paymentMethod !== 'cash' && !bankAccount && settings?.track_bank_balance) {
       return showToast('error', `A destination bank account is strictly required for ${paymentMethod}.`);
     }
-    // Enforce Proof of Payment Setting
     if (paymentMethod !== 'cash' && settings?.require_proof_for_funding && !receiptFile) {
       return showToast('error', 'System settings strictly require uploading a proof of payment / receipt for non-cash income.');
     }
@@ -218,11 +307,14 @@ export default function IncomeCreatePage() {
       if (paymentMethod !== 'cash' && bankAccount) {
         formData.append('bank_account', String(bankAccount));
       }
+
+      // Only append foreign details if the UI logic flagged it as a foreign transaction
       if (isForeign && foreignAmount && exchangeRate) {
         formData.append('foreign_currency', selectedCurrency);
         formData.append('foreign_amount', foreignAmount);
         formData.append('exchange_rate', exchangeRate);
       }
+
       if (source) formData.append('source', source);
       if (reference) formData.append('reference', reference);
       if (notes) formData.append('notes', notes);
@@ -231,16 +323,15 @@ export default function IncomeCreatePage() {
       const created: any = await incomeAPI.create(formData);
       showToast('success', 'Income record recorded and ledger updated successfully!');
 
-      // Handle Redirect Options
       setTimeout(() => {
         if (postSubmitAction === 'create_another') {
           setAmount(''); setForeignAmount(''); setSource(''); setReference(''); setNotes(''); setReceiptFile(null);
           window.scrollTo({ top: 0, behavior: 'smooth' });
           setIsSubmitting(false);
         } else if (postSubmitAction === 'detail' && created?.id) {
-          router.push(`/finance/income/${created.id}`);
+          router.push(`/dashboard/staff/finance/incomes?open_detail=${created.id}`);
         } else {
-          router.push('/finance/income');
+          router.push('/dashboard/staff/finance/incomes');
         }
       }, 1000);
     } catch (err: any) {
@@ -262,7 +353,7 @@ export default function IncomeCreatePage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-28">
+    <div className="max-w-4xl mx-auto space-y-6 pb-28 px-4 sm:px-0">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
       {/* Header */}
@@ -291,11 +382,12 @@ export default function IncomeCreatePage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>Income Category <span className="text-red-500">*</span></label>
-              <select required value={category} onChange={e => setCategory(Number(e.target.value))} className={inputCls}>
-                <option value="">Select a category...</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <CategoryPicker
+                label="Income Category"
+                value={category}
+                onChange={setCategory}
+                categories={categories}
+              />
             </div>
 
             <div>
@@ -349,10 +441,9 @@ export default function IncomeCreatePage() {
               <DollarSign className="h-4 w-4 text-emerald-600" /> Amount & Currency
             </h3>
 
-            {/* Read-Only Locked Currency Display */}
             <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700">
               <Lock className="h-3 w-3 text-slate-400" />
-              <span>LOCKED CURRENCY: {selectedCurrency}</span>
+              <span>{isForeign ? 'LOCKED CURRENCY' : 'CURRENCY'}: {isForeign ? selectedCurrency : baseCurrencyCode}</span>
             </div>
           </div>
 
@@ -450,8 +541,8 @@ export default function IncomeCreatePage() {
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
 
           {/* Post-Submit Action Selector */}
-          <div className="flex items-center gap-4 text-xs font-semibold text-slate-600">
-            <span>After Saving:</span>
+          <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-600">
+            <span className="w-full sm:w-auto">After Saving:</span>
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input type="radio" name="redirectAction" checked={postSubmitAction === 'list'} onChange={() => setPostSubmitAction('list')} className="text-blue-600 focus:ring-blue-500" />
               Back to List

@@ -746,8 +746,8 @@ export default function BankAccountsPage() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const canCreate = user?.is_superuser || hasPermission('finance.add_schoolbankdetailmodel');
-  const canEdit   = user?.is_superuser || hasPermission('finance.change_schoolbankdetailmodel');
-  const canDelete = user?.is_superuser || hasPermission('finance.delete_schoolbankdetailmodel');
+  const canEdit   = user?.is_superuser || hasPermission('finance.add_schoolbankdetailmodel');
+  const canDelete = user?.is_superuser || hasPermission('finance.add_schoolbankdetailmodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

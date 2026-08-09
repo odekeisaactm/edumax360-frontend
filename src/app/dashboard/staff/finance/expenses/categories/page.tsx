@@ -8,11 +8,14 @@ import {
   Tag, Plus, Edit3, Trash2, Search,
   X, Check, AlertCircle, AlertTriangle, Loader2,
   ChevronDown, ChevronUp, RefreshCw, FolderOpen, ArrowDownRight,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 let _toastId = 0;
 interface ToastItem { id: number; type: 'success' | 'error'; message: string; }
+
+const PAGE_SIZE = 20;
 
 // ─── Toast Stack ───────────────────────────────────────────────────────────────
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
@@ -177,8 +180,14 @@ export default function ExpenseCategoriesPage() {
   const { hasPermission, user } = useAuth();
 
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
+
+  // Pagination & Filtering State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showActiveOnly, setShowActiveOnly] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [editingCat, setEditingCat] = useState<ExpenseCategory | null>(null);
@@ -186,16 +195,13 @@ export default function ExpenseCategoriesPage() {
 
   const [deletingCat, setDeletingCat] = useState<ExpenseCategory | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canCreate = user?.is_superuser || hasPermission('finance.add_expensecategory');
-  const canEdit   = user?.is_superuser || hasPermission('finance.change_expensecategory');
-  const canDelete = user?.is_superuser || hasPermission('finance.delete_expensecategory');
+  // THE FIX: Using underlying finance permissions so Accountant roles map correctly
+  const canCreate = user?.is_superuser || hasPermission('finance.add_expensemodel');
+  const canEdit   = user?.is_superuser || hasPermission('finance.change_expensemodel') || hasPermission('finance.add_expensemodel');
+  const canDelete = user?.is_superuser || hasPermission('finance.delete_expensemodel') || hasPermission('finance.add_expensemodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;
@@ -204,19 +210,36 @@ export default function ExpenseCategoriesPage() {
   };
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
+  // Fetch using true Server-Side Pagination
   const fetchCategories = useCallback(async () => {
     setLoading(true); setPageError(null);
     try {
-      const data: any = await expenseCategoriesAPI.list();
-      const listData = Array.isArray(data) ? data : (data?.results || data?.data || []);
-      // Strictly filter out any null/undefined elements
+      const params: any = { page, page_size: PAGE_SIZE };
+      if (searchTerm.trim()) params.search = searchTerm.trim();
+      if (showActiveOnly) params.is_active = true;
+
+      const response: any = await expenseCategoriesAPI.list(params);
+
+      const listData = Array.isArray(response) ? response : (response?.results || response?.data || []);
+      const count = typeof response?.count === 'number' ? response.count : listData.length;
+
       setCategories(Array.isArray(listData) ? listData.filter(Boolean) : []);
+      setTotal(count);
     } catch (err: any) {
       setPageError(err instanceof Error ? err.message : 'Failed to fetch categories.');
     } finally { setLoading(false); }
-  }, []);
+  }, [page, searchTerm, showActiveOnly]);
 
-  useEffect(() => { fetchCategories(); }, [fetchCategories]);
+  useEffect(() => {
+    // Slight debounce so typing doesn't spam the server
+    const handler = setTimeout(() => {
+      fetchCategories();
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [fetchCategories]);
+
+  // Reset page to 1 when filters change
+  useEffect(() => { setPage(1); }, [searchTerm, showActiveOnly]);
 
   const openCreate = () => { setEditingCat(null); setShowModal(true); };
   const openEdit = (cat: ExpenseCategory) => { setEditingCat(cat); setShowModal(true); };
@@ -225,20 +248,16 @@ export default function ExpenseCategoriesPage() {
     setIsSaving(true);
     try {
       if (editingCat) {
-        const updated = await expenseCategoriesAPI.update(editingCat.id, form);
-        setCategories(prev => prev.map(c => (c && c.id === updated?.id ? updated : c)).filter(Boolean));
-        showToast('success', `"${updated?.name || form.name}" updated successfully`);
+        await expenseCategoriesAPI.update(editingCat.id, form);
+        showToast('success', `"${form.name}" updated successfully`);
       } else {
-        const created = await expenseCategoriesAPI.create(form);
-        if (created) {
-          setCategories(prev => [created, ...prev].filter(Boolean));
-          showToast('success', `"${created.name || form.name}" created successfully`);
-        } else {
-          await fetchCategories();
-          showToast('success', `"${form.name}" created successfully`);
-        }
+        await expenseCategoriesAPI.create(form);
+        showToast('success', `"${form.name}" created successfully`);
       }
       setShowModal(false);
+      fetchCategories(); // Refetch to maintain correct pagination limits
+    } catch (err: any) {
+      showToast('error', err instanceof Error ? err.message : 'Error saving category.');
     } finally {
       setIsSaving(false);
     }
@@ -249,25 +268,17 @@ export default function ExpenseCategoriesPage() {
     setIsDeleting(true);
     try {
       await expenseCategoriesAPI.delete(deletingCat.id);
-      setCategories(prev => prev.filter(c => c && c.id !== deletingCat.id));
       showToast('success', `"${deletingCat.name}" deleted`);
       setDeletingCat(null);
+      fetchCategories(); // Refetch
     } catch (err: any) {
       showToast('error', err instanceof Error ? err.message : 'Could not delete category.');
       setDeletingCat(null);
     } finally { setIsDeleting(false); }
   };
 
-  // Safe filtering using optional chaining
-  const filtered = (Array.isArray(categories) ? categories : []).filter(c => {
-    if (!c) return false;
-    const matchSearch = (c.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        (c.description || '').toLowerCase().includes(searchTerm.toLowerCase());
-    const matchActive = !showActiveOnly || c.is_active;
-    return matchSearch && matchActive;
-  });
-
-  const totalActive = categories.filter(c => c && c.is_active).length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const activeCountOnPage = categories.filter(c => c.is_active).length;
 
   return (
     <div className="space-y-6 pb-10 max-w-7xl mx-auto">
@@ -304,9 +315,9 @@ export default function ExpenseCategoriesPage() {
       {/* ── Stat Chips ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[
-          { label: 'Total Categories', value: categories.length, icon: Tag, color: 'from-red-500 to-rose-600' },
-          { label: 'Active', value: totalActive, icon: Check, color: 'from-emerald-500 to-teal-600' },
-          { label: 'Inactive', value: categories.length - totalActive, icon: FolderOpen, color: 'from-slate-400 to-slate-500' },
+          { label: 'Total Categories', value: total, icon: Tag, color: 'from-red-500 to-rose-600' },
+          { label: 'Active (Pg)', value: activeCountOnPage, icon: Check, color: 'from-emerald-500 to-teal-600' },
+          { label: 'Inactive (Pg)', value: categories.length - activeCountOnPage, icon: FolderOpen, color: 'from-slate-400 to-slate-500' },
         ].map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
             <div className={`w-9 h-9 bg-gradient-to-br ${color} rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm`}>
@@ -314,7 +325,7 @@ export default function ExpenseCategoriesPage() {
             </div>
             <div className="min-w-0">
               <p className="text-xs text-slate-400 truncate">{label}</p>
-              <p className="text-lg font-bold text-slate-800">{loading ? '—' : value}</p>
+              <p className="text-lg font-bold text-slate-800">{loading && page === 1 ? '—' : value}</p>
             </div>
           </div>
         ))}
@@ -329,7 +340,7 @@ export default function ExpenseCategoriesPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input type="text" placeholder="Search by name or description..." value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none" />
+              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none bg-slate-50 focus:bg-white transition-colors" />
           </div>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -340,36 +351,36 @@ export default function ExpenseCategoriesPage() {
               </button>
               <span className="text-sm text-slate-600">Active only</span>
             </label>
-            <button onClick={fetchCategories} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors" title="Refresh">
+            <button onClick={fetchCategories} className="p-2 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-50 transition-colors border border-slate-200" title="Refresh">
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin text-red-600' : ''}`} />
             </button>
           </div>
         </div>
 
         {/* States */}
-        {loading ? (
+        {loading && page === 1 ? (
           <div className="p-16 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-red-600 mx-auto" />
-            <p className="mt-2 text-sm text-slate-400">Loading expense categories...</p>
+            <p className="mt-2 text-sm text-slate-400">Loading categories...</p>
           </div>
         ) : pageError ? (
           <div className="p-10 text-center">
             <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-2" />
             <p className="text-sm text-red-600 mb-3">{pageError}</p>
-            <button onClick={fetchCategories} className="text-sm text-red-600 font-semibold underline inline-flex items-center gap-1">
+            <button onClick={fetchCategories} className="text-sm font-bold text-red-600 underline inline-flex items-center gap-1 hover:text-red-800">
               <RefreshCw className="h-3.5 w-3.5" /> Retry
             </button>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : categories.length === 0 ? (
           <div className="p-16 text-center">
             <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <ArrowDownRight className="h-7 w-7 text-red-300" />
             </div>
-            <h3 className="font-semibold text-slate-700 mb-1">
+            <h3 className="font-bold text-slate-700 mb-1">
               {searchTerm ? 'No categories match your search' : 'No expense categories yet'}
             </h3>
-            <p className="text-sm text-slate-400 mb-5">
-              {searchTerm ? 'Try different keywords.' : 'Add your first expense classification to start tracking expenditure.'}
+            <p className="text-sm font-medium text-slate-400 mb-5">
+              {searchTerm ? 'Try different keywords.' : 'Add your first expense category to start tracking expenditure.'}
             </p>
             {!searchTerm && canCreate && (
               <button onClick={openCreate}
@@ -382,13 +393,13 @@ export default function ExpenseCategoriesPage() {
           <>
             {/* Table header */}
             <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Category</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</span>
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Category</span>
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Status</span>
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Actions</span>
             </div>
 
             <div className="divide-y divide-slate-50">
-              {filtered.map(cat => (
+              {categories.map(cat => (
                 <div key={cat.id}>
                   <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
 
@@ -398,39 +409,39 @@ export default function ExpenseCategoriesPage() {
                         <ArrowDownRight className={`h-4 w-4 ${cat.is_active ? 'text-red-600' : 'text-slate-400'}`} />
                       </div>
                       <div className="min-w-0">
-                        <p className="font-semibold text-slate-900 truncate">{cat.name}</p>
-                        {cat.description && <p className="text-xs text-slate-400 truncate">{cat.description}</p>}
+                        <p className="font-bold text-slate-900 truncate">{cat.name}</p>
+                        {cat.description && <p className="text-xs font-medium text-slate-400 truncate">{cat.description}</p>}
                       </div>
                     </div>
 
                     {/* Status */}
                     {cat.is_active ? (
-                      <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full whitespace-nowrap">
+                      <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-100 text-emerald-700 text-[11px] font-bold rounded-full whitespace-nowrap uppercase tracking-wider">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-semibold rounded-full whitespace-nowrap">
+                      <span className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border border-slate-200 text-slate-500 text-[11px] font-bold rounded-full whitespace-nowrap uppercase tracking-wider">
                         <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> Inactive
                       </span>
                     )}
 
                     {/* Actions */}
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       {canEdit && (
                         <button onClick={() => openEdit(cat)} title="Edit"
-                          className="p-2 rounded-lg text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all">
-                          <Edit3 className="h-3.5 w-3.5" />
+                          className="p-1.5 rounded-lg text-amber-600 bg-amber-50 hover:bg-amber-100 transition-colors">
+                          <Edit3 className="h-4 w-4" />
                         </button>
                       )}
                       {canDelete && (
                         <button onClick={() => setDeletingCat(cat)} title="Delete"
-                          className="p-2 rounded-lg text-red-600 bg-red-50 border border-red-100 hover:bg-red-100 transition-all">
-                          <Trash2 className="h-3.5 w-3.5" />
+                          className="p-1.5 rounded-lg text-red-600 bg-red-50 hover:bg-red-100 transition-colors">
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       )}
                       <button onClick={() => setExpandedId(expandedId === cat.id ? null : cat.id)} title="Toggle details"
-                        className="p-2 rounded-lg text-slate-500 bg-slate-100 border border-slate-200 hover:bg-slate-200 transition-all">
-                        {expandedId === cat.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                        className="p-1.5 rounded-lg text-slate-500 bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors">
+                        {expandedId === cat.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </button>
                     </div>
                   </div>
@@ -441,17 +452,17 @@ export default function ExpenseCategoriesPage() {
                       <div className="ml-12 p-4 bg-slate-50 rounded-xl border border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                         {cat.description && (
                           <div className="sm:col-span-2">
-                            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</span>
-                            <p className="mt-1 text-slate-600">{cat.description}</p>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</span>
+                            <p className="mt-1 font-medium text-slate-700">{cat.description}</p>
                           </div>
                         )}
                         <div>
-                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Category ID</span>
-                          <p className="mt-1 text-slate-700 font-medium">#{cat.id}</p>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Category ID</span>
+                          <p className="mt-1 font-mono font-bold text-slate-700">#{cat.id}</p>
                         </div>
                         <div>
-                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Created</span>
-                          <p className="mt-1 text-slate-700">{cat.created_at ? new Date(cat.created_at).toLocaleDateString() : '—'}</p>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Created</span>
+                          <p className="mt-1 font-medium text-slate-700">{cat.created_at ? new Date(cat.created_at).toLocaleDateString('en-GB') : '—'}</p>
                         </div>
                       </div>
                     </div>
@@ -460,13 +471,30 @@ export default function ExpenseCategoriesPage() {
               ))}
             </div>
 
-            {/* Footer count */}
-            <div className="px-5 py-3 border-t border-slate-50 bg-slate-50/40">
-              <p className="text-xs text-slate-400">
-                Showing {filtered.length} of {categories.length} categor{categories.length !== 1 ? 'ies' : 'y'}
-                {showActiveOnly ? ' (active only)' : ''}
-              </p>
-            </div>
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-500">
+                  Showing {(page - 1) * PAGE_SIZE + 1} to {Math.min(page * PAGE_SIZE, total)} of <span className="font-bold text-slate-700">{total}</span> entries
+                </p>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="p-1.5 border border-slate-200 rounded-lg bg-white disabled:opacity-40 hover:bg-slate-50 transition-colors shadow-sm"
+                  >
+                    <ChevronLeft className="h-4 w-4 text-slate-600" />
+                  </button>
+                  <button
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    className="p-1.5 border border-slate-200 rounded-lg bg-white disabled:opacity-40 hover:bg-slate-50 transition-colors shadow-sm"
+                  >
+                    <ChevronRight className="h-4 w-4 text-slate-600" />
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

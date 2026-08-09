@@ -352,11 +352,11 @@ export const incomeCategoriesAPI = {
   /**
    * List all income categories
    */
-  list: async (): Promise<IncomeCategory[]> => {
+   list: async (params?: any): Promise<any> => {
     try {
-      const response = await api.get(`${FINANCE_API_BASE}/income-categories/`);
-      if (Array.isArray(response.data)) return response.data;
-      return response.data?.results || response.data?.data || [];
+      const response = await api.get(`${FINANCE_API_BASE}/income-categories/`, { params });
+      // ─── RETURN THE FULL DATA OBJECT, DON'T STRIP IT ───
+      return response.data;
     } catch (error: any) {
       throw new Error(getDrfError(error));
     }
@@ -418,9 +418,9 @@ export const incomeAPI = {
   /**
    * List income records with pagination and filters
    */
-  list: async (filters?: IncomeListFilters): Promise<PaginatedResponse<Income>> => {
+  list: async (filters?: IncomeListFilters): Promise<any> => {
     const response = await api.get(`${FINANCE_API_BASE}/incomes/`, { params: filters });
-    return response.data.results || response.data || { count: 0, next: null, previous: null, results: [] };
+    return response.data;
   },
 
   /**
@@ -469,11 +469,13 @@ export const expenseCategoriesAPI = {
   /**
    * List all expense categories
    */
-  list: async (): Promise<ExpenseCategory[]> => {
+  list: async (params?: any): Promise<any> => {
     try {
-      const response = await api.get(`${FINANCE_API_BASE}/expense-categories/`);
-      if (Array.isArray(response.data)) return response.data;
-      return response.data?.results || response.data?.data || [];
+      // 1. Pass the params to the GET request
+      const response = await api.get(`${FINANCE_API_BASE}/expense-categories/`, { params });
+
+      // 2. Return the FULL response data (so React can see response.count and response.results)
+      return response.data;
     } catch (error: any) {
       throw new Error(getDrfError(error));
     }

@@ -598,7 +598,7 @@ function ParentCheckoutContent() {
       setShowPreview(false);
 
       setTimeout(() => {
-        router.push(`/dashboard/parent/fees?session=${filterSessionId}&period=${filterPeriodId}`);
+        router.push('/dashboard/parent/fees/history');
       }, 1500);
 
     } catch (err: any) {

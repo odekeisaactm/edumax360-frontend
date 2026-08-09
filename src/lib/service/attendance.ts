@@ -26,7 +26,7 @@ import type {
   MissingCredentialStudent,
 } from '@/lib/types/attendance';
 
-const BASE = '/attendance';
+const BASE = '/api/attendance';
 
 // A generic paginated-list shape matching the rest of the codebase's
 // DRF pagination (parentsAPI.list() pattern: { results, count }).
