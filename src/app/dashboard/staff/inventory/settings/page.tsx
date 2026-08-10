@@ -5,8 +5,8 @@ import { useAuth } from '@/context/AuthContext';
 import { inventorySettingAPI } from '@/lib/api';
 import { InventorySetting, InventorySettingPayload, SaleRedirectTarget } from '@/lib/types';
 import {
-  Settings, Edit3, ShoppingCart, Check, X, AlertCircle, Sparkles,
-  Percent, Wallet, ShieldOff, Gauge, MonitorSmartphone, Loader2,
+  Settings, Edit3, ShoppingCart, Check, X, AlertCircle,
+  Percent, Wallet, Gauge, MonitorSmartphone, Loader2,
   Banknote, CreditCard, Users, UserCog, Clock, RefreshCw, Printer,
   ArrowRightCircle,
 } from 'lucide-react';
@@ -53,7 +53,9 @@ function Toggle({
   checked: boolean; onChange: (v: boolean) => void; label: string; description?: string;
 }) {
   return (
-    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-slate-200 transition-colors">
+    <div className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-150 ${
+      checked ? 'bg-indigo-50/50 border-indigo-100' : 'bg-slate-50 border-slate-100 hover:border-slate-200'
+    }`}>
       <div className="flex-1 pr-4">
         <p className="text-sm font-medium text-slate-800">{label}</p>
         {description && <p className="text-xs text-slate-400 mt-0.5">{description}</p>}
@@ -62,10 +64,13 @@ function Toggle({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 flex-shrink-0 ${checked ? 'bg-blue-600' : 'bg-slate-200'}`}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 flex-shrink-0 ${
+          checked ? 'bg-gradient-to-r from-blue-600 to-indigo-600' : 'bg-slate-200'
+        }`}
       >
-        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
+        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
       </button>
     </div>
   );
@@ -78,10 +83,10 @@ function StatusBadge({
   value: boolean; activeLabel?: string; inactiveLabel?: string; danger?: boolean;
 }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ring-1 ring-inset ${
       value
-        ? danger ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
-        : 'bg-slate-100 text-slate-500'
+        ? danger ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+        : 'bg-slate-100 text-slate-500 ring-slate-200'
     }`}>
       <span className={`w-1.5 h-1.5 rounded-full ${value ? danger ? 'bg-red-500' : 'bg-emerald-500' : 'bg-slate-400'}`} />
       {value ? activeLabel : inactiveLabel}
@@ -96,7 +101,7 @@ function SettingRow({
   icon: any; iconBg: string; label: string; value: React.ReactNode; description: string;
 }) {
   return (
-    <div className="flex items-center gap-4 py-3.5 px-4 hover:bg-slate-50/70 rounded-xl transition-colors">
+    <div className="flex items-center gap-4 py-3.5 px-4 hover:bg-slate-50/70 rounded-xl transition-colors duration-150">
       <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${iconBg}`}>
         <Icon className="h-3.5 w-3.5" />
       </div>
@@ -110,7 +115,7 @@ function SettingRow({
 }
 
 // ─── Input ─────────────────────────────────────────────────────────────────────
-const inputCls = "w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white";
+const inputCls = "w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white transition-shadow";
 const labelCls = "block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5";
 
 function formatNaira(value: string | null | undefined): string {
@@ -141,8 +146,6 @@ function SettingsModal({
   const set = <K extends keyof InventorySettingPayload>(key: K, value: InventorySettingPayload[K]) =>
     setForm(prev => ({ ...prev, [key]: value }));
 
-  // Walk-in sales require at least one of cash/pos — mirrors backend validation
-  // so the person sees the conflict before submitting, not just after.
   const walkinConflict = form.allow_walkin_sale && !form.allow_cash && !form.allow_pos;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -162,6 +165,12 @@ function SettingsModal({
           .map(([f, m]: [string, any]) => `${f.replace(/_/g, ' ')}: ${Array.isArray(m) ? m.join(', ') : m}`)
           .join('\n');
         setSaveError(msgs);
+
+        // ── Smart Tab Switcher on Error ──
+        const errorStr = JSON.stringify(data.details).toLowerCase();
+        if (errorStr.includes('debt') || errorStr.includes('wallet')) setActiveTab('debt');
+        else if (errorStr.includes('cash') || errorStr.includes('pos') || errorStr.includes('walkin')) setActiveTab('payment');
+        else if (errorStr.includes('refund') || errorStr.includes('limit') || errorStr.includes('max')) setActiveTab('limits');
       } else {
         setSaveError(data?.message || err?.message || 'Failed to save inventory settings.');
       }
@@ -177,38 +186,43 @@ function SettingsModal({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col" style={{ maxHeight: '92vh' }}>
+    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-[fadeIn_0.15s_ease-out]">
+      <div
+        className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 w-full max-w-4xl flex flex-col animate-[slideUp_0.2s_ease-out]"
+        style={{ height: 'min(680px, 92vh)' }}
+      >
 
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <Settings className="h-4 w-4" />
+          <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
+            <span className="w-7 h-7 bg-white/15 rounded-lg flex items-center justify-center">
+              <Settings className="h-4 w-4" />
+            </span>
             Edit POS Settings
           </h3>
           <button onClick={onClose} disabled={isSaving}
-            className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50">
+            className="text-white/70 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50">
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Error */}
+        {/* Error banner */}
         {saveError && (
           <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 flex items-start gap-2 flex-shrink-0">
             <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
             <span className="whitespace-pre-line">{saveError}</span>
-            <button onClick={() => setSaveError(null)} className="ml-auto text-red-400 hover:text-red-600">
+            <button onClick={() => setSaveError(null)} className="ml-auto text-red-400 hover:text-red-600 flex-shrink-0">
               <X className="h-4 w-4" />
             </button>
           </div>
         )}
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-100 px-6 flex-shrink-0 gap-1 overflow-x-auto">
+        <div className="flex border-b border-slate-100 px-6 flex-shrink-0 overflow-x-auto">
           {tabs.map(t => (
             <button key={t.id} type="button" onClick={() => setActiveTab(t.id)}
               className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
-                activeTab === t.id ? 'text-blue-600 border-blue-600' : 'text-slate-400 border-transparent hover:text-slate-600'
+                activeTab === t.id ? 'text-indigo-600 border-indigo-600' : 'text-slate-400 border-transparent hover:text-slate-600 hover:border-slate-200'
               }`}>
               <t.icon className="h-3.5 w-3.5" />
               {t.label}
@@ -304,7 +318,10 @@ function SettingsModal({
                   <label className={labelCls}>Refund Grace Period (hours)</label>
                   <input type="number" step="1" min="0" placeholder="No limit"
                     value={form.max_refund_grace_period_hours ?? ''}
-                    onChange={e => set('max_refund_grace_period_hours', e.target.value ? Number(e.target.value) : null)}
+                    onChange={e => {
+                      const val = e.target.value ? Number(e.target.value) : null;
+                      set('max_refund_grace_period_hours', val !== null && !isNaN(val) ? val : null);
+                    }}
                     className={inputCls} />
                   <p className="text-xs text-slate-400 mt-1">
                     How long after a sale it can still be refunded. For days, multiply by 24 (e.g. 48 = 2 days).
@@ -340,13 +357,18 @@ function SettingsModal({
             Cancel
           </button>
           <button type="submit" form="inventory-settings-form" disabled={isSaving}
-            className="px-5 py-2 text-sm bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-blue-200">
+            className="px-5 py-2 text-sm bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-indigo-200">
             {isSaving
               ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
               : <><Check className="h-4 w-4" /> Save Changes</>}
           </button>
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+      `}</style>
     </div>
   );
 }
@@ -397,7 +419,7 @@ export default function InventorySettingsPage() {
   if (loading) return (
     <div className="min-h-[600px] flex items-center justify-center">
       <div className="text-center space-y-3">
-        <Loader2 className="h-10 w-10 animate-spin text-blue-600 mx-auto" />
+        <Loader2 className="h-9 w-9 animate-spin text-indigo-600 mx-auto" />
         <p className="text-slate-400 text-sm">Loading POS settings...</p>
       </div>
     </div>
@@ -406,14 +428,14 @@ export default function InventorySettingsPage() {
   // ── Fetch error ──
   if (pageError === 'fetch_error' || !settings) return (
     <div className="min-h-[600px] flex items-center justify-center">
-      <div className="max-w-sm text-center bg-white rounded-2xl shadow-xl border border-red-100 p-8 space-y-4">
+      <div className="max-w-sm text-center bg-white rounded-2xl shadow-xl ring-1 ring-red-100 p-8 space-y-4">
         <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto">
           <AlertCircle className="h-7 w-7 text-red-500" />
         </div>
-        <h3 className="text-lg font-bold text-slate-900">Failed to Load</h3>
-        <p className="text-sm text-slate-500">Couldn't load POS settings. Please try again.</p>
+        <h3 className="text-lg font-bold text-slate-900">Couldn't Load Settings</h3>
+        <p className="text-sm text-slate-500">Something went wrong fetching your POS settings. Check your connection and try again.</p>
         <button onClick={fetchSettings}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors">
+          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors">
           <RefreshCw className="h-4 w-4" /> Try Again
         </button>
       </div>
@@ -427,23 +449,26 @@ export default function InventorySettingsPage() {
 
       {/* Success toast */}
       {showSuccess && (
-        <div className="fixed top-4 right-4 z-50">
-          <div className="bg-white border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg shadow-emerald-100">
+        <div className="fixed top-4 right-4 z-50 animate-[toastIn_0.25s_ease-out]">
+          <div className="bg-white border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg shadow-emerald-100/70">
             <div className="w-7 h-7 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
               <Check className="h-4 w-4 text-emerald-600" />
             </div>
             <p className="text-sm font-medium text-slate-800">POS settings saved successfully!</p>
           </div>
+          <style jsx>{`
+            @keyframes toastIn { from { opacity: 0; transform: translateY(-8px) } to { opacity: 1; transform: translateY(0) } }
+          `}</style>
         </div>
       )}
 
       {isEditing && <SettingsModal settings={s} isSaving={isSaving} onSave={handleSave} onClose={() => setIsEditing(false)} />}
 
       {/* ── Page header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-1">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3 tracking-tight">
+            <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-200">
               <ShoppingCart className="h-5 w-5 text-white" />
             </div>
             POS Settings
@@ -452,7 +477,7 @@ export default function InventorySettingsPage() {
         </div>
         {canEdit && (
           <button onClick={() => setIsEditing(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-blue-200">
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-indigo-200 active:scale-[0.98]">
             <Edit3 className="h-4 w-4" /> Edit Settings
           </button>
         )}
@@ -466,7 +491,7 @@ export default function InventorySettingsPage() {
           { label: 'Daily Sale Cap', value: formatNaira(s.max_daily_sale_amount), icon: Gauge, color: 'from-teal-500 to-cyan-600' },
           { label: 'Refund Window', value: s.max_refund_grace_period_hours != null ? `${s.max_refund_grace_period_hours}h` : 'No limit', icon: Clock, color: 'from-orange-400 to-amber-500' },
         ].map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
+          <div key={label} className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 p-4 flex items-center gap-3">
             <div className={`w-9 h-9 bg-gradient-to-br ${color} rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm`}>
               <Icon className="h-4 w-4 text-white" />
             </div>
@@ -524,7 +549,7 @@ export default function InventorySettingsPage() {
         </div>
 
         {/* Limits, Refunds & POS UX */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
           <div className="px-5 py-4 border-b border-slate-50 flex items-center gap-2">
             <div className="w-7 h-7 bg-orange-50 rounded-lg flex items-center justify-center">
               <Gauge className="h-3.5 w-3.5 text-orange-600" />
@@ -546,7 +571,7 @@ export default function InventorySettingsPage() {
           </div>
 
           {/* Redirect preview card */}
-          <div className="mx-4 mb-4 mt-2 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+          <div className="mx-4 mb-4 mt-2 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 flex-1 flex flex-col justify-center">
             <p className="text-xs font-semibold text-blue-700 mb-1 uppercase tracking-wide flex items-center gap-1.5">
               <ArrowRightCircle className="h-3 w-3" /> After Sale
             </p>
@@ -586,8 +611,8 @@ export default function InventorySettingsPage() {
                 { label: 'Refund Grace Period', value: <span className="text-sm text-slate-700">{s.max_refund_grace_period_hours != null ? `${s.max_refund_grace_period_hours} hours` : 'No limit'}</span>, desc: 'Time window after a sale within which it can be refunded' },
                 { label: 'Default Redirect', value: <span className="text-sm text-slate-700">{REDIRECT_LABELS[s.default_sale_redirect]}</span>, desc: 'Page staff are taken to after completing a sale' },
                 { label: 'Auto Print Receipt', value: <StatusBadge value={s.auto_print_receipt} />, desc: 'Receipt prints automatically once a sale completes' },
-              ].map(({ label, value, desc }) => (
-                <tr key={label} className="hover:bg-slate-50/50 transition-colors">
+              ].map(({ label, value, desc }, i) => (
+                <tr key={label} className={`hover:bg-slate-50/60 transition-colors ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
                   <td className="py-3.5 px-5 text-sm font-medium text-slate-700 whitespace-nowrap">{label}</td>
                   <td className="py-3.5 px-4">{value}</td>
                   <td className="py-3.5 px-4 text-xs text-slate-400">{desc}</td>
@@ -602,6 +627,9 @@ export default function InventorySettingsPage() {
       {s.updated_at && (
         <p className="text-xs text-slate-400 text-right">
           Last updated: {new Date(s.updated_at).toLocaleString()}
+          {s.updated_by_name && (
+            <> by <span className="font-medium text-slate-500">{s.updated_by_name}</span></>
+          )}
         </p>
       )}
     </div>

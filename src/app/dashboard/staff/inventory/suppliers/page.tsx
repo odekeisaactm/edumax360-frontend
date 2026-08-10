@@ -12,7 +12,7 @@ import {
   AlertCircle, AlertTriangle, Loader2, RefreshCw, Eye,
   ChevronLeft, ChevronRight, Phone, Mail, User,
   Filter, Download, FileSpreadsheet, FileText, SlidersHorizontal,
-  ChevronDown, MapPin,
+  ChevronDown, ArrowRightCircle, MapPin,
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -23,6 +23,7 @@ function extractError(err: any): string {
   const d = err?.response?.data;
   if (d) {
     if (typeof d === 'string') return d;
+    if (d.error) return String(d.error);
     if (d.detail) return String(d.detail);
     if (d.details) {
       const details = d.details;
@@ -355,6 +356,13 @@ function SupplierModal({ editing, isSaving, onSave, onClose }: {
   );
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Auto-focus
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => nameInputRef.current?.focus(), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
   const set = <K extends keyof SupplierFormValues>(key: K, value: SupplierFormValues[K]) =>
     setForm(prev => ({ ...prev, [key]: value }));
 
@@ -396,7 +404,7 @@ function SupplierModal({ editing, isSaving, onSave, onClose }: {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className={labelCls}>Supplier Name <span className="text-red-400 normal-case">*</span></label>
-              <input required type="text" value={form.name} onChange={e => set('name', e.target.value)}
+              <input ref={nameInputRef} required type="text" value={form.name} onChange={e => set('name', e.target.value)}
                 placeholder="e.g. Zenith Books Ltd" className={inputCls} />
             </div>
             <div>
@@ -452,6 +460,125 @@ function SupplierModal({ editing, isSaving, onSave, onClose }: {
   );
 }
 
+// ─── Detail Drawer ─────────────────────────────────────────────────────────────
+function SupplierDrawer({ supplier, open, onClose }: {
+  supplier: InventorySupplier | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (open) document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [open, onClose]);
+
+  if (!open || !supplier) return null;
+
+  const status = STATUS_META[supplier.is_active ? 'active' : 'inactive'] ?? STATUS_META.inactive;
+
+  const detailRows = [
+    { label: 'Contact Person', value: toTitleCase(supplier.contact_person || ''), icon: User, show: !!supplier.contact_person },
+    { label: 'Phone Number', value: supplier.phone_number || '', icon: Phone, show: !!supplier.phone_number },
+    { label: 'Email Address', value: supplier.email || '', icon: Mail, show: !!supplier.email },
+    { label: 'Address', value: supplier.address || '', icon: MapPin, show: !!supplier.address, isAddress: true },
+  ];
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity" onClick={onClose} />
+
+      {/* Drawer Panel */}
+      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-white shadow-2xl flex flex-col animate-[slideInRight_0.2s_ease-out]">
+
+        {/* Header */}
+        <div className="px-6 py-5 border-b border-slate-100 flex items-start justify-between flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center flex-shrink-0">
+              <Building className="h-5 w-5 text-indigo-600" />
+            </div>
+            <div>
+              <h2 className="font-bold text-slate-900 text-base leading-tight">{toTitleCase(supplier.name)}</h2>
+              <div className="mt-1">
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold border ${status.bg} ${status.text} ${status.border}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status.dot}`} />
+                  {status.label}
+                </span>
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="space-y-4">
+            {detailRows.map(row => row.show && (
+              <div key={row.label} className="flex gap-3">
+                <div className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <row.icon className="h-4 w-4 text-slate-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">{row.label}</p>
+                  <p className={`text-sm text-slate-700 leading-relaxed ${row.isAddress ? 'whitespace-pre-wrap' : ''}`}>
+                    {row.value || '—'}
+                  </p>
+                </div>
+              </div>
+            ))}
+
+            {!detailRows.some(r => r.show) && (
+              <p className="text-sm text-slate-400 italic text-center py-8">No additional details provided for this supplier.</p>
+            )}
+          </div>
+
+          {/* System Info */}
+          <div className="border-t border-slate-100 pt-4 grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Supplier ID</p>
+              <p className="text-sm text-slate-600 mt-0.5 font-mono">#{supplier.id}</p>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Created</p>
+              <p className="text-sm text-slate-600 mt-0.5">{new Date(supplier.created_at).toLocaleDateString()}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Actions */}
+        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex-shrink-0 space-y-2">
+          <button
+            onClick={() => {
+              onClose();
+              router.push(`/dashboard/staff/inventory/stock-in?supplier=${supplier.id}`);
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm"
+          >
+            <ArrowRightCircle className="h-4 w-4" />
+            View Stock-Ins for this Supplier
+          </button>
+          <p className="text-[11px] text-slate-400 text-center">
+            Takes you to the Stock-In page with this supplier pre-filtered.
+          </p>
+        </div>
+      </div>
+
+      <style jsx>{`
+        @keyframes slideInRight {
+          from { transform: translateX(100%); }
+          to { transform: translateX(0); }
+        }
+      `}</style>
+    </>
+  );
+}
+
 // ─── Export: fetch ALL records matching current filters (bypasses pagination) ──
 async function fetchAllForExport(
   apiList: (params: Record<string, any>) => Promise<any>,
@@ -463,7 +590,6 @@ async function fetchAllForExport(
 
   const data = await apiList(params);
 
-  // Same normalisation as fetchSuppliers
   if (Array.isArray(data)) return data;
   if (data?.results?.data && Array.isArray(data.results.data)) return data.results.data;
   if (data?.results && Array.isArray(data.results)) return data.results;
@@ -488,7 +614,7 @@ function getSupplierFieldValue(s: InventorySupplier, key: string): string {
   }
 }
 
-// ─── Export: build print-ready HTML (same print-window pattern as payslip) ────
+// ─── Export: build print-ready HTML ──────────────────────────────────────────
 function buildSuppliersPDFHTML(
   rows: InventorySupplier[],
   fields: Set<string>,
@@ -498,20 +624,6 @@ function buildSuppliersPDFHTML(
   const visibleFields = ALL_EXPORT_FIELDS.filter(f => fields.has(f.key));
 
   const thead = visibleFields.map(f => `<th>${f.label}</th>`).join('');
-
-  const tbody = rows.map((s, i) => {
-    const cells = visibleFields.map(f => {
-      const val = getSupplierFieldValue(s, f.key);
-      if (f.key === 'is_active') {
-        const colour = s.is_active ? '#059669' : '#64748b';
-        const bg     = s.is_active ? '#ecfdf5'  : '#f1f5f9';
-        return `<td><span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;color:${colour};background:${bg};border:1px solid ${colour}40">${val}</span></td>`;
-      }
-      return `<td>${val}</td>`;
-    }).join('');
-    const rowBg = i % 2 === 0 ? '#ffffff' : '#f8fafc';
-    return `<tr style="background:${rowBg}">${cells}</tr>`;
-  }).join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -598,11 +710,10 @@ function buildSuppliersPDFHTML(
 </html>`;
 }
 
-// ─── Export: download as real .xlsx via SheetJS (same as bank payment page) ───
+// ─── Export: download as real .xlsx via SheetJS ───────────────────────────────
 function downloadSuppliersExcel(
   rows: InventorySupplier[],
   fields: Set<string>,
-  filterInfo: string,
 ): void {
   const visibleFields = ALL_EXPORT_FIELDS.filter(f => fields.has(f.key));
 
@@ -616,7 +727,6 @@ function downloadSuppliersExcel(
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Suppliers');
 
-  // Auto column widths
   const colWidths = [{ wch: 5 }, ...visibleFields.map(f => ({ wch: Math.max(f.label.length + 4, 18) }))];
   ws['!cols'] = colWidths;
 
@@ -648,6 +758,9 @@ export default function SuppliersPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [deletingSupplier, setDeletingSupplier] = useState<InventorySupplier | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Drawer
+  const [viewingSupplier, setViewingSupplier] = useState<InventorySupplier | null>(null);
 
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -759,17 +872,14 @@ export default function SuppliersPage() {
     } finally { setIsDeleting(false); }
   };
 
-  // ─── Real PDF export (print-window, same as payslip) ───────────────────────
   const handleDownloadPDF = async () => {
     setDownloading(true);
     try {
       const all = await fetchAllForExport(inventorySupplierAPI.list, filters);
-
       const parts: string[] = [];
       if (filters.search) parts.push(`Search: "${filters.search}"`);
       if (filters.status) parts.push(`Status: ${filters.status}`);
       const filterInfo = parts.join(' · ');
-
       const html = buildSuppliersPDFHTML(all, selectedFields, filterInfo);
       const win = window.open('', '_blank');
       if (!win) {
@@ -780,29 +890,18 @@ export default function SuppliersPage() {
       win.document.close();
     } catch (err) {
       showToast('error', extractError(err));
-    } finally {
-      setDownloading(false);
-    }
+    } finally { setDownloading(false); }
   };
 
-  // ─── Real Excel export (CSV, opens in Excel natively) ─────────────────────────
   const handleDownloadExcel = async () => {
     setDownloading(true);
     try {
       const all = await fetchAllForExport(inventorySupplierAPI.list, filters);
-
-      const parts: string[] = [];
-      if (filters.search) parts.push(`Search: "${filters.search}"`);
-      if (filters.status) parts.push(`Status: ${filters.status}`);
-      const filterInfo = parts.join(' · ');
-
-      downloadSuppliersExcel(all, selectedFields, filterInfo);
+      downloadSuppliersExcel(all, selectedFields);
       showToast('success', `Exported ${all.length} supplier${all.length !== 1 ? 's' : ''} to Excel`);
     } catch (err) {
       showToast('error', extractError(err));
-    } finally {
-      setDownloading(false);
-    }
+    } finally { setDownloading(false); }
   };
 
   const activeFilterChips: { key: keyof FilterState; label: string }[] = [
@@ -818,12 +917,8 @@ export default function SuppliersPage() {
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
       <FilterModal
-        open={showFilterModal}
-        filters={filters}
-        selectedFields={selectedFields}
-        onApply={applyFilters}
-        onClose={() => setShowFilterModal(false)}
-        onReset={resetFilters}
+        open={showFilterModal} filters={filters} selectedFields={selectedFields}
+        onApply={applyFilters} onClose={() => setShowFilterModal(false)} onReset={resetFilters}
       />
 
       <ConfirmModal
@@ -833,12 +928,16 @@ export default function SuppliersPage() {
 
       {showFormModal && (
         <SupplierModal
-          editing={editingSupplier}
-          isSaving={isSaving}
-          onSave={handleSave}
-          onClose={() => setShowFormModal(false)}
+          editing={editingSupplier} isSaving={isSaving}
+          onSave={handleSave} onClose={() => setShowFormModal(false)}
         />
       )}
+
+      <SupplierDrawer
+        supplier={viewingSupplier}
+        open={!!viewingSupplier}
+        onClose={() => setViewingSupplier(null)}
+      />
 
       {/* ── Page Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1042,19 +1141,19 @@ export default function SuppliersPage() {
                     </div>
 
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      <button onClick={() => router.push(`/dashboard/staff/inventory/suppliers/${s.id}`)}
-                        title="View" className="p-1.5 rounded-lg text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100 transition-all">
+                      <button onClick={() => setViewingSupplier(s)} title="View Details"
+                        className="p-1.5 rounded-lg text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100 transition-all">
                         <Eye className="h-3.5 w-3.5" />
                       </button>
                       {canEdit && (
-                        <button onClick={() => { setEditingSupplier(s); setShowFormModal(true); }}
-                          title="Edit" className="p-1.5 rounded-lg text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all">
+                        <button onClick={() => { setEditingSupplier(s); setShowFormModal(true); }} title="Edit"
+                          className="p-1.5 rounded-lg text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all">
                           <Edit3 className="h-3.5 w-3.5" />
                         </button>
                       )}
                       {canDelete && (
-                        <button onClick={() => setDeletingSupplier(s)}
-                          title="Delete" className="p-1.5 rounded-lg text-red-600 bg-red-50 border border-red-100 hover:bg-red-100 transition-all">
+                        <button onClick={() => setDeletingSupplier(s)} title="Delete"
+                          className="p-1.5 rounded-lg text-red-600 bg-red-50 border border-red-100 hover:bg-red-100 transition-all">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       )}
@@ -1064,40 +1163,30 @@ export default function SuppliersPage() {
               })}
             </div>
 
-            {/* Pagination */}
-            <div className="px-5 py-3 border-t border-slate-50 bg-slate-50/40 flex items-center justify-between gap-4 flex-wrap">
-              <p className="text-xs text-slate-400">
-                Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} of{' '}
-                <span className="font-semibold text-slate-600">{total}</span> supplier{total !== 1 ? 's' : ''}
-                {hasFilters && <span className="ml-1 text-blue-500 font-medium">(filtered)</span>}
-              </p>
-              {totalPages > 1 && (
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
+                <p className="text-xs text-slate-400">
+                  Showing page {page} of {totalPages} ({total} total)
+                </p>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => fetchSuppliers(filters, page - 1)} disabled={page === 1}
-                    className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:opacity-40 transition-colors">
+                  <button
+                    onClick={() => fetchSuppliers(filters, page - 1)}
+                    disabled={page <= 1}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    const pg = totalPages <= 5 ? i + 1
-                      : page <= 3 ? i + 1
-                      : page >= totalPages - 2 ? totalPages - 4 + i
-                      : page - 2 + i;
-                    return (
-                      <button key={pg} onClick={() => fetchSuppliers(filters, pg)}
-                        className={`w-8 h-8 rounded-lg text-xs font-semibold transition-colors ${
-                          pg === page ? 'bg-blue-600 text-white shadow-sm' : 'border border-slate-200 text-slate-600 hover:bg-slate-100'
-                        }`}>
-                        {pg}
-                      </button>
-                    );
-                  })}
-                  <button onClick={() => fetchSuppliers(filters, page + 1)} disabled={page === totalPages}
-                    className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:opacity-40 transition-colors">
+                  <button
+                    onClick={() => fetchSuppliers(filters, page + 1)}
+                    disabled={page >= totalPages}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </>
         )}
       </div>

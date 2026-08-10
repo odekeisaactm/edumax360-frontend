@@ -15,7 +15,8 @@ import {
   BarChart2, Archive, Edit, Send, Info, Smartphone, Cpu, Sliders, SlidersHorizontal,
   ArrowRight, Award, Printer, Shield, Upload, Download, CalendarDays, PlusCircle,
   FileSearch, Package, User, Zap, MapPin, Gift, TrendingDown, Wallet, History,
-  ClipboardCheck, Radio, ListChecks, ScanLine, IdCard, Fingerprint
+  ClipboardCheck, Radio, ListChecks, ScanLine, IdCard, Fingerprint,  Truck, ArrowDownCircle,
+  ShoppingCart, Monitor
 } from 'lucide-react';
 
 interface NavItem {
@@ -1038,8 +1039,9 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
         }
       ]
     },
+
     {
-      name: 'Inventory',
+      name: 'Inventory & POS',
       href: '#',
       icon: <Package className="h-5 w-5" />,
       moduleCode: 'inventory',
@@ -1051,53 +1053,48 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/inventory/inventory-report'),
           requiredPermissions: ['inventory.view_inventory_report'],
         },
+        // ==================== POS & SALES ====================
         {
-          name: 'Items',
-          href: '/dashboard/staff/inventory/items',
-          icon: <Package className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/inventory/items'),
-          requiredPermissions: ['inventory.view_inventoryitemmodel'],
-        },
-        {
-          name: 'Stock In',
-          href: '/dashboard/staff/inventory/stock-in/new',
-          icon: <ArrowUpCircle className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/inventory/stock-in/new'),
-          requiredPermissions: ['inventory.add_inventorystockinmodel'],
-        },
-        {
-          name: 'Stock Transfers',
-          href: '/dashboard/staff/inventory/transfers',
-          icon: <RefreshCw className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/inventory/transfers'),
-          requiredPermissions: ['inventory.add_inventorystockinmodel'],
-        },
-        {
-          name: 'View Stock In',
-          href: '/dashboard/staff/inventory/stock-in',
-          icon: <Eye className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/inventory/stock-in'),
-          requiredPermissions: ['inventory.view_inventorystockinmodel'],
-        },
-        {
-          name: 'View Stock Outs',
-          href: '/dashboard/staff/inventory/stock-out',
-          icon: <Eye className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/inventory/stock-out'),
-          requiredPermissions: ['inventory.view_inventorystockinmodel'],
-        },
-        {
-          name: 'Suppliers',
-          href: '/dashboard/staff/inventory/suppliers',
-          icon: <Building className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/inventory/suppliers'),
-          requiredPermissions: ['inventory.view_inventoryitemmodel'],
-        },
-        {
-          name: 'Configuration',
+          name: 'Point of Sale',
           href: '#',
-          icon: <Settings className="h-4 w-4" />,
+          icon: <ShoppingCart className="h-4 w-4" />,
           children: [
+            {
+              name: 'Place Order',
+              href: '/dashboard/staff/inventory/sales/new',
+              icon: <Monitor className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/sales/new'),
+              requiredPermissions: ['inventory.add_inventorysalemodel'],
+            },
+            {
+              name: 'Sales History',
+              href: '/dashboard/staff/inventory/sales',
+              icon: <History className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/sales'),
+              requiredPermissions: ['inventory.add_inventorysalemodel'],
+            },
+          ],
+        },
+        // ==================== CATALOG & SUPPLIERS ====================
+        {
+          name: 'Catalog & Suppliers',
+          href: '#',
+          icon: <Layers className="h-4 w-4" />,
+          children: [
+            {
+              name: 'Items',
+              href: '/dashboard/staff/inventory/items',
+              icon: <Package className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/items'),
+              requiredPermissions: ['inventory.view_inventoryitemmodel'],
+            },
+            {
+              name: 'Suppliers',
+              href: '/dashboard/staff/inventory/suppliers',
+              icon: <Building className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/suppliers'),
+              requiredPermissions: ['inventory.view_inventoryitemmodel'],
+            },
             {
               name: 'Categories',
               href: '/dashboard/staff/inventory/categories',
@@ -1112,6 +1109,104 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               current: isCurrentPath('/dashboard/staff/inventory/locations'),
               requiredPermissions: ['inventory.view_inventoryitemmodel'],
             },
+          ],
+        },
+
+        // ==================== STOCK MOVEMENTS ====================
+        {
+          name: 'Stock Movements',
+          href: '#',
+          icon: <ArrowRightLeft className="h-4 w-4" />,
+          children: [
+            {
+              name: 'Stock In',
+              href: '/dashboard/staff/inventory/stock-in',
+              icon: <ArrowDownCircle className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/stock-in'),
+              requiredPermissions: ['inventory.view_inventorystockinmodel'],
+            },
+            {
+              name: 'Stock Out',
+              href: '/dashboard/staff/inventory/stock-out',
+              icon: <ArrowUpCircle className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/stock-out'),
+              requiredPermissions: ['inventory.view_inventorystockinmodel'],
+            },
+            {
+              name: 'Stock Transfers',
+              href: '/dashboard/staff/inventory/transfers',
+              icon: <RefreshCw className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/transfers'),
+              requiredPermissions: ['inventory.view_inventorystockinmodel'],
+            },
+          ],
+        },
+        // ==================== PROCUREMENT ====================
+        {
+          name: 'Procurement',
+          href: '#',
+          icon: <Truck className="h-4 w-4" />,
+          children: [
+            {
+              name: 'Purchase Orders',
+              href: '/dashboard/staff/inventory/purchase-orders',
+              icon: <ClipboardList className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/purchase-orders'),
+              requiredPermissions: ['inventory.view_inventorypurchaseordermodel'],
+            },
+            {
+              name: 'Purchase Advances',
+              href: '/dashboard/staff/inventory/advances',
+              icon: <Wallet className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/advances'),
+              requiredPermissions: ['inventory.view_inventorypurchaseordermodel'],
+            },
+          ],
+        },
+        // ==================== ASSIGNMENTS & COLLECTIONS ====================
+        {
+          name: 'Assignments & Collections',
+          href: '#',
+          icon: <Users className="h-4 w-4" />,
+          children: [
+            {
+              name: 'Assignments',
+              href: '/dashboard/staff/inventory/assignments',
+              icon: <ListChecks className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/assignments'),
+              requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
+            },
+            {
+              name: 'Generation Jobs',
+              href: '/dashboard/staff/inventory/assignments/jobs',
+              icon: <Activity className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/assignments/jobs'),
+              requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
+            },
+            {
+              name: 'Student Collections',
+              href: '/dashboard/staff/inventory/collections/students',
+              icon: <UserCheck className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/collections/students'),
+              requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
+            },
+            {
+              name: 'Class Collections',
+              href: '/dashboard/staff/inventory/collections/classes',
+              icon: <Users className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/collections/classes'),
+              requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
+            },
+          ],
+        },
+
+
+        // ==================== CONFIGURATION ====================
+        {
+          name: 'Configuration',
+          href: '#',
+          icon: <Settings className="h-4 w-4" />,
+          children: [
             {
               name: 'POS Settings',
               href: '/dashboard/staff/inventory/settings',
@@ -1137,7 +1232,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
         },
       ],
     },
-
     {
       name: 'HR Management',
       href: '#',

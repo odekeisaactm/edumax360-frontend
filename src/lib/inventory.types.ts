@@ -12,6 +12,11 @@ export type StockOutDepartment = 'cleaning' | 'drivers' | 'clinic' | 'admin' | '
 export type SalePaymentMethod = 'cash' | 'student_wallet' | 'staff_wallet' | 'pos';
 export type SaleStatus = 'completed' | 'refunded';
 
+export type PurchaseOrderStatus = 'draft' | 'submitted' | 'partially_received' | 'received' | 'cancelled';
+export type PurchaseAdvanceStatus = 'pending' | 'approved' | 'disbursed' | 'completed' | 'cancelled';
+export type AssignmentGender = 'male' | 'female' | 'both';
+export type BackgroundJobStatus = 'pending' | 'in_progress' | 'success' | 'failure';
+
 // --- Base Configurations ---
 
 export interface InventoryCategory {
@@ -220,8 +225,10 @@ export interface InventoryItemFormValues {
   current_selling_price: string;
   reorder_level: string;
   is_active: boolean;
-  initial_quantity?: string; // Used only on create
-  initial_location_id?: number; // Used only on create
+  initial_stocks?: Array<{
+    location_id: number;
+    quantity: string;
+  }>;
 }
 
 export interface StockInPayload {
@@ -236,6 +243,10 @@ export interface StockInPayload {
     unit_cost: string;
     batch_number?: string | null;
     expiry_date?: string | null;
+  }>;
+  price_updates?: Array<{
+    item_id: number;
+    new_selling_price: string;
   }>;
 }
 
@@ -324,6 +335,7 @@ export interface InventorySetting {
   auto_print_receipt: boolean;
   updated_at: string;
   updated_by?: number | null;
+  updated_by_name?: string | null;
 }
 
 export type InventorySettingPayload = Partial<Omit<InventorySetting, 'id' | 'updated_at' | 'updated_by'>>;
@@ -360,4 +372,174 @@ export interface BannedDebtUserPayload {
   staff?: number | null;
   reason: string;
   is_active?: boolean;
+}
+
+// ============================================================
+// PURCHASE ORDERS
+// ============================================================
+
+export interface PurchaseOrderItem {
+  id?: number;
+  item?: number | null;
+  item_name?: string; // Read-only
+  item_description: string;
+  quantity: string;
+  unit_cost: string;
+  line_total?: string; // Read-only
+  is_stocked_in?: boolean; // Read-only
+}
+
+export interface PurchaseOrder {
+  id: number;
+  order_number: string;
+  supplier: number;
+  supplier_name?: string; // Read-only
+  order_date: string;
+  expected_date?: string | null;
+  status: PurchaseOrderStatus;
+  notes?: string | null;
+  academic_period?: number | null;
+  created_at: string;
+  created_by?: number | null;
+  created_by_name?: string; // Read-only
+  total_amount?: string; // Read-only
+  items: PurchaseOrderItem[];
+}
+
+export interface PurchaseOrderPayload {
+  supplier: number;
+  expected_date?: string | null;
+  notes?: string | null;
+  items: Array<{
+    item?: number | null;
+    item_description: string;
+    quantity: string;
+    unit_cost: string;
+  }>;
+}
+
+export interface PurchaseOrderStatusPayload {
+  status: PurchaseOrderStatus;
+}
+
+// ============================================================
+// PURCHASE ADVANCES
+// ============================================================
+
+export interface PurchaseAdvanceItem {
+  id?: number;
+  item?: number | null;
+  item_name?: string; // Read-only
+  item_description: string;
+
+  // Pre-Market Estimates
+  quantity: string;
+  estimated_unit_cost: string;
+  line_total?: string; // Read-only
+
+  // Post-Market Actuals
+  quantity_bought?: string;
+  actual_unit_cost?: string;
+  actual_line_total?: string; // Read-only
+}
+
+export interface PurchaseAdvance {
+  id: number;
+  advance_number: string; // Read-only
+  staff: number;
+  staff_name?: string; // Read-only
+  purpose: string;
+
+  requested_amount: string;
+  approved_amount: string;
+  disbursed_amount: string;
+  actual_total: string;
+  balance_due: string; // Read-only
+
+  request_date: string; // Read-only
+  approved_date?: string | null;
+  disbursed_date?: string | null;
+  report_date?: string | null;
+  report_notes?: string | null;
+
+  status: PurchaseAdvanceStatus;
+  academic_period?: number | null;
+  created_at: string; // Read-only
+
+  approved_by_name?: string; // Read-only
+  disbursed_by_name?: string; // Read-only
+  items: PurchaseAdvanceItem[];
+}
+
+export interface PurchaseAdvancePayload {
+  staff: number;
+  purpose: string;
+  report_notes?: string;
+  items: Array<{
+    id?: number; // Needed when updating actuals
+    item?: number | null;
+    item_description: string;
+    quantity?: string; // Optional on update
+    estimated_unit_cost?: string; // Optional on update
+    quantity_bought?: string;
+    actual_unit_cost?: string;
+  }>;
+}
+
+export interface PurchaseAdvanceCompletePayload {
+  location_id: number;
+}
+
+// ============================================================
+// ASSIGNMENTS & JOBS
+// ============================================================
+
+export interface InventoryAssignment {
+  id: number;
+  item: number;
+  item_name?: string; // Read-only
+  quantity_per_student: string;
+  student_classes: number[];
+  gender: AssignmentGender;
+  is_mandatory: boolean;
+  is_free: boolean;
+  is_active: boolean;
+  notes?: string | null;
+  academic_period?: number | null;
+  created_at: string;
+  updated_at: string;
+  created_by?: number | null;
+  updated_by?: number | null;
+}
+
+export interface InventoryAssignmentPayload {
+  item: number;
+  quantity_per_student: string;
+  student_classes: number[];
+  gender: AssignmentGender;
+  is_mandatory: boolean;
+  is_free: boolean;
+  is_active?: boolean;
+  notes?: string | null;
+}
+
+export interface CollectionGenerationJob {
+  job_id: string; // UUID
+  assignment: number;
+  item_name?: string; // Read-only
+  status: BackgroundJobStatus;
+  status_display?: string; // Read-only
+  total_students: number;
+  processed_students: number;
+  created_collections: number;
+  skipped_students: number;
+  error_message?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_by?: number | null;
+}
+
+export interface AssignmentJobStartPayload {
+  assignment_id: number;
 }

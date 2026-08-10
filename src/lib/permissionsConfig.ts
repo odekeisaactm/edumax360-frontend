@@ -408,56 +408,74 @@ export const MODULES: ModuleDef[] = [
     ],
   },
     {
-    key: 'inventory',
-    label: 'Inventory & POS',
-    description: 'Stock, suppliers, point of sale, and canteen debt controls',
-    areas: [
-      {
-        key: 'catalog',
-        label: 'Catalog',
-        description: 'Items, categories, locations, and suppliers',
-        permissions: [
-          { codename: 'view_inventoryitemmodel',   label: 'View Catalog',   desc: 'Read items, categories, locations, and suppliers' },
-          { codename: 'add_inventoryitemmodel',    label: 'Manage Catalog', desc: 'Create and update items, categories, locations, and suppliers' },
-          { codename: 'delete_inventoryitemmodel', label: 'Delete Catalog', desc: 'Permanently remove items, categories, or suppliers' },
-        ],
-      },
-      {
-        key: 'stock_movements',
-        label: 'Stock Movements',
-        description: 'Stock in, stock out, and transfers between locations',
-        permissions: [
-          { codename: 'view_inventorystockinmodel', label: 'View Stock Movements',   desc: 'Read stock in, stock out, and transfer records' },
-          { codename: 'add_inventorystockinmodel',  label: 'Manage Stock Movements', desc: 'Create stock in, stock out, and transfer entries' },
-        ],
-      },
-      {
-        key: 'pos_sales',
-        label: 'Point of Sale',
-        description: 'Process sales and refunds at the till',
-        permissions: [
-          { codename: 'add_inventorysalemodel', label: 'Process Sales & Refunds', desc: 'Place orders and refund completed sales' },
-        ],
-      },
-      {
-        key: 'pos_configuration',
-        label: 'POS Configuration',
-        description: 'Settings, shop access locking, and debt-purchase bans',
-        permissions: [
-          { codename: 'view_inventorysettingmodel', label: 'View POS Settings',   desc: 'Read discount, debt, payment method, and limit configuration' },
-          { codename: 'add_inventorysettingmodel',  label: 'Manage POS Settings', desc: 'Configure discount, debt, payment methods, limits, and shop access assignments' },
-        ],
-      },
-      {
-        key: 'inventory_reports',
-        label: 'Inventory Reports',
-        description: 'Stock levels and sales reporting',
-        permissions: [
-          { codename: 'view_inventory_report', label: 'View Reports', desc: 'Read low-stock, sales summary, and top-selling reports' },
-        ],
-      },
-    ],
-  },
+  key: 'inventory',
+  label: 'Inventory & POS',
+  description: 'Stock, suppliers, point of sale, procurement, and collections',
+  areas: [
+    {
+      key: 'catalog',
+      label: 'Catalog',
+      description: 'Items, categories, locations, and suppliers',
+      permissions: [
+        { codename: 'view_inventoryitemmodel',   label: 'View Catalog',   desc: 'Read items, categories, locations, and suppliers' },
+        { codename: 'add_inventoryitemmodel',    label: 'Manage Catalog', desc: 'Create and update items, categories, locations, and suppliers' },
+        { codename: 'delete_inventoryitemmodel', label: 'Delete Catalog', desc: 'Permanently remove items, categories, or suppliers' },
+      ],
+    },
+    {
+      key: 'stock_movements',
+      label: 'Stock Movements',
+      description: 'Stock in, stock out, and transfers between locations',
+      permissions: [
+        { codename: 'view_inventorystockinmodel', label: 'View Stock Movements',   desc: 'Read stock in, stock out, and transfer records' },
+        { codename: 'add_inventorystockinmodel',  label: 'Manage Stock Movements', desc: 'Create stock in, stock out, and transfer entries' },
+      ],
+    },
+    {
+      key: 'pos_sales',
+      label: 'Point of Sale',
+      description: 'Process sales and refunds at the till',
+      permissions: [
+        { codename: 'add_inventorysalemodel', label: 'Process Sales & Refunds', desc: 'Place orders and refund completed sales' },
+      ],
+    },
+    {
+      key: 'procurement',
+      label: 'Procurement',
+      description: 'Purchase orders, advances, and market runs',
+      permissions: [
+        { codename: 'view_inventorypurchaseordermodel', label: 'View Procurement', desc: 'Read purchase orders and staff advances' },
+        { codename: 'add_inventorypurchaseordermodel', label: 'Manage Procurement', desc: 'Create and process purchase orders and staff advances' },
+      ],
+    },
+    {
+      key: 'assignments',
+      label: 'Assignments & Collections',
+      description: 'Bulk inventory distribution and student collections',
+      permissions: [
+        { codename: 'view_inventoryassignmentmodel', label: 'View Assignments', desc: 'Read inventory assignments and collection records' },
+        { codename: 'add_inventoryassignmentmodel', label: 'Manage Assignments', desc: 'Create assignments and process student collections' },
+      ],
+    },
+    {
+      key: 'pos_configuration',
+      label: 'POS Configuration',
+      description: 'Settings, shop access locking, and debt-purchase bans',
+      permissions: [
+        { codename: 'view_inventorysettingmodel', label: 'View POS Settings',   desc: 'Read discount, debt, payment method, and limit configuration' },
+        { codename: 'add_inventorysettingmodel',  label: 'Manage POS Settings', desc: 'Configure discount, debt, payment methods, limits, and shop access assignments' },
+      ],
+    },
+    {
+      key: 'inventory_reports',
+      label: 'Inventory Reports',
+      description: 'Stock levels and sales reporting',
+      permissions: [
+        { codename: 'view_inventory_report', label: 'View Reports', desc: 'Read low-stock, sales summary, and top-selling reports' },
+      ],
+    },
+  ],
+},
  {
   key: 'attendance',
   label: 'Attendance Management',

@@ -20,14 +20,23 @@ import type {
   InventoryItemFilters,
   InventorySetting,
   InventorySettingPayload,
-StaffShopAccessPayload,
-StaffShopAccess,
-BannedDebtUserPayload,
-BannedDebtUser,
-PaginatedResponse
+  StaffShopAccessPayload,
+  StaffShopAccess,
+  BannedDebtUserPayload,
+  BannedDebtUser,
+  PurchaseOrder,
+  PurchaseOrderPayload,
+  PurchaseOrderStatusPayload,
+  PurchaseAdvance,
+  PurchaseAdvancePayload,
+  PurchaseAdvanceCompletePayload,
+  InventoryAssignment,
+  InventoryAssignmentPayload,
+  CollectionGenerationJob,
+  AssignmentJobStartPayload,
+  PaginatedResponse
 } from '@/lib/types';
 
-// Helper to safely extract data from APIResponse wrapper
 // Helper to safely extract data from deeply nested APIResponse wrapper
 const unwrap = (response: any) => {
   const resData = response?.data;
@@ -283,6 +292,92 @@ export const bannedDebtUserAPI = {
   },
   update: async (id: number, data: Partial<BannedDebtUserPayload>): Promise<BannedDebtUser> => {
     const r = await api.patch(`/api/inventory/debt-bans/${id}/`, data);
+    return unwrap(r);
+  },
+};
+
+// ── Purchase Orders ──────────────────────────────────────────
+
+export const purchaseOrderAPI = {
+  list: async (params?: Record<string, any>): Promise<any> => {
+    const r = await api.get('/api/inventory/purchase-orders/', { params });
+    return unwrap(r);
+  },
+  get: async (id: number): Promise<PurchaseOrder> => {
+    const r = await api.get(`/api/inventory/purchase-orders/${id}/`);
+    return unwrap(r);
+  },
+  create: async (data: PurchaseOrderPayload): Promise<PurchaseOrder> => {
+    const r = await api.post('/api/inventory/purchase-orders/', data);
+    return unwrap(r);
+  },
+  updateStatus: async (id: number, data: PurchaseOrderStatusPayload): Promise<PurchaseOrder> => {
+    const r = await api.post(`/api/inventory/purchase-orders/${id}/status/`, data);
+    return unwrap(r);
+  },
+};
+
+// ── Purchase Advances ────────────────────────────────────────
+
+export const purchaseAdvanceAPI = {
+  list: async (params?: Record<string, any>): Promise<any> => {
+    const r = await api.get('/api/inventory/advances/', { params });
+    return unwrap(r);
+  },
+  get: async (id: number): Promise<PurchaseAdvance> => {
+    const r = await api.get(`/api/inventory/advances/${id}/`);
+    return unwrap(r);
+  },
+  create: async (data: PurchaseAdvancePayload): Promise<PurchaseAdvance> => {
+    const r = await api.post('/api/inventory/advances/', data);
+    return unwrap(r);
+  },
+  update: async (id: number, data: Partial<PurchaseAdvancePayload>): Promise<PurchaseAdvance> => {
+    const r = await api.patch(`/api/inventory/advances/${id}/`, data);
+    return unwrap(r);
+  },
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/api/inventory/advances/${id}/`);
+  },
+  complete: async (id: number, data: PurchaseAdvanceCompletePayload): Promise<StockIn> => {
+    const r = await api.post(`/api/inventory/advances/${id}/complete/`, data);
+    return unwrap(r);
+  },
+};
+
+// ── Assignments ──────────────────────────────────────────────
+
+export const inventoryAssignmentAPI = {
+  list: async (params?: Record<string, any>): Promise<any> => {
+    const r = await api.get('/api/inventory/assignments/', { params });
+    return unwrap(r);
+  },
+  get: async (id: number): Promise<InventoryAssignment> => {
+    const r = await api.get(`/api/inventory/assignments/${id}/`);
+    return unwrap(r);
+  },
+  create: async (data: InventoryAssignmentPayload): Promise<InventoryAssignment> => {
+    const r = await api.post('/api/inventory/assignments/', data);
+    return unwrap(r);
+  },
+  update: async (id: number, data: Partial<InventoryAssignmentPayload>): Promise<InventoryAssignment> => {
+    const r = await api.patch(`/api/inventory/assignments/${id}/`, data);
+    return unwrap(r);
+  },
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/api/inventory/assignments/${id}/`);
+  },
+};
+
+// ── Background Jobs ──────────────────────────────────────────
+
+export const inventoryJobAPI = {
+  generateCollections: async (data: AssignmentJobStartPayload): Promise<CollectionGenerationJob> => {
+    const r = await api.post('/api/inventory/jobs/generate-collections/', data);
+    return unwrap(r);
+  },
+  getStatus: async (jobId: string): Promise<CollectionGenerationJob> => {
+    const r = await api.get(`/api/inventory/jobs/${jobId}/status/`);
     return unwrap(r);
   },
 };

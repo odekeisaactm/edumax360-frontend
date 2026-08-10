@@ -19,7 +19,8 @@ function extractError(err: any): string {
   const d = err?.response?.data;
   if (d) {
     if (typeof d === 'string') return d;
-    if (d.detail) return String(d.detail);
+    if (d.error) return String(d.error);         // <-- ADDED: Handles your custom APIResponse.error()
+    if (d.detail) return String(d.detail);       // Handles standard DRF 403/404
     if (d.details) {
       const details = d.details;
       if (details.non_field_errors?.length) return details.non_field_errors[0];
@@ -28,7 +29,7 @@ function extractError(err: any): string {
         .join(' ');
       if (fields) return fields;
     }
-    if (d.message) return String(d.message);
+    if (d.message) return String(d.message);     // Handles generic exceptions
     if (d.non_field_errors?.length) return d.non_field_errors[0];
   }
   return err?.message || 'An unexpected error occurred.';

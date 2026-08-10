@@ -1,7 +1,7 @@
 // app/dashboard/staff/inventory/categories/page.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react'; // <-- Added useRef
 import { useAuth } from '@/context/AuthContext';
 import { inventoryCategoryAPI } from '@/lib/api';
 import { InventoryCategory } from '@/lib/types';
@@ -19,7 +19,8 @@ function extractError(err: any): string {
   const d = err?.response?.data;
   if (d) {
     if (typeof d === 'string') return d;
-    if (d.detail) return String(d.detail);
+    if (d.error) return String(d.error);         // <-- ADDED: Handles your custom APIResponse.error()
+    if (d.detail) return String(d.detail);       // Handles standard DRF 403/404
     if (d.details) {
       const details = d.details;
       if (details.non_field_errors?.length) return details.non_field_errors[0];
@@ -28,7 +29,7 @@ function extractError(err: any): string {
         .join(' ');
       if (fields) return fields;
     }
-    if (d.message) return String(d.message);
+    if (d.message) return String(d.message);     // Handles generic exceptions
     if (d.non_field_errors?.length) return d.non_field_errors[0];
   }
   return err?.message || 'An unexpected error occurred.';
@@ -110,6 +111,14 @@ function CategoryModal({ editing, isSaving, onSave, onClose }: {
   );
   const [formError, setFormError] = useState<string | null>(null);
 
+  // ── Auto-focus Hook ──
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    // Timeout ensures the DOM is painted and CSS transitions don't block focus
+    const timer = setTimeout(() => nameInputRef.current?.focus(), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
   const set = <K extends keyof CategoryFormValues>(key: K, value: CategoryFormValues[K]) =>
     setForm(prev => ({ ...prev, [key]: value }));
 
@@ -155,8 +164,15 @@ function CategoryModal({ editing, isSaving, onSave, onClose }: {
           {/* Name */}
           <div>
             <label className={labelCls}>Category Name <span className="text-red-400 normal-case">*</span></label>
-            <input required type="text" value={form.name} onChange={e => set('name', e.target.value)}
-              placeholder="e.g. Stationery, Food, Electronics" className={inputCls} />
+            <input
+              ref={nameInputRef} // <-- Attached ref here
+              required
+              type="text"
+              value={form.name}
+              onChange={e => set('name', e.target.value)}
+              placeholder="e.g. Stationery, Food, Electronics"
+              className={inputCls}
+            />
           </div>
 
           {/* Description */}
