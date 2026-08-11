@@ -85,6 +85,7 @@ export interface InventoryItem {
   created_at: string;
   updated_at: string;
   created_by?: number | null;
+  created_by_name?: string | null;
 }
 
 // Lightweight for dropdowns/tables
@@ -128,6 +129,7 @@ export interface StockIn {
   notes?: string | null;
   academic_period?: number | null;
   created_by?: number | null;
+  created_by_name?: string | null;
   created_at: string;
   items: StockInItem[];
   total_cost?: string; // Read-only
@@ -148,10 +150,12 @@ export interface StockOut {
   reason: StockOutReason;
   department?: StockOutDepartment | null;
   staff_recipient?: number | null;
+  staff_recipient_name?: string | null;
   date_removed: string;
   notes?: string | null;
   academic_period?: number | null;
   created_by?: number | null;
+  created_by_name?: string | null;
   created_at: string;
 }
 
@@ -175,6 +179,7 @@ export interface StockTransfer {
   notes?: string | null;
   academic_period?: number | null;
   created_by?: number | null;
+  created_by_name?: string | null;
   created_at: string;
   items: StockTransferItem[];
 }

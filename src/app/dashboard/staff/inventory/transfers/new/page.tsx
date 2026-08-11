@@ -1,8 +1,7 @@
-// app/dashboard/staff/inventory/transfers/new/page.tsx
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { inventoryItemAPI, inventoryLocationAPI, stockTransferAPI } from '@/lib/api';
@@ -59,7 +58,7 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 
 const inputCls = 'w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-violet-500 focus:border-transparent outline-none bg-white transition-colors placeholder:text-slate-300 text-slate-800';
 const labelCls = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5';
-const cellInputCls = 'w-full px-2 py-1.5 border rounded-lg focus:ring-1 focus:ring-violet-500 outline-none text-xs bg-white';
+const cellInputCls = 'w-full px-2 py-2 sm:py-1.5 border rounded-lg focus:ring-1 focus:ring-violet-500 outline-none text-sm sm:text-xs bg-white';
 
 interface CartItem extends InventoryItemList {
   quantity: string;
@@ -68,6 +67,7 @@ interface CartItem extends InventoryItemList {
 
 export default function NewStockTransferPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { hasPermission, user } = useAuth();
 
   const [form, setForm] = useState({ from_location: '', to_location: '', notes: '' });
@@ -87,7 +87,8 @@ export default function NewStockTransferPage() {
   // Keep a ref so barcode handler always sees current from_location
   const fromLocationRef = useRef('');
 
-  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorystocktransfermodel');
+  // Use the correctly unified permission scope
+  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorystockinmodel');
 
   const showToast = useCallback((type: 'success' | 'error' | 'info', message: string) => {
     const id = ++_toastId;
@@ -96,7 +97,7 @@ export default function NewStockTransferPage() {
   }, []);
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  // Load tracked locations once
+  // 1. Load tracked locations once
   useEffect(() => {
     inventoryLocationAPI.list().then(data => {
       const arr = Array.isArray(data) ? data : (data?.results ?? []);
@@ -106,10 +107,32 @@ export default function NewStockTransferPage() {
     }).catch(() => {});
   }, []);
 
-  // Keep ref in sync
+  // Keep ref in sync for barcode scanner
   useEffect(() => { fromLocationRef.current = form.from_location; }, [form.from_location]);
 
-  // When from_location changes, revalidate existing cart items
+  // 2. URL Parameter Auto-load
+  useEffect(() => {
+    const urlItemId = searchParams.get('item_id');
+    let isMounted = true;
+
+    if (urlItemId) {
+      inventoryItemAPI.get(Number(urlItemId))
+        .then((itemData: any) => {
+          if (isMounted) {
+            // Bypass location check on initial load. Revalidator will trigger when location is picked.
+            addToCart(itemData, true);
+            showToast('info', `Added "${itemData.name}". Please select a source location to verify stock.`);
+          }
+        })
+        .catch(() => {
+          if (isMounted) showToast('error', 'Could not auto-load the requested item.');
+        });
+    }
+    return () => { isMounted = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // 3. When from_location changes, revalidate existing cart items
   useEffect(() => {
     if (!form.from_location || cart.length === 0) return;
 
@@ -134,11 +157,13 @@ export default function NewStockTransferPage() {
         const newQty = c.quantity && Number(c.quantity) > newAvail
           ? String(newAvail)
           : c.quantity;
+
         if (newAvail === 0) {
           showToast('error', `"${c.name}" has no stock at the selected location and was removed.`);
         } else if (c.quantity && Number(c.quantity) > newAvail) {
           showToast('error', `"${c.name}" quantity clamped to available stock (${newAvail}).`);
         }
+
         return { ...c, available_qty: newAvail, quantity: newQty };
       }));
       // Remove items with 0 availability
@@ -174,6 +199,7 @@ export default function NewStockTransferPage() {
       }
     }, 300);
     return () => { if (searchDebounce.current) clearTimeout(searchDebounce.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, form.from_location]);
 
   // Global barcode scanner
@@ -201,6 +227,10 @@ export default function NewStockTransferPage() {
   }, [cart]);
 
   const handleBarcodeScan = async (barcode: string) => {
+    if (!fromLocationRef.current) {
+      showToast('error', 'Select a From location before scanning.');
+      return;
+    }
     showToast('info', `Scanned: ${barcode}. Searching...`);
     try {
       const params: any = { search: barcode };
@@ -208,6 +238,7 @@ export default function NewStockTransferPage() {
       const res = await inventoryItemAPI.list(params);
       const foundItems = Array.isArray(res) ? res : (res?.results ?? []);
       const exactMatch = foundItems.find((i: InventoryItemList) => i.barcode === barcode);
+
       if (exactMatch) addToCart(exactMatch);
       else showToast('error', `No item found for barcode: ${barcode}`);
     } catch {
@@ -215,17 +246,33 @@ export default function NewStockTransferPage() {
     }
   };
 
-  const addToCart = (item: InventoryItemList) => {
+  const addToCart = (item: InventoryItemList, bypassLocationCheck = false) => {
+    // If not bypassing (meaning user clicked/scanned), block if no location
+    if (!bypassLocationCheck && !form.from_location) {
+      showToast('error', 'Select a From location before adding items.');
+      return;
+    }
+
+    // Check if item is already in list (for toast alert)
     if (cart.some(c => c.id === item.id)) {
       showToast('error', `'${item.name}' is already in the list.`);
       return;
     }
-    const availQty = item.location_quantity ?? 0;
-    if (form.from_location && availQty <= 0) {
+
+    const availQty = form.from_location ? (item.location_quantity ?? 0) : 0;
+
+    // Block if no stock (and not bypassing)
+    if (!bypassLocationCheck && availQty <= 0) {
       showToast('error', `'${item.name}' has no stock at the selected location.`);
       return;
     }
-    setCart(prev => [...prev, { ...item, quantity: '', available_qty: availQty }]);
+
+    setCart(prev => {
+      // Double check in state setter to prevent strict-mode double adds
+      if (prev.some(c => c.id === item.id)) return prev;
+      return [...prev, { ...item, quantity: '', available_qty: availQty }];
+    });
+
     setSearchTerm('');
     setSearchResults([]);
     setShowResults(false);
@@ -235,11 +282,7 @@ export default function NewStockTransferPage() {
   const handleCartChange = (id: number, value: string) => {
     setCart(prev => prev.map(item => {
       if (item.id !== id) return item;
-      // Clamp to available
-      if (value !== '' && item.available_qty > 0 && Number(value) > item.available_qty) {
-        showToast('error', `Max available for "${item.name}" at this location is ${item.available_qty}.`);
-        return { ...item, quantity: String(item.available_qty) };
-      }
+      // Visually allow over-max to prevent annoying resets, but it will block submit
       return { ...item, quantity: value };
     }));
   };
@@ -407,7 +450,7 @@ export default function NewStockTransferPage() {
                 <p className="text-xs text-slate-400">
                   {form.from_location
                     ? 'Showing stock available at selected source location'
-                    : 'Select a From location first to see available stock'}
+                    : 'Select a From location first for accurate stock levels'}
                 </p>
               </div>
             </div>
@@ -504,7 +547,7 @@ export default function NewStockTransferPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                {/* Cart header */}
+                {/* Desktop Cart Header */}
                 <div
                   className="hidden sm:grid gap-4 px-3 pb-1 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider"
                   style={{ gridTemplateColumns: '1fr 200px 2rem' }}
@@ -518,17 +561,16 @@ export default function NewStockTransferPage() {
                   const qty = Number(item.quantity);
                   const exceedsMax = item.quantity !== '' && qty > item.available_qty;
                   const isEmpty = !item.quantity || qty <= 0;
-                  const isInvalid = exceedsMax || isEmpty;
 
                   return (
                     <div
                       key={item.id}
-                      className={`grid items-center gap-4 rounded-xl border px-4 py-3 transition-colors
+                      className={`relative flex flex-col sm:grid sm:items-center gap-3 sm:gap-4 rounded-xl border px-4 py-4 sm:py-3 transition-colors
                         ${exceedsMax ? 'border-red-200 bg-red-50/30' : 'border-slate-100 bg-slate-50/40'}`}
                       style={{ gridTemplateColumns: '1fr 200px 2rem' }}
                     >
                       {/* Item info */}
-                      <div className="min-w-0">
+                      <div className="min-w-0 pr-8 sm:pr-0">
                         <p className="font-semibold text-sm text-slate-800 truncate">{item.name}</p>
                         <p className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
                           <span>{item.unit} • {item.category_name}</span>
@@ -539,25 +581,26 @@ export default function NewStockTransferPage() {
                           </span>
                         </p>
                         {exceedsMax && (
-                          <p className="text-[11px] text-red-600 font-medium mt-0.5">
+                          <p className="text-[11px] text-red-600 font-medium mt-0.5 flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3 flex-shrink-0" />
                             Exceeds available stock ({item.available_qty})
                           </p>
                         )}
                       </div>
 
                       {/* Quantity input */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                        <span className="sm:hidden text-[10px] font-semibold text-slate-500 uppercase flex-shrink-0">Qty:</span>
                         <input
                           type="number"
                           step="0.01"
                           min="0.01"
-                          max={item.available_qty}
                           placeholder="Qty"
                           value={item.quantity}
                           onChange={e => handleCartChange(item.id, e.target.value)}
                           className={`${cellInputCls} flex-1
                             ${isEmpty ? 'border-orange-300 bg-orange-50' :
-                              exceedsMax ? 'border-red-300 bg-red-50' :
+                              exceedsMax ? 'border-red-400 bg-red-50' :
                               'border-slate-200'}`}
                         />
                         <span className="text-[10px] text-slate-400 whitespace-nowrap">
@@ -569,9 +612,9 @@ export default function NewStockTransferPage() {
                       <button
                         type="button"
                         onClick={() => handleRemoveItem(item.id)}
-                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+                        className="absolute top-4 right-4 sm:static p-1.5 rounded-lg text-red-500 bg-red-50 sm:bg-transparent hover:bg-red-100 sm:hover:bg-red-50 transition-colors flex-shrink-0 sm:mt-0.5"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </button>
                     </div>
                   );
@@ -583,7 +626,7 @@ export default function NewStockTransferPage() {
       </form>
 
       {/* ── Fixed Bottom Bar ── */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-lg">
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-6">
             <div>
@@ -605,15 +648,15 @@ export default function NewStockTransferPage() {
             {pageError && (
               <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 max-w-xs">
                 <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
-                <span className="text-xs text-red-600">{pageError}</span>
+                <span className="text-xs text-red-600 line-clamp-2">{pageError}</span>
               </div>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <Link
               href="/dashboard/staff/inventory/transfers"
-              className="px-4 py-2.5 text-sm font-medium border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
+              className="flex-1 sm:flex-none px-4 py-2.5 text-sm font-medium border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-100 text-center transition-colors"
             >
               Cancel
             </Link>
@@ -621,12 +664,12 @@ export default function NewStockTransferPage() {
               type="submit"
               form="transfer-form"
               disabled={isSaving || cart.length === 0 || hasInvalidQty || isRevalidating}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white text-sm font-bold rounded-xl hover:from-violet-600 hover:to-purple-700 transition-all shadow-md shadow-violet-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white text-sm font-bold rounded-xl hover:from-violet-600 hover:to-purple-700 transition-all shadow-md shadow-violet-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSaving
                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
                 : isRevalidating
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> Checking stock...</>
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Checking...</>
                 : <><Save className="h-4 w-4" /> Save Transfer</>}
             </button>
           </div>

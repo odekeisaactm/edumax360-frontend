@@ -1,8 +1,7 @@
-// app/dashboard/staff/inventory/stock-out/new/page.tsx
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { inventoryItemAPI, inventoryLocationAPI, stockOutAPI } from '@/lib/api';
@@ -57,7 +56,7 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 
 const inputCls = 'w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent outline-none bg-white transition-colors placeholder:text-slate-300 text-slate-800';
 const labelCls = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5';
-const cellInputCls = 'w-full px-2 py-1.5 border rounded-lg focus:ring-1 focus:ring-rose-500 outline-none text-xs bg-white';
+const cellInputCls = 'w-full px-2 py-2 sm:py-1.5 border rounded-lg focus:ring-1 focus:ring-rose-500 outline-none text-sm sm:text-xs bg-white';
 
 const REASONS: { value: StockOutReason; label: string }[] = [
   { value: 'staff_collection', label: 'Staff Collection' },
@@ -85,6 +84,7 @@ interface CartItem extends InventoryItemList {
 
 export default function NewStockOutPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { hasPermission, user } = useAuth();
 
   const [form, setForm] = useState({
@@ -120,7 +120,7 @@ export default function NewStockOutPage() {
   const itemSearchInputRef = useRef<HTMLInputElement>(null);
   const locationRef = useRef('');
 
-  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorystockoutmodel');
+  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorystockinmodel');
 
   const showToast = useCallback((type: 'success' | 'error' | 'info', message: string) => {
     const id = ++_toastId;
@@ -132,7 +132,7 @@ export default function NewStockOutPage() {
   const isStaffCollection = form.reason === 'staff_collection';
   const isTransfer = form.reason === 'transfer';
 
-  // Load locations
+  // 1. Load locations
   useEffect(() => {
     inventoryLocationAPI.list().then(data => {
       const arr = Array.isArray(data) ? data : (data?.results ?? []);
@@ -141,9 +141,33 @@ export default function NewStockOutPage() {
     }).catch(() => {});
   }, []);
 
+  // 2. Auto-fill from URL params
+  useEffect(() => {
+    const urlItemId = searchParams.get('item_id');
+    let isMounted = true;
+
+    if (urlItemId) {
+      inventoryItemAPI.get(Number(urlItemId))
+        .then((itemData: any) => {
+          if (isMounted) {
+            addToCart(itemData);
+            showToast('info', `Added "${itemData.name}". Please select a location to verify stock.`);
+          }
+        })
+        .catch(() => {
+          if (isMounted) showToast('error', 'Could not auto-load the requested item.');
+        });
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   useEffect(() => { locationRef.current = form.location; }, [form.location]);
 
-  // Revalidate cart when location changes
+  // 3. Revalidate cart when location changes
   useEffect(() => {
     if (!form.location || cart.length === 0) return;
     setIsRevalidating(true);
@@ -204,6 +228,7 @@ export default function NewStockOutPage() {
       finally { setIsSearchingStaff(false); }
     }, 300);
     return () => { if (staffSearchDebounce.current) clearTimeout(staffSearchDebounce.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [staffSearch]);
 
   // Item search
@@ -223,6 +248,7 @@ export default function NewStockOutPage() {
       finally { setIsSearchingItems(false); }
     }, 300);
     return () => { if (itemSearchDebounce.current) clearTimeout(itemSearchDebounce.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemSearch, form.location]);
 
   // Barcode scanner
@@ -257,11 +283,21 @@ export default function NewStockOutPage() {
   };
 
   const addToCart = (item: InventoryItemList) => {
-    if (!form.location) { showToast('error', 'Select a location before adding items.'); return; }
     if (cart.some(c => c.id === item.id)) { showToast('error', `'${item.name}' is already in the list.`); return; }
-    const availQty = item.location_quantity ?? 0;
-    if (availQty <= 0) { showToast('error', `'${item.name}' has no stock at the selected location.`); return; }
-    setCart(prev => [...prev, { ...item, quantity_removed: '', available_qty: availQty }]);
+
+    // Default to total_quantity if location is not yet selected (handled by Revalidate later)
+    const availQty = form.location ? (item.location_quantity ?? 0) : Number(item.total_quantity);
+
+    if (form.location && availQty <= 0) {
+      showToast('error', `'${item.name}' has no stock at the selected location.`);
+      return;
+    }
+
+    setCart(prev => {
+      if (prev.some(c => c.id === item.id)) return prev;
+      return [...prev, { ...item, quantity_removed: '', available_qty: availQty }];
+    });
+
     setItemSearch(''); setItemResults([]); setShowItemResults(false);
     itemSearchInputRef.current?.focus();
   };
@@ -579,6 +615,7 @@ export default function NewStockOutPage() {
               </div>
             ) : (
               <div className="space-y-2">
+                {/* Desktop Cart Header */}
                 <div className="hidden sm:grid gap-4 px-3 pb-1 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider"
                   style={{ gridTemplateColumns: '1fr 200px 2rem' }}>
                   <span>Item</span><span>Quantity to Remove</span><span />
@@ -589,13 +626,15 @@ export default function NewStockOutPage() {
                   const maxAvail = form.location ? item.available_qty : Number(item.total_quantity);
                   const exceedsMax = item.quantity_removed !== '' && maxAvail > 0 && qty > maxAvail;
                   const isEmpty = !item.quantity_removed || qty <= 0;
+
                   return (
                     <div key={item.id}
-                      className={`grid items-start gap-4 rounded-xl border px-4 py-3 transition-colors
+                      className={`relative flex flex-col sm:grid sm:items-center gap-3 sm:gap-4 rounded-xl border px-4 py-4 sm:py-3 transition-colors
                         ${exceedsMax ? 'border-red-200 bg-red-50/30' : 'border-slate-100 bg-slate-50/40'}`}
                       style={{ gridTemplateColumns: '1fr 200px 2rem' }}>
 
-                      <div className="min-w-0">
+                      {/* Item Details */}
+                      <div className="min-w-0 pr-8 sm:pr-0">
                         <p className="font-semibold text-sm text-slate-800 truncate">{item.name}</p>
                         <p className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap mt-0.5">
                           <span>{item.unit} • {item.category_name}</span>
@@ -613,8 +652,10 @@ export default function NewStockOutPage() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <input type="number" step="1" min="1" placeholder="Qty"
+                      {/* Quantity Input */}
+                      <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                        <span className="sm:hidden text-[10px] font-semibold text-slate-500 uppercase flex-shrink-0">Qty:</span>
+                        <input type="number" step="0.01" min="0.01" placeholder="Qty"
                           value={item.quantity_removed}
                           onChange={e => handleCartChange(item.id, e.target.value)}
                           className={`${cellInputCls} flex-1
@@ -626,9 +667,10 @@ export default function NewStockOutPage() {
                         )}
                       </div>
 
+                      {/* Remove Button */}
                       <button type="button" onClick={() => handleRemoveItem(item.id)}
-                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors flex-shrink-0 mt-0.5">
-                        <Trash2 className="h-3.5 w-3.5" />
+                        className="absolute top-4 right-4 sm:static p-1.5 rounded-lg text-red-500 bg-red-50 sm:bg-transparent hover:bg-red-100 sm:hover:bg-red-50 transition-colors flex-shrink-0 sm:mt-0.5">
+                        <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </button>
                     </div>
                   );
@@ -660,14 +702,14 @@ export default function NewStockOutPage() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <Link href="/dashboard/staff/inventory/stock-out"
-              className="px-4 py-2.5 text-sm font-medium border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors">
+              className="flex-1 sm:flex-none px-4 py-2.5 text-sm font-medium border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-100 text-center transition-colors">
               Cancel
             </Link>
             <button type="submit" form="stock-out-form"
               disabled={isSaving || cart.length === 0 || hasInvalidQty || isRevalidating}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-rose-500 to-red-600 text-white text-sm font-bold rounded-xl hover:from-rose-600 hover:to-red-700 transition-all shadow-md shadow-rose-200 disabled:opacity-50 disabled:cursor-not-allowed">
+              className="flex-1 sm:flex-none flex justify-center items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-rose-500 to-red-600 text-white text-sm font-bold rounded-xl hover:from-rose-600 hover:to-red-700 transition-all shadow-md shadow-rose-200 disabled:opacity-50 disabled:cursor-not-allowed">
               {isSaving ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
                 : isRevalidating ? <><Loader2 className="h-4 w-4 animate-spin" /> Checking stock...</>
                 : <><Save className="h-4 w-4" /> Save Stock Out</>}

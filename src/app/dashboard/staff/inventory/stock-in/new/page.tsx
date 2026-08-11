@@ -1,16 +1,14 @@
-// app/dashboard/staff/inventory/stock-in/new/page.tsx
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { inventoryItemAPI, inventoryLocationAPI, inventorySupplierAPI, stockInAPI } from '@/lib/api';
-// Note: inventoryItemAPI is still used for item search
 import { InventoryItemList, InventoryLocation, InventorySupplier, StockInSource } from '@/lib/types';
 import {
   ArrowLeft, Package, Save, X, Check, AlertCircle, Loader2,
-  Search, ScanLine, Trash2, MapPin, Building, CalendarDays, ClipboardList, Pencil,
+  Search, ScanLine, Trash2, MapPin, Building, ClipboardList, Pencil,
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -62,7 +60,7 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 // ─── UI Constants ──────────────────────────────────────────────────────────────
 const inputCls = 'w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white transition-colors placeholder:text-slate-300 text-slate-800';
 const labelCls = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5';
-const cellInputCls = 'w-full px-2 py-1.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-xs bg-white';
+const cellInputCls = 'w-full px-3 py-2 md:px-2 md:py-1.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm md:text-xs bg-white';
 
 interface CartItem extends InventoryItemList {
   quantity_received: string;
@@ -76,6 +74,7 @@ interface CartItem extends InventoryItemList {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function NewStockInPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { hasPermission, user } = useAuth();
 
   const [form, setForm] = useState({
@@ -110,6 +109,7 @@ export default function NewStockInPage() {
   };
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
+  // 1. Initial Data Fetch (Locations & Suppliers)
   useEffect(() => {
     Promise.all([
       inventoryLocationAPI.list(),
@@ -122,8 +122,33 @@ export default function NewStockInPage() {
         (l: InventoryLocation) => l.location_type === 'store' || l.location_type === 'shop'
       ));
       setSuppliers(supsArr);
-    }).catch(() => {});
+    }).catch(() => {
+      showToast('error', 'Failed to load locations or suppliers. Please check your connection.');
+    });
   }, []);
+
+  // 2. URL Parameter Integration (Auto-fill cart)
+  useEffect(() => {
+    const urlItemId = searchParams.get('item_id');
+    let isMounted = true;
+
+    if (urlItemId) {
+      inventoryItemAPI.get(Number(urlItemId))
+        .then((itemData: any) => {
+          if (isMounted) {
+            addToCart(itemData);
+            showToast('success', `Added "${itemData.name}" to your list.`);
+          }
+        })
+        .catch(() => {
+          if (isMounted) showToast('error', 'Could not auto-load the requested item.');
+        });
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [searchParams]);
 
   // Debounced item search
   useEffect(() => {
@@ -190,22 +215,29 @@ export default function NewStockInPage() {
   };
 
   const addToCart = (item: InventoryItemList) => {
+    // Check if already exists just to show the toast warning
     if (cart.some(c => c.id === item.id)) {
       showToast('error', `'${item.name}' is already in the list.`);
-      return;
     }
-    setCart(prev => [
-      ...prev,
-      {
-        ...item,
-        quantity_received: '',           // blank — user must fill in
-        unit_cost: item.last_cost_price ? String(item.last_cost_price) : '',
-        batch_number: '',
-        expiry_date: '',
-        new_selling_price: String(item.current_selling_price),
-        price_changed: false,
-      },
-    ]);
+
+    setCart(prev => {
+      // Double check inside state updater to prevent Strict Mode double-adds
+      if (prev.some(c => c.id === item.id)) return prev;
+
+      return [
+        ...prev,
+        {
+          ...item,
+          quantity_received: '',
+          unit_cost: item.last_cost_price ? String(item.last_cost_price) : '',
+          batch_number: '',
+          expiry_date: '',
+          new_selling_price: String(item.current_selling_price),
+          price_changed: false,
+        },
+      ];
+    });
+
     setSearchTerm('');
     setSearchResults([]);
     setShowResults(false);
@@ -455,10 +487,9 @@ export default function NewStockInPage() {
                 <p className="text-xs text-slate-400 mt-1">Use the search box or scanner above.</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {/* Cart header */}
-                <div className="hidden md:grid gap-2 px-3 pb-1 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider"
-                  style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1.5fr 2rem' }}>
+              <div className="space-y-4 md:space-y-3">
+                {/* Cart header - Hidden on mobile */}
+                <div className="hidden md:grid gap-2 px-3 pb-1 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider md:grid-cols-[2fr_1fr_1fr_1fr_1fr_1.5fr_2rem]">
                   <span>Item</span>
                   <span>Qty Received</span>
                   <span>Cost Price (₦)</span>
@@ -469,98 +500,113 @@ export default function NewStockInPage() {
                 </div>
 
                 {cart.map(item => (
-                  <div key={item.id} className="rounded-xl border border-slate-100 bg-slate-50/40 p-3">
-                    {/* Row 1: Item name + primary fields */}
-                    <div className="grid gap-2 items-center"
-                      style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1.5fr 2rem' }}>
+                  <div key={item.id} className="relative rounded-xl border border-slate-200 md:border-slate-100 bg-slate-50/40 p-4 md:p-3">
+                    {/* Responsive Grid Row */}
+                    <div className="flex flex-col md:grid gap-3 md:gap-2 md:items-center md:grid-cols-[2fr_1fr_1fr_1fr_1fr_1.5fr_2rem]">
 
-                      {/* Item name */}
-                      <div className="min-w-0">
+                      {/* 1. Item name */}
+                      <div className="min-w-0 pr-8 md:pr-0 pb-2 md:pb-0 border-b border-slate-200 border-dashed md:border-0">
                         <p className="font-semibold text-sm text-slate-800 truncate">{item.name}</p>
                         <p className="text-[11px] text-slate-400">{item.unit} • {item.category_name}</p>
                       </div>
 
-                      {/* Quantity */}
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        placeholder="Qty"
-                        value={item.quantity_received}
-                        onChange={e => handleCartChange(item.id, 'quantity_received', e.target.value)}
-                        className={`${cellInputCls} ${!item.quantity_received ? 'border-orange-300 bg-orange-50' : ''}`}
-                      />
+                      {/* 2. Quantity */}
+                      <div>
+                        <span className="md:hidden text-[10px] font-semibold text-slate-500 uppercase block mb-1">Quantity Received</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          placeholder="Qty"
+                          value={item.quantity_received}
+                          onChange={e => handleCartChange(item.id, 'quantity_received', e.target.value)}
+                          className={`${cellInputCls} ${!item.quantity_received ? 'border-orange-300 bg-orange-50' : ''}`}
+                        />
+                      </div>
 
-                      {/* Cost price */}
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="Cost"
-                        value={item.unit_cost}
-                        onChange={e => handleCartChange(item.id, 'unit_cost', e.target.value)}
-                        className={cellInputCls}
-                      />
-
-                      {/* Selling price — locked unless checkbox ticked */}
-                      <div className="flex items-center gap-1.5">
+                      {/* 3. Cost price */}
+                      <div>
+                        <span className="md:hidden text-[10px] font-semibold text-slate-500 uppercase block mb-1">Cost Price (₦)</span>
                         <input
                           type="number"
                           step="0.01"
                           min="0"
-                          value={item.new_selling_price}
-                          onChange={e => handleCartChange(item.id, 'new_selling_price', e.target.value)}
-                          disabled={!item.price_changed}
-                          className={`${cellInputCls} ${item.price_changed ? 'border-amber-400 bg-amber-50' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                          placeholder="Cost"
+                          value={item.unit_cost}
+                          onChange={e => handleCartChange(item.id, 'unit_cost', e.target.value)}
+                          className={cellInputCls}
                         />
-                        <label
-                          title="Price changed? Tick to edit"
-                          className="flex items-center cursor-pointer flex-shrink-0"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={item.price_changed}
-                            onChange={e => handleCartChange(item.id, 'price_changed', e.target.checked)}
-                            className="sr-only"
-                          />
-                          <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors flex-shrink-0 ${item.price_changed ? 'bg-amber-500 border-amber-500' : 'border-slate-300 bg-white'}`}>
-                            {item.price_changed && <Pencil className="h-3 w-3 text-white" />}
-                          </div>
-                        </label>
                       </div>
 
-                      {/* Batch number */}
-                      <input
-                        type="text"
-                        placeholder="Batch"
-                        value={item.batch_number}
-                        onChange={e => handleCartChange(item.id, 'batch_number', e.target.value)}
-                        className={cellInputCls}
-                      />
+                      {/* 4. Selling price — locked unless checkbox ticked */}
+                      <div>
+                        <span className="md:hidden text-[10px] font-semibold text-slate-500 uppercase block mb-1">Selling Price (₦)</span>
+                        <div className="flex items-center gap-2 md:gap-1.5">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={item.new_selling_price}
+                            onChange={e => handleCartChange(item.id, 'new_selling_price', e.target.value)}
+                            disabled={!item.price_changed}
+                            className={`${cellInputCls} ${item.price_changed ? 'border-amber-400 bg-amber-50' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                          />
+                          <label
+                            title="Price changed? Tick to edit"
+                            className="flex items-center cursor-pointer flex-shrink-0"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={item.price_changed}
+                              onChange={e => handleCartChange(item.id, 'price_changed', e.target.checked)}
+                              className="sr-only"
+                            />
+                            <div className={`w-7 h-7 md:w-5 md:h-5 rounded flex items-center justify-center border transition-colors flex-shrink-0 ${item.price_changed ? 'bg-amber-500 border-amber-500' : 'border-slate-300 bg-white'}`}>
+                              {item.price_changed && <Pencil className="h-4 w-4 md:h-3 md:w-3 text-white" />}
+                            </div>
+                          </label>
+                        </div>
+                      </div>
 
-                      {/* Expiry date */}
-                      <input
-                        type="date"
-                        value={item.expiry_date}
-                        onChange={e => handleCartChange(item.id, 'expiry_date', e.target.value)}
-                        className={cellInputCls}
-                      />
+                      {/* 5. Batch number */}
+                      <div>
+                        <span className="md:hidden text-[10px] font-semibold text-slate-500 uppercase block mb-1">Batch Number</span>
+                        <input
+                          type="text"
+                          placeholder="Batch"
+                          value={item.batch_number}
+                          onChange={e => handleCartChange(item.id, 'batch_number', e.target.value)}
+                          className={cellInputCls}
+                        />
+                      </div>
 
-                      {/* Remove */}
+                      {/* 6. Expiry date */}
+                      <div>
+                        <span className="md:hidden text-[10px] font-semibold text-slate-500 uppercase block mb-1">Expiry Date</span>
+                        <input
+                          type="date"
+                          value={item.expiry_date}
+                          onChange={e => handleCartChange(item.id, 'expiry_date', e.target.value)}
+                          className={cellInputCls}
+                        />
+                      </div>
+
+                      {/* 7. Remove - Absolute on mobile, Grid on desktop */}
                       <button
                         type="button"
                         onClick={() => handleRemoveItem(item.id)}
-                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+                        className="absolute top-4 right-4 md:static p-1.5 rounded-lg text-red-500 bg-red-50 md:bg-transparent hover:bg-red-100 md:hover:bg-red-50 transition-colors flex-shrink-0"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4 md:h-3.5 md:w-3.5" />
                       </button>
+
                     </div>
 
                     {/* Price changed notice */}
                     {item.price_changed && (
-                      <p className="mt-2 text-[11px] text-amber-600 font-medium pl-1">
+                      <div className="mt-3 md:mt-2 text-xs md:text-[11px] text-amber-600 font-medium pl-1 bg-amber-50 md:bg-transparent p-2 md:p-0 rounded-lg">
                         ⚠ Selling price will be updated from ₦{Number(item.current_selling_price).toLocaleString()} → ₦{Number(item.new_selling_price).toLocaleString()}
-                      </p>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -571,34 +617,34 @@ export default function NewStockInPage() {
       </form>
 
       {/* ── Fixed Bottom Bar ── */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-lg">
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
 
           {/* Left: stats + error */}
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 sm:gap-6">
             <div>
               <p className="text-[10px] text-slate-400 uppercase font-semibold tracking-wide">Items</p>
-              <p className="text-lg font-bold text-slate-800">{cart.length}</p>
+              <p className="text-base sm:text-lg font-bold text-slate-800">{cart.length}</p>
             </div>
-            <div>
+            <div className="pl-4 sm:pl-6 border-l border-slate-200">
               <p className="text-[10px] text-slate-400 uppercase font-semibold tracking-wide">Total Cost</p>
-              <p className="text-lg font-bold text-blue-600">
+              <p className="text-base sm:text-lg font-bold text-blue-600">
                 ₦{totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
             {pageError && (
-              <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2 max-w-xs">
+              <div className="hidden lg:flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2 max-w-md ml-4">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                <span className="text-xs">{pageError}</span>
+                <span className="text-xs font-medium line-clamp-2">{pageError}</span>
               </div>
             )}
           </div>
 
           {/* Right: actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <Link
               href="/dashboard/staff/inventory/stock-in"
-              className="px-4 py-2.5 text-sm font-medium border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
+              className="flex-1 sm:flex-none px-4 py-2.5 text-sm font-medium border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-100 text-center transition-colors"
             >
               Cancel
             </Link>
@@ -606,7 +652,7 @@ export default function NewStockInPage() {
               type="submit"
               form="stock-in-form"
               disabled={isSaving || cart.length === 0}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSaving
                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
