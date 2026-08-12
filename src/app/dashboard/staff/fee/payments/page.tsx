@@ -493,8 +493,13 @@ export default function PaymentsPage() {
 
                   return (
                     <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-5 py-3 whitespace-nowrap">
-                        <p className="font-bold text-slate-800">{p.reference}</p>
+                      <td className="px-5 py-3">
+                        <p
+                          className="font-bold text-slate-800 truncate max-w-[180px]"
+                          title={p.reference}
+                        >
+                          {p.reference}
+                        </p>
                         <p className="text-xs font-medium text-slate-500">{formatDate(p.created_at)}</p>
                       </td>
                       <td className="px-5 py-3">
