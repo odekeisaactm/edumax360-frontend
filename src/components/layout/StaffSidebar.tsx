@@ -217,12 +217,19 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/academic/leadership-roles'),
           requiredPermissions: ['academic_structure.view_leadership_roles'],
         },
-        {
-          name: 'Promotion',
+         {
+          name: 'Promotion Config',
           href: '/dashboard/staff/academic/promotion-mappings',
-          icon: <TrendingUp className="h-4 w-4" />,
+          icon: <Settings className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/academic/promotion-mappings'),
-          requiredPermissions: ['academic_structure.view_promotions'],
+          requiredPermissions: ['academic_structure.manage_promotions'],
+        },
+        {
+          name: 'Promote Students',
+          href: '/dashboard/staff/academic/promotions',
+          icon: <TrendingUp className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/academic/promotions'),
+          requiredPermissions: ['academic_structure.manage_promotions'],
         },
         {
           name: 'Subject Groups',

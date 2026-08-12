@@ -1412,57 +1412,107 @@ export const academicAPI = {
     return response.data.data || [];
   },
 
+  // --- Automated Promotions ---
+  getPromotionBatches: async (params?: any) => {
+    const response = await api.get('/api/academic/promotion-batches/', { params });
+    return response.data;
+  },
+
+  promotionPreCheck: async () => {
+    const response = await api.get('/api/academic/promotion-batches/pre_check/');
+    return response.data;
+  },
+
+  executePromotionBatch: async (data: {
+    title: string;
+    reason?: string;
+    scope_type: 'school' | 'class' | 'individual';
+    target_class_ids?: number[];
+    target_student_ids?: number[];
+    session_id: number;
+  }) => {
+    const response = await api.post('/api/academic/promotion-batches/execute/', data);
+    return response.data;
+  },
+
+  getPromotionBatchStatus: async (batchId: number) => {
+    const response = await api.get(`/api/academic/promotion-batches/${batchId}/batch_status/`);
+    return response.data;
+  },
+
     // Add to academicAPI object
 
-// --- Timetable ---
-listTimetable: async (params?: { class_configuration_id?: number; day_id?: number }): Promise<Timetable[]> => {
-  const response = await api.get<ApiResponse<Timetable[]>>('/api/academic/timetable/', { params });
-  return response.data.data || [];
-},
+    // --- Timetable ---
+    listTimetable: async (params?: { class_configuration_id?: number; day_id?: number }): Promise<Timetable[]> => {
+      const response = await api.get<ApiResponse<Timetable[]>>('/api/academic/timetable/', { params });
+      return response.data.data || [];
+    },
 
-getTimetableEntry: async (id: number): Promise<Timetable> => {
-  const response = await api.get<ApiResponse<Timetable>>(`/api/academic/timetable/${id}/`);
-  return response.data.data!;
-},
+    getTimetableEntry: async (id: number): Promise<Timetable> => {
+      const response = await api.get<ApiResponse<Timetable>>(`/api/academic/timetable/${id}/`);
+      return response.data.data!;
+    },
 
-createTimetableEntry: async (data: TimetableFormValues): Promise<Timetable> => {
-  const response = await api.post<ApiResponse<Timetable>>('/api/academic/timetable/', data);
-  return response.data.data!;
-},
+    createTimetableEntry: async (data: TimetableFormValues): Promise<Timetable> => {
+      const response = await api.post<ApiResponse<Timetable>>('/api/academic/timetable/', data);
+      return response.data.data!;
+    },
 
-updateTimetableEntry: async (id: number, data: Partial<TimetableFormValues>): Promise<Timetable> => {
-  const response = await api.put<ApiResponse<Timetable>>(`/api/academic/timetable/${id}/`, data);
-  return response.data.data!;
-},
+    updateTimetableEntry: async (id: number, data: Partial<TimetableFormValues>): Promise<Timetable> => {
+      const response = await api.put<ApiResponse<Timetable>>(`/api/academic/timetable/${id}/`, data);
+      return response.data.data!;
+    },
 
-deleteTimetableEntry: async (id: number): Promise<void> => {
-  await api.delete(`/api/academic/timetable/${id}/`);
-},
+    deleteTimetableEntry: async (id: number): Promise<void> => {
+      await api.delete(`/api/academic/timetable/${id}/`);
+    },
 
-// --- Leadership Roles ---
-listLeadershipRoles: async (params?: { role_type?: string; school_section_id?: number; is_current?: boolean }): Promise<LeadershipRole[]> => {
-  const response = await api.get<ApiResponse<LeadershipRole[]>>('/api/academic/leadership-roles/', { params });
-  return response.data.data || [];
-},
+    // --- Leadership Roles ---
+    listLeadershipRoles: async (params?: { role_type?: string; school_section_id?: number; is_current?: boolean }): Promise<LeadershipRole[]> => {
+      const response = await api.get<ApiResponse<LeadershipRole[]>>('/api/academic/leadership-roles/', { params });
+      return response.data.data || [];
+    },
 
-getLeadershipRole: async (id: number): Promise<LeadershipRole> => {
-  const response = await api.get<ApiResponse<LeadershipRole>>(`/api/academic/leadership-roles/${id}/`);
-  return response.data.data!;
-},
+    getLeadershipRole: async (id: number): Promise<LeadershipRole> => {
+      const response = await api.get<ApiResponse<LeadershipRole>>(`/api/academic/leadership-roles/${id}/`);
+      return response.data.data!;
+    },
 
-createLeadershipRole: async (data: LeadershipRoleFormValues): Promise<LeadershipRole> => {
-  const response = await api.post<ApiResponse<LeadershipRole>>('/api/academic/leadership-roles/', data);
-  return response.data.data!;
-},
+    createLeadershipRole: async (data: LeadershipRoleFormValues): Promise<LeadershipRole> => {
+      const response = await api.post<ApiResponse<LeadershipRole>>('/api/academic/leadership-roles/', data);
+      return response.data.data!;
+    },
 
-updateLeadershipRole: async (id: number, data: Partial<LeadershipRoleFormValues>): Promise<LeadershipRole> => {
-  const response = await api.put<ApiResponse<LeadershipRole>>(`/api/academic/leadership-roles/${id}/`, data);
-  return response.data.data!;
-},
+    updateLeadershipRole: async (id: number, data: Partial<LeadershipRoleFormValues>): Promise<LeadershipRole> => {
+      const response = await api.put<ApiResponse<LeadershipRole>>(`/api/academic/leadership-roles/${id}/`, data);
+      return response.data.data!;
+    },
 
-deleteLeadershipRole: async (id: number): Promise<void> => {
-  await api.delete(`/api/academic/leadership-roles/${id}/`);
-},
+    deleteLeadershipRole: async (id: number): Promise<void> => {
+      await api.delete(`/api/academic/leadership-roles/${id}/`);
+    },
+
+    promotionPreCheck: async () => {
+        const response = await api.get('/api/academic/promotion-batches/pre_check/');
+        return response.data;
+    },
+
+    executePromotionBatch: async (data: {
+        title: string;
+        reason?: string;
+        scope_type: 'school' | 'class' | 'individual';
+        target_class_ids?: number[];
+        target_student_ids?: number[];
+        session_id: number;
+    }) => {
+        const response = await api.post('/api/academic/promotion-batches/execute/', data);
+        return response.data; // Returns StudentPromotionBatch
+    },
+
+    getPromotionBatchStatus: async (batchId: number) => {
+        const response = await api.get(`/api/academic/promotion-batches/${batchId}/batch_status/`);
+        return response.data;
+    },
 };
 
 
