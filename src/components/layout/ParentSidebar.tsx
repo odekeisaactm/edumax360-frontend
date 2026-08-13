@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { SOFTWARE_NAME } from '@/lib/constants';
 import {
-  Home, Eye, CreditCard, Upload, History, Wallet, DollarSign,
+  Home, Eye, CreditCard, Upload, History, Wallet, DollarSign, Store, ShoppingCart,
   User, Users, Phone, LogOut, ChevronDown, ChevronRight, GraduationCap, Award, Layers
 } from 'lucide-react';
 
@@ -113,6 +113,21 @@ export function ParentSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: (
           icon: <History className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/parent/wallet/history'),
         },
+      ],
+    },
+    {
+      name: 'Inventory',
+      href: '#',
+      icon: <Store className="h-5 w-5" />,
+      moduleCode: 'inventory',
+      children: [
+        {
+          name: 'Tuckshop Purchases',
+          href: '/dashboard/parent/inventory/purchases',
+          icon: <ShoppingCart className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/parent/inventory/purchases'),
+        },
+        // You can easily drop in Cafeteria and Inventory Collection here later!
       ],
     },
   ];
