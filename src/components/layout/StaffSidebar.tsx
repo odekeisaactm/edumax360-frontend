@@ -79,9 +79,9 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
     },
     {
       name: 'Place Order',
-      href: '/dashboard/staff/inventory/pos',
+      href: '/dashboard/staff/inventory/sales/new',
       icon: <CreditCard className="h-5 w-5" />,
-      current: pathname === '/dashboard/staff/inventory/pos',
+      current: pathname === '/dashboard/staff/inventory/sales/new',
       moduleCode: 'inventory',
       requiredPermissions: ['inventory.add_inventorysalemodel'],
     },

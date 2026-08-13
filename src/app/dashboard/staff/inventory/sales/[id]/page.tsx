@@ -1,18 +1,20 @@
-// app/dashboard/staff/inventory/sales/[id]/page.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { saleAPI, inventorySettingAPI } from '@/lib/api';
+import { saleAPI, inventorySettingAPI, schoolInfoAPI } from '@/lib/api';
 import { Sale, InventorySetting } from '@/lib/types';
 import {
   ArrowLeft, Printer, Undo2, AlertCircle, AlertTriangle, Loader2,
   User, UserCog, Store, Hash, Calendar, CreditCard, CheckCircle2,
-  Clock, Package, TrendingUp, TrendingDown, Receipt,
+  Clock, Package, TrendingUp, TrendingDown, Receipt, X, Check, Building2
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
+let _toastId = 0;
+interface ToastItem { id: number; type: 'success' | 'error'; message: string; }
+
 function extractError(err: any): string {
   const d = err?.response?.data;
   if (d) {
@@ -48,6 +50,26 @@ const PAYMENT_LABELS: Record<string, string> = {
   cash: 'Cash', pos: 'POS / Card', student_wallet: 'Student Wallet', staff_wallet: 'Staff Wallet',
 };
 
+// ─── Toast Stack ───────────────────────────────────────────────────────────────
+function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
+  return (
+    <div className="fixed top-4 right-4 z-[80] flex flex-col gap-2 pointer-events-none">
+      {toasts.map(t => (
+        <div key={t.id} className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border max-w-sm
+          ${t.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
+          {t.type === 'success'
+            ? <Check className="h-4 w-4 flex-shrink-0 mt-0.5 text-emerald-600" />
+            : <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-red-500" />}
+          <p className="text-sm font-medium flex-1 leading-snug">{t.message}</p>
+          <button onClick={() => onDismiss(t.id)} className="opacity-50 hover:opacity-100 flex-shrink-0 ml-2">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Refund Modal ──────────────────────────────────────────────────────────────
 function RefundModal({ sale, settings, isRefunding, onConfirm, onCancel }: {
   sale: Sale; settings: InventorySetting | null; isRefunding: boolean;
@@ -57,9 +79,9 @@ function RefundModal({ sale, settings, isRefunding, onConfirm, onCancel }: {
   const expired = isRefundExpired(sale, settings);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-        <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
+        <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${expired ? 'bg-amber-100' : 'bg-amber-100'}`}>
           {expired ? <Clock className="h-6 w-6 text-amber-600" /> : <AlertTriangle className="h-6 w-6 text-amber-600" />}
         </div>
 
@@ -116,13 +138,24 @@ export default function SaleDetailPage() {
 
   const [sale, setSale] = useState<Sale | null>(null);
   const [settings, setSettings] = useState<InventorySetting | null>(null);
+  const [schoolInfo, setSchoolInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [isRefunding, setIsRefunding] = useState(false);
 
+  // Print Overlay State
+  const [printThermalSale, setPrintThermalSale] = useState<Sale | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
   const canRefund = user?.is_superuser || hasPermission('inventory.add_inventorysalemodel');
+
+  const showToast = (type: 'success' | 'error', message: string) => {
+    const id = ++_toastId;
+    setToasts(prev => [...prev, { id, type, message }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4500);
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true); setPageError(null);
@@ -130,6 +163,7 @@ export default function SaleDetailPage() {
       const [saleData] = await Promise.all([
         saleAPI.get(saleId),
         inventorySettingAPI.get().then(setSettings).catch(() => {}),
+        schoolInfoAPI.get().then(setSchoolInfo).catch(() => {}),
       ]);
       setSale(saleData);
     } catch (err) {
@@ -139,54 +173,47 @@ export default function SaleDetailPage() {
 
   useEffect(() => { if (saleId) fetchData(); }, [fetchData, saleId]);
 
+  // Escape key to close print overlay manually
+  useEffect(() => {
+    if (!printThermalSale) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setPrintThermalSale(null); }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [printThermalSale]);
+
+  // AUTO-TRIGGER PRINT: Once the thermal slip is rendered to DOM, fire window.print()
+  useEffect(() => {
+    if (printThermalSale) {
+      const timer = setTimeout(() => {
+        window.print();
+      }, 150); // slight delay to ensure DOM is fully repainted
+      return () => clearTimeout(timer);
+    }
+  }, [printThermalSale]);
+
+  // AUTO-CLOSE MODAL: Listen for when the system print dialog closes
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setPrintThermalSale(null);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
+
   const handleRefundConfirm = async (reason: string) => {
     setIsRefunding(true);
     try {
       const updated = await saleAPI.refund(saleId);
       setSale(updated);
       setShowRefundModal(false);
+      showToast('success', `Order ${updated.transaction_id} refunded successfully`);
     } catch (err) {
-      alert(extractError(err)); // simple fallback; index page uses toasts, detail keeps it minimal
+      showToast('error', extractError(err));
     } finally {
       setIsRefunding(false);
     }
-  };
-
-  const handlePrint = () => {
-    if (!sale) return;
-    const isRefunded = sale.status === 'refunded';
-    const html = `
-      <html><head><title>Receipt - ${sale.transaction_id}</title>
-      <style>
-        body { font-family: monospace; font-size: 12px; width: 280px; margin: 0 auto; padding: 12px; }
-        h2 { text-align: center; margin: 0 0 8px; }
-        .row { display: flex; justify-content: space-between; margin: 2px 0; }
-        hr { border: none; border-top: 1px dashed #000; margin: 8px 0; }
-        .total { font-weight: bold; font-size: 14px; }
-        .refunded-banner {
-          text-align: center; font-weight: bold; color: #b91c1c; border: 2px solid #b91c1c;
-          padding: 4px; margin-bottom: 8px; letter-spacing: 1px; transform: rotate(-2deg);
-        }
-      </style></head>
-      <body>
-        <h2>Receipt</h2>
-        ${isRefunded ? '<div class="refunded-banner">*** REFUNDED ***</div>' : ''}
-        <div class="row"><span>Txn:</span><span>${sale.transaction_id}</span></div>
-        <div class="row"><span>Date:</span><span>${fmtDateTime(sale.sale_date)}</span></div>
-        <hr/>
-        ${(sale.items || []).map(it => `
-          <div class="row"><span>${it.item_name} x${it.quantity}</span><span>₦${Number(it.line_total || 0).toLocaleString()}</span></div>
-        `).join('')}
-        <hr/>
-        <div class="row"><span>Subtotal</span><span>₦${Number(sale.subtotal || 0).toLocaleString()}</span></div>
-        <div class="row"><span>Discount</span><span>₦${Number(sale.discount || 0).toLocaleString()}</span></div>
-        <div class="row total"><span>Total</span><span>₦${Number(sale.total_amount || 0).toLocaleString()}</span></div>
-        <hr/>
-        ${!isRefunded ? '<p style="text-align:center;">Thank you!</p>' : '<p style="text-align:center; font-weight:bold; color:#b91c1c;">This order has been refunded.</p>'}
-      </body></html>
-    `;
-    const win = window.open('', '_blank', 'width=320,height=600');
-    if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => win.print(), 250); }
   };
 
   if (loading) {
@@ -216,6 +243,17 @@ export default function SaleDetailPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-5 pb-10">
 
+      <ToastStack toasts={toasts} onDismiss={(id) => setToasts(t => t.filter(x => x.id !== id))} />
+
+      {/* Print CSS Scope */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          body * { visibility: hidden; }
+          #receipt-print-area, #receipt-print-area * { visibility: visible; }
+          #receipt-print-area { position: fixed; inset: 0; width: 100%; margin: 0; box-shadow: none !important; border-radius: 0 !important; max-height: none !important; }
+        }
+      `}} />
+
       {showRefundModal && (
         <RefundModal sale={sale} settings={settings} isRefunding={isRefunding}
           onConfirm={handleRefundConfirm} onCancel={() => setShowRefundModal(false)} />
@@ -234,7 +272,7 @@ export default function SaleDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handlePrint}
+          <button onClick={() => setPrintThermalSale(sale)}
             className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors shadow-sm">
             <Printer className="h-4 w-4" /> Print Receipt
           </button>
@@ -281,7 +319,7 @@ export default function SaleDetailPage() {
             <CreditCard className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
             <span className="text-slate-500">Payment:</span>
             <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
-              {PAYMENT_LABELS[sale.payment_method] || titleCase(sale.payment_method)}
+              {PAYMENT_LABELS[sale.payment_method] || titleCase(sale.payment_method.replace('_', ' '))}
             </span>
           </div>
           <div className="flex items-center gap-2 text-sm">
@@ -413,6 +451,74 @@ export default function SaleDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* ── PRINT DOM OVERLAY (THERMAL POS SLIP) ── */}
+      {printThermalSale && (
+        <div onClick={() => setPrintThermalSale(null)} className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-8 px-4 print:p-0 print:bg-white animate-in fade-in">
+          <div id="receipt-print-area" onClick={(e) => e.stopPropagation()} className="bg-white w-full max-w-[300px] rounded-xl shadow-2xl overflow-hidden print:shadow-none print:rounded-none print:max-w-none print:w-full relative">
+
+            {/* Refunded Watermark */}
+            {printThermalSale.status === 'refunded' && (
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-[-15deg] text-black font-black text-5xl pointer-events-none uppercase tracking-widest border-4 border-black p-4 rounded-xl z-0 opacity-20">
+                Refunded
+              </div>
+            )}
+
+            <div className="print:hidden flex justify-between items-center px-4 py-3 bg-slate-50 border-b border-slate-100 relative z-10">
+              <button onClick={() => setPrintThermalSale(null)} className="text-xs font-bold text-slate-500 hover:text-slate-700">Close</button>
+              <div className="text-[10px] text-amber-600 font-bold bg-amber-50 px-2 py-1 rounded animate-pulse">
+                Printing...
+              </div>
+            </div>
+
+            <div className="p-4 print:p-2 text-black font-mono relative z-10" style={{ fontSize: '11px', lineHeight: '1.4' }}>
+              <div className="text-center mb-3">
+                <h2 className="font-black text-sm uppercase mb-0.5">{schoolInfo?.name || 'SCHOOL NAME'}</h2>
+                <p className="text-[9px] mb-0.5">{schoolInfo?.address || 'Address Not Set'}</p>
+                <p className="text-[9px]">{schoolInfo?.phone || ''}</p>
+              </div>
+
+              <div className="border-b border-dashed border-black mb-3"></div>
+              <h3 className="font-bold text-xs mb-3 uppercase text-center tracking-widest">SALES RECEIPT</h3>
+
+              <div className="flex justify-between mb-1 text-[10px]"><span>Ref:</span><span className="font-bold">{printThermalSale.transaction_id}</span></div>
+              <div className="flex justify-between mb-1 text-[10px]"><span>Date:</span><span>{new Date(printThermalSale.sale_date).toLocaleDateString('en-GB')}</span></div>
+              <div className="flex justify-between mb-3 text-[10px]"><span>Customer:</span><span className="font-bold text-right pl-2 truncate">{printThermalSale.customer_name || printThermalSale.staff_customer_name || 'Walk-in'}</span></div>
+
+              <div className="border-b border-dashed border-black mb-3"></div>
+
+              <div className="w-full mb-3 text-[10px]">
+                 <div className="flex justify-between font-bold mb-1 border-b border-black pb-1">
+                   <span>Item</span>
+                   <span>Total</span>
+                 </div>
+                 {(printThermalSale.items || []).map((it, idx) => (
+                    <div key={idx} className="flex justify-between mt-1">
+                      <span className="pr-2">{it.item_name} <span className="text-[9px]">x{Number(it.quantity)}</span></span>
+                      <span className="font-bold">₦{Number(it.line_total).toLocaleString()}</span>
+                    </div>
+                 ))}
+              </div>
+
+              <div className="border-t border-dashed border-black pt-2 mb-3">
+                <div className="flex justify-between mb-1 text-[10px]"><span>Subtotal:</span><span>₦{Number(printThermalSale.subtotal || 0).toLocaleString()}</span></div>
+                <div className="flex justify-between mb-1 text-[10px]"><span>Discount:</span><span>₦{Number(printThermalSale.discount || 0).toLocaleString()}</span></div>
+                <div className="text-base font-black my-2 flex justify-between items-center border-y-2 border-black py-1.5">
+                  <span>TOTAL:</span>
+                  <span>{fmtMoney(printThermalSale.total_amount)}</span>
+                </div>
+                <div className="flex justify-between mt-1 text-[10px]"><span>Paid Via:</span><span className="font-bold uppercase">{printThermalSale.payment_method.replace('_', ' ')}</span></div>
+              </div>
+
+              <div className="border-b border-dashed border-black mb-3 mt-3"></div>
+              <div className="text-center">
+                <p className="text-[10px] font-bold italic mb-1">Thank you for your patronage!</p>
+                <p className="text-[9px] mt-2">Cashier: {(printThermalSale as any).created_by_name || 'System'}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

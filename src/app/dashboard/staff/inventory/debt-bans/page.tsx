@@ -1,4 +1,3 @@
-// app/dashboard/staff/inventory/debt-bans/page.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -66,7 +65,7 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 function StatusBadge({ value, activeLabel = 'Banned', inactiveLabel = 'Lifted' }: { value: boolean; activeLabel?: string; inactiveLabel?: string }) {
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-      value ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
+      value ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
     }`}>
       <span className={`w-1.5 h-1.5 rounded-full ${value ? 'bg-red-500' : 'bg-emerald-500'}`} />
       {value ? activeLabel : inactiveLabel}
@@ -106,26 +105,33 @@ function BanModal({ editing, isSaving, onSave, onClose }: {
   const [showResults, setShowResults] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  // Set right before setPersonSearch() on a selection, so the resulting personSearch
-  // change doesn't immediately re-trigger a search (which would just re-show the
-  // same name as a suggestion right after picking it).
+
   const skipSearchRef = useRef(false);
 
   const set = <K extends keyof BanFormValues>(key: K, value: BanFormValues[K]) =>
     setForm(prev => ({ ...prev, [key]: value }));
 
-  // Search students or staff depending on the selected person_type — only when creating new.
+  // Bulletproof API extraction for dynamic search
   useEffect(() => {
     if (editing) return;
     if (skipSearchRef.current) { skipSearchRef.current = false; return; }
     if (personSearch.trim().length < 2) { setPersonResults([]); return; }
+
     setIsSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const data = form.person_type === 'student'
-          ? await studentsAPI.list({ search: personSearch, status: 'active' } as any)
-          : await staffAPI.list({ search: personSearch, status: 'active' } as any);
-        setPersonResults(Array.isArray(data) ? data.slice(0, 8) : []);
+        const res = form.person_type === 'student'
+          ? await studentsAPI.list({ search: personSearch, status: 'active', page_size: 15 } as any)
+          : await staffAPI.list({ search: personSearch, status: 'active', page_size: 15 } as any);
+
+        const data = res?.data || res;
+        let results: any[] = [];
+        if (data?.success && Array.isArray(data.data)) results = data.data;
+        else if (data?.results?.data && Array.isArray(data.results.data)) results = data.results.data;
+        else if (data?.results && Array.isArray(data.results)) results = data.results;
+        else if (Array.isArray(data)) results = data;
+
+        setPersonResults(results.slice(0, 8));
         setShowResults(true);
       } catch {
         setPersonResults([]);
@@ -149,7 +155,7 @@ function BanModal({ editing, isSaving, onSave, onClose }: {
   const labelCls = "block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5";
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
 
         {/* Header */}
@@ -257,7 +263,7 @@ function BanModal({ editing, isSaving, onSave, onClose }: {
               className={`${inputCls} resize-none`} />
           </div>
 
-          {/* Active toggle — only meaningful when editing an existing ban */}
+          {/* Active toggle */}
           {editing && (
             <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-100">
               <div>
@@ -317,12 +323,21 @@ export default function DebtBansPage() {
   };
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
+  // Bulletproof extraction on load
   const fetchData = useCallback(async () => {
     setLoading(true); setPageError(null);
     try {
       const params = statusFilter !== 'all' ? { status: statusFilter === 'active' ? 'active' : 'inactive' } : undefined;
-      const data = await bannedDebtUserAPI.list(params);
-      setBans(Array.isArray(data) ? data : data?.results || []);
+      const res = await bannedDebtUserAPI.list(params);
+
+      const data = res?.data || res;
+      let results: any[] = [];
+      if (data?.success && Array.isArray(data.data)) results = data.data;
+      else if (data?.results?.data && Array.isArray(data.results.data)) results = data.results.data;
+      else if (data?.results && Array.isArray(data.results)) results = data.results;
+      else if (Array.isArray(data)) results = data;
+
+      setBans(results);
     } catch (err) {
       setPageError(extractError(err));
     } finally { setLoading(false); }
@@ -389,7 +404,7 @@ export default function DebtBansPage() {
         </div>
         {canManage && (
           <button onClick={openCreate}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-blue-200">
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-blue-200 w-full sm:w-auto">
             <Plus className="h-4 w-4" /> Ban User
           </button>
         )}
@@ -435,20 +450,20 @@ export default function DebtBansPage() {
               onChange={e => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as any)}
-              className="px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white">
+              className="flex-1 sm:flex-none px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white">
               <option value="all">All Types</option>
               <option value="student">Students</option>
               <option value="staff">Staff</option>
             </select>
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}
-              className="px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white">
+              className="flex-1 sm:flex-none px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white">
               <option value="all">All Statuses</option>
-              <option value="active">Currently Banned</option>
+              <option value="active">Active Bans</option>
               <option value="lifted">Lifted</option>
             </select>
-            <button onClick={fetchData} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors" title="Refresh">
+            <button onClick={fetchData} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors shrink-0" title="Refresh">
               <RefreshCw className="h-4 w-4" />
             </button>
           </div>
@@ -488,13 +503,13 @@ export default function DebtBansPage() {
           </div>
         ) : (
           <>
-            {/* Table header */}
-            <div className="grid grid-cols-[1fr_auto_1.5fr_auto_auto] items-center gap-x-6 gap-y-4 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
+            {/* Desktop Table header */}
+            <div className="hidden sm:grid grid-cols-[1.5fr_100px_2fr_100px_50px] items-center gap-x-4 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Person</span>
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Type</span>
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Reason</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-center">Status</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Edit</span>
             </div>
 
             <div className="divide-y divide-slate-50">
@@ -502,35 +517,46 @@ export default function DebtBansPage() {
                 const isStudent = !!ban.student;
                 const name = ban.student_name || ban.staff_name || '—';
                 return (
-                  <div key={ban.id} className="grid grid-cols-[1fr_auto_1.5fr_auto_auto] items-center gap-x-6 gap-y-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
+                  <div key={ban.id} className="flex flex-col sm:grid sm:grid-cols-[1.5fr_100px_2fr_100px_50px] items-start sm:items-center gap-3 sm:gap-x-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
 
                     {/* Person */}
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0 w-full">
                       <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isStudent ? 'bg-violet-100' : 'bg-amber-100'}`}>
                         {isStudent ? <GraduationCap className="h-4 w-4 text-violet-600" /> : <UserCog className="h-4 w-4 text-amber-600" />}
                       </div>
-                      <p className="font-semibold text-slate-900 truncate">{name}</p>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 truncate">{name}</p>
+                        <span className={`sm:hidden inline-block mt-0.5 px-2 py-0.5 text-[10px] font-bold rounded flex-shrink-0 ${isStudent ? 'bg-violet-100 text-violet-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {isStudent ? 'Student' : 'Staff'}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Type */}
-                    <span className={`px-2 py-1 text-xs font-bold rounded-full whitespace-nowrap ${isStudent ? 'bg-violet-100 text-violet-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {/* Type (Desktop only) */}
+                    <span className={`hidden sm:inline-flex px-2.5 py-1 text-xs font-bold rounded-xl justify-center ${isStudent ? 'bg-violet-100 text-violet-700' : 'bg-amber-100 text-amber-700'}`}>
                       {isStudent ? 'Student' : 'Staff'}
                     </span>
 
                     {/* Reason */}
-                    <p className="text-sm text-slate-500 truncate pl-2" title={ban.reason}>{ban.reason}</p>
+                    <div className="w-full pl-12 sm:pl-0">
+                      <span className="sm:hidden text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Reason</span>
+                      <p className="text-sm text-slate-600 leading-relaxed sm:truncate" title={ban.reason}>{ban.reason}</p>
+                    </div>
 
-                    {/* Status */}
-                    <StatusBadge value={ban.is_active} />
+                    {/* Status and Action (Mobile aligned) */}
+                    <div className="flex items-center justify-between w-full pl-12 sm:pl-0 sm:contents">
+                       <div className="sm:flex sm:justify-center">
+                         <StatusBadge value={ban.is_active} />
+                       </div>
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-1">
-                      {canManage && (
-                        <button onClick={() => openEdit(ban)} title="Edit reason / toggle ban"
-                          className="p-2 rounded-lg text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all">
-                          <Edit3 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                       <div className="flex items-center justify-end sm:justify-end">
+                         {canManage && (
+                           <button onClick={() => openEdit(ban)} title="Edit reason / toggle ban"
+                             className="p-1.5 rounded-lg text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all">
+                             <Edit3 className="h-3.5 w-3.5" />
+                           </button>
+                         )}
+                       </div>
                     </div>
                   </div>
                 );
