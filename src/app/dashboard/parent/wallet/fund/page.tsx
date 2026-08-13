@@ -269,7 +269,7 @@ export default function ParentFundWalletPage() {
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  <UtensilsCrossed className="h-3.5 w-3.5" /> Canteen
+                  <UtensilsCrossed className="h-3.5 w-3.5" /> Tuck Shop
                 </button>
                 <button
                   type="button"
