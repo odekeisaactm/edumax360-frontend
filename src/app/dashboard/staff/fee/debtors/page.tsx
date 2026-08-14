@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'reac
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { feeAPI, academicCalendarAPI, academicAPI } from '@/lib/api';
+import { billingLedgerAPI } from '@/lib/fee.service';
 import {
   AlertCircle, Check, Loader2, X, Search, FilterX, RefreshCw,
   ChevronLeft, ChevronRight, Eye, Users, User, ArrowRight, MessageCircle, Mail
@@ -76,9 +77,7 @@ function LedgerDrawer({ item, mode, onClose, router, pathname }: any) {
   });
 
   const handleApplyWaiver = (studentId: number) => {
-    // Route to waivers page, auto-select this student, and provide the deep link back to this exact drawer
-    const returnUrl = encodeURIComponent(pathname);
-    router.push(`/dashboard/staff/fee/waivers?student_id=${studentId}&return_to=${returnUrl}&return_student_id=${item.id}`);
+    router.push(`/dashboard/staff/fee/waivers?student_id=${studentId}`);
   };
 
   return (
@@ -249,18 +248,38 @@ function DebtorsContent() {
     }
   }, [searchParams, data, loading, router, pathname]);
 
-  // 4. Bulk Reminders
+  // 4. Single & Bulk Reminders
+  const handleSingleRemind = async (id: number) => {
+    const row = data.find(d => d.id === id);
+    const parent_id = mode === 'parent' ? id : row?.parent_id || id;
+    try {
+      await billingLedgerAPI.bulkAction({
+        action: 'send_reminders',
+        target_type: 'parent',
+        target_ids: [parent_id],
+        session_id: sessionFilter ? Number(sessionFilter) : undefined,
+        period_id: periodFilter ? Number(periodFilter) : undefined,
+      });
+      showToast('success', 'Reminder queued for dispatch successfully.');
+    } catch (err) {
+      showToast('error', extractError(err));
+    }
+  };
+
   const handleBulkRemind = async () => {
     if (selectedIds.length === 0) return;
     setBulkActionLoading(true);
     try {
-      // Assuming feeAPI.bulkLedgerAction exists: posts to /api/fee/ledger/ with { action: 'send_reminders', target_type: mode, target_ids: selectedIds, ... }
-      await feeAPI.bulkLedgerAction({
+      const parent_ids = mode === 'parent' 
+        ? selectedIds 
+        : selectedIds.map(id => data.find(d => d.id === id)?.parent_id || id);
+        
+      await billingLedgerAPI.bulkAction({
         action: 'send_reminders',
-        target_type: mode,
-        target_ids: selectedIds,
-        session_id: sessionFilter || undefined,
-        period_id: periodFilter || undefined,
+        target_type: 'parent',
+        target_ids: parent_ids,
+        session_id: sessionFilter ? Number(sessionFilter) : undefined,
+        period_id: periodFilter ? Number(periodFilter) : undefined,
       });
       showToast('success', 'Reminders queued for dispatch successfully.');
       setSelectedIds([]);
@@ -459,9 +478,14 @@ function DebtorsContent() {
                         {fmtMoney(row.grand_total_outstanding)}
                       </td>
                       <td className="px-4 py-4 text-right">
-                        <button onClick={() => setSelectedLedger(row)} className="px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900 font-semibold text-xs rounded-lg transition-colors flex items-center gap-1 ml-auto">
-                          View <ArrowRight className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={(e) => { e.stopPropagation(); handleSingleRemind(row.id); }} className="p-1.5 text-slate-400 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 rounded transition-colors" title="Send Reminder">
+                            <Mail className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => setSelectedLedger(row)} className="px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900 font-semibold text-xs rounded-lg transition-colors flex items-center gap-1">
+                            View <ArrowRight className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

@@ -156,6 +156,43 @@ export const authAPI = {
       throw new Error(error.response?.data?.error || 'Failed to fetch permissions');
     }
   },
+
+  getProfile: async () => {
+    const response = await api.get('/api/auth/profile/');
+    return response.data;
+  },
+
+  updateProfile: async (data: FormData | Record<string, any>) => {
+    const isFormData = data instanceof FormData;
+    const response = await api.patch('/api/auth/profile/', data, {
+      headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : {},
+    });
+    return response.data;
+  },
+
+  changePassword: async (data: {
+    old_password: string;
+    new_password: string;
+    confirm_password: string;
+  }) => {
+    const response = await api.post('/api/auth/change-password/', data);
+    return response.data;
+  },
+
+  requestPasswordReset: async (data: { email?: string; username?: string }) => {
+    const response = await api.post('/api/auth/request-password-reset/', data);
+    return response.data;
+  },
+
+  resetPasswordConfirm: async (data: {
+    uid: string;
+    token: string;
+    new_password: string;
+    confirm_password: string;
+  }) => {
+    const response = await api.post('/api/auth/reset-password-confirm/', data);
+    return response.data;
+  },
 };
 
 export const schoolInfoAPI = {
@@ -2202,6 +2239,15 @@ export * from './finance.service';
 export * from './salary_management.service';
 
 
+// ─── School Configuration API ───────────────────────────────────────────────
+export const schoolConfigAPI = {
+  /** Central Celery worker health-check — ping-pong with 4-second timeout */
+  getCeleryStatus: async (): Promise<{ alive: boolean; message: string }> => {
+    const response = await api.get('/api/school/celery-status/');
+    return response.data;
+  },
+};
+
 // Export the default api instance for custom requests
 export { api };
 export default api;
@@ -2304,3 +2350,5 @@ export const feeAPI = {
   transferWalletField: async (d?: any) => financeAPI.walletTransfer?.create(d) || {},
   transferWalletSibling: async (d?: any) => financeAPI.walletTransfer?.create(d) || {},
 };
+export { bankDetailsAPI } from './finance.service';
+

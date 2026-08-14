@@ -423,16 +423,28 @@ function LedgerContent() {
       targetIds = viewMode === 'parent' ? displayData.map(p => p.parent_id) : allStudentsInLedger.map(s => s.id);
     }
 
-    if (targetIds.length === 0) return showToast('error', 'No targets selected.');
+    if (scope === 'selected' && targetIds.length === 0) return showToast('error', 'No targets selected.');
+    
     setDataLoading(true);
     try {
-      await api.post('/api/fee/ledger/', {
+      const payload: any = {
         action: actionType,
         target_type: viewMode === 'student' ? 'student' : 'parent',
-        target_ids: targetIds,
         session_id: Number(filterSessionId),
         period_id: Number(filterPeriodId)
-      });
+      };
+
+      if (scope === 'all') {
+        payload.send_to_all = true;
+        // Optionally pass additional filters if they existed on this page
+        if (filterStatus === 'unpaid') {
+           payload.debtors_only = true;
+        }
+      } else {
+        payload.target_ids = targetIds;
+      }
+
+      await api.post('/api/fee/ledger/', payload);
       // FIX: message updated to reflect the send is now queued (backend .delay()) rather
       // than guaranteed complete synchronously.
       showToast('success', `Bulk action '${actionType}' queued for ${targetIds.length} records.`);

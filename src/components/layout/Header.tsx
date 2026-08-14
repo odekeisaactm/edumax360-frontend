@@ -234,7 +234,25 @@ export const Header: React.FC<HeaderProps> = ({ title, onMenuClick }) => {
                   </div>
 
                   <div className="py-1.5">
+                    <Link
+                      href={profileLink}
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors"
+                    >
+                      <User className="h-4 w-4 text-slate-400" />
+                      My Profile
+                    </Link>
 
+                    <Link
+                      href={changePasswordLink}
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors"
+                    >
+                      <LockKeyhole className="h-4 w-4 text-slate-400" />
+                      Change Password
+                    </Link>
+
+                    <div className="my-1 mx-3 border-t border-slate-100" />
 
                     <button
                       onClick={() => { setShowProfileMenu(false); logout(); }}
@@ -244,6 +262,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onMenuClick }) => {
                       Sign out
                     </button>
                   </div>
+
                 </div>
               )}
             </div>

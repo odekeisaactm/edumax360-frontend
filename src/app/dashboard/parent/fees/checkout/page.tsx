@@ -4,11 +4,18 @@ import React, { useState, useEffect, useCallback, Suspense, useMemo } from 'reac
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 // Note: financeAPI is removed, we only need feeAPI and academicCalendarAPI
-import api, { feeAPI, academicCalendarAPI } from '@/lib/api';
+import api, { feeAPI, academicCalendarAPI, gatewayAPI, onlinePaymentAPI } from '@/lib/api';
 import {
   ArrowLeft, Loader2, Check, AlertCircle, Upload, Wallet, X,
-  Building2, UserCircle, Eye, AlertTriangle, Info, UserCheck, Percent, HelpCircle
+  Building2, UserCircle, Eye, AlertTriangle, Info, UserCheck, Percent, HelpCircle, Globe
 } from 'lucide-react';
+
+declare global {
+  interface Window {
+    PaystackPop?: any;
+    FlutterwaveCheckout?: any;
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 let _toastId = 0;
@@ -22,6 +29,10 @@ function formatCurrency(amount: string | number | undefined): string {
 function toTitleCase(str: string): string {
   if (!str) return '';
   return str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substring(1).toLowerCase());
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 function smartTitleCase(str: string): string {
@@ -52,6 +63,7 @@ function extractError(err: any): string {
     if (d.detail) return String(d.detail);
     if (d.message) return String(d.message);
     if (d.non_field_errors) return (d.non_field_errors as string[]).join(' ');
+    return JSON.stringify(d); // Shows specific field errors like {"bank_account_id":["This field is required."]}
   }
   return err?.message || 'Checkout failed. Please try again.';
 }
@@ -134,6 +146,7 @@ function HelpModal({ onClose }: { onClose: () => void }) {
 function ParentCheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
 
   const urlSession = searchParams.get('session');
   const urlPeriod = searchParams.get('period');
@@ -174,7 +187,13 @@ function ParentCheckoutContent() {
   const [overpaymentTargetId, setOverpaymentTargetId] = useState<number | null>(null);
   const [splitPercentages, setSplitPercentages] = useState<Record<number, number>>({});
 
+  const [paymentMode, setPaymentMode] = useState<'offline' | 'online'>('offline');
+  const [billingEmail, setBillingEmail] = useState('');
+  const [isManualEmail, setIsManualEmail] = useState(false);
+  const [hasActiveGateway, setHasActiveGateway] = useState(false);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
 
   // ─── State: Modals ───
@@ -182,19 +201,50 @@ function ParentCheckoutContent() {
   const [warningModal, setWarningModal] = useState<{ warnings: string[]; action: 'preview' | 'submit' } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
 
+  // Dynamically Load Payment Gateway Scripts
+  useEffect(() => {
+    if (!document.getElementById('paystack-script')) {
+      const script = document.createElement('script');
+      script.id = 'paystack-script';
+      script.src = 'https://js.paystack.co/v1/inline.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+    if (!document.getElementById('flutterwave-script')) {
+      const script = document.createElement('script');
+      script.id = 'flutterwave-script';
+      script.src = 'https://checkout.flutterwave.com/v3.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user?.email) {
+      setBillingEmail(user.email);
+      setIsManualEmail(false);
+    } else {
+      setBillingEmail('');
+      setIsManualEmail(true);
+    }
+  }, [user?.email]);
+
   // ─── INIT ───
   useEffect(() => {
     const init = async () => {
       try {
-        const [sessData, curSessRaw, banksData] = await Promise.all([
+        const [sessData, curSessRaw, banksData, gatewaysData] = await Promise.all([
           academicCalendarAPI.listSessions(),
           academicCalendarAPI.getCurrentSession().catch(() => null),
           // Using our safe new public banks endpoint!
-          feeAPI.getBankAccounts().catch(() => [])
+          feeAPI.getBankAccounts({ is_active: true, account_type: 'bank' }).catch(() => []),
+          gatewayAPI.list().catch(() => [])
         ]);
 
         setSessions(Array.isArray(sessData) ? sessData : []);
-        setBanks(Array.isArray(banksData) ? banksData : []);
+        const filteredBanks = Array.isArray(banksData) ? banksData.filter((b: any) => b.purpose === 'fee_payment' || b.purpose === 'both') : [];
+        setBanks(filteredBanks);
+        setHasActiveGateway(Array.isArray(gatewaysData) && gatewaysData.some((g: any) => g.is_active));
 
         const curSess = curSessRaw?.data?.data || curSessRaw?.data || curSessRaw;
         const targetSessionId = urlSession || (curSess?.id ? curSess.id.toString() : (sessData[0]?.id?.toString() || ''));
@@ -499,14 +549,15 @@ function ParentCheckoutContent() {
 
   // ─── Validation ───
   const externalNeeded = tenderedKobo > 0;
-  const bankRequired = externalNeeded;
-  const proofRequired = externalNeeded;
+  const bankRequired = paymentMode === 'offline' && externalNeeded;
+  const proofRequired = paymentMode === 'offline' && externalNeeded;
   const overpaymentNeedsTarget = overpaymentKobo > 0 && wards.length > 1 && overpaymentMode === 'select' && !overpaymentTargetId;
 
   const canConfirm = totalAvailableKobo > 0
     && !(bankRequired && !bankAccountId)
     && !(proofRequired && !proofFile)
-    && !overpaymentNeedsTarget;
+    && !overpaymentNeedsTarget
+    && (paymentMode === 'offline' || (billingEmail && isValidEmail(billingEmail.trim())));
 
   // ─── Pre-submit Warnings ───
   const getPreSubmitWarnings = (): string[] => {
@@ -539,6 +590,74 @@ function ParentCheckoutContent() {
     handleSubmit();
   };
 
+  const handlePostPaymentReconciliation = async (txRef: string) => {
+    setIsVerifying(true);
+    try {
+      await onlinePaymentAPI.verifyLive(txRef);
+      showToast('success', 'Payment successfully verified and credited to your ledger!');
+      setTimeout(() => {
+        router.push('/dashboard/parent/fees/history');
+      }, 1500);
+    } catch (err) {
+      showToast('error', 'Payment verification failed or is pending. Please check transaction history.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const launchInlineCheckout = (gatewayRes: any, numAmount: number) => {
+    const provider = gatewayRes.provider;
+    const publicKey = gatewayRes.public_key;
+    const txRef = gatewayRes.reference;
+
+    if (provider === 'paystack') {
+      if (!window.PaystackPop) {
+        showToast('error', 'Paystack SDK failed to load. Redirecting via web checkout...');
+        if (gatewayRes.payment_url) window.location.href = gatewayRes.payment_url;
+        return;
+      }
+      const handler = window.PaystackPop.setup({
+        key: publicKey,
+        email: billingEmail.trim(),
+        amount: numAmount * 100, // Kobo
+        ref: txRef,
+        access_code: gatewayRes.access_code,
+        onClose: () => {
+          showToast('error', 'Online payment checkout canceled.');
+        },
+        callback: () => {
+          handlePostPaymentReconciliation(txRef);
+        },
+      });
+      handler.openIframe();
+    } else if (provider === 'flutterwave') {
+      if (!window.FlutterwaveCheckout) {
+        showToast('error', 'Flutterwave SDK failed to load. Redirecting via web checkout...');
+        if (gatewayRes.payment_url) window.location.href = gatewayRes.payment_url;
+        return;
+      }
+      window.FlutterwaveCheckout({
+        public_key: publicKey,
+        tx_ref: txRef,
+        amount: numAmount,
+        currency: 'NGN',
+        customer: { email: billingEmail.trim() },
+        onclose: () => {
+          showToast('error', 'Online payment checkout canceled.');
+        },
+        callback: () => {
+          handlePostPaymentReconciliation(txRef);
+        },
+      });
+    } else {
+      if (gatewayRes.payment_url) {
+        window.location.href = gatewayRes.payment_url;
+      } else {
+        showToast('error', 'Payment gateway did not return valid inline checkout credentials.');
+      }
+    }
+  };
+
   // ─── Submission ───
   const handleSubmit = async () => {
     setAttemptedSubmit(true);
@@ -547,6 +666,7 @@ function ParentCheckoutContent() {
       else if (bankRequired && !bankAccountId) showToast('error', 'Select the school bank account you transferred to.');
       else if (proofRequired && !proofFile) showToast('error', 'Upload your payment receipt.');
       else if (overpaymentNeedsTarget) showToast('error', 'Select which ward should receive the excess wallet credit.');
+      else if (paymentMode === 'online' && (!billingEmail || !isValidEmail(billingEmail))) showToast('error', 'Enter a valid billing email.');
       return;
     }
 
@@ -578,32 +698,44 @@ function ParentCheckoutContent() {
 
       const formData = new FormData();
       formData.append('total_amount', String(fromKobo(totalAvailableKobo)));
+      formData.append('mode', paymentMode);
 
       if (tenderedKobo > 0) {
         formData.append('external_amount', String(fromKobo(tenderedKobo)));
-        if (bankAccountId) formData.append('bank_account_id', bankAccountId);
-        if (reference) formData.append('reference', reference);
-        if (proofFile) formData.append('proof_of_payment', proofFile);
+        if (paymentMode === 'offline') {
+          if (bankAccountId) formData.append('bank_account_id', bankAccountId);
+          if (reference) formData.append('reference', reference);
+          if (proofFile) formData.append('proof_of_payment', proofFile);
+        }
       }
 
       formData.append('funding_sources', JSON.stringify(fundingSources));
       formData.append('allocations', JSON.stringify([...debtAllocations, ...overpayAllocPayload]));
 
       // ─── THE NEW SECURE ENDPOINT ───
-      await api.post('/api/fee/parent-submit-proof/', formData, {
+      const response = await api.post('/api/fee/parent-submit-proof/', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      showToast('success', 'Payment proof submitted successfully for confirmation!');
-      setShowPreview(false);
-
-      setTimeout(() => {
-        router.push('/dashboard/parent/fees/history');
-      }, 1500);
-
+      if (paymentMode === 'offline') {
+        showToast('success', 'Payment proof submitted successfully for confirmation!');
+        setShowPreview(false);
+        setTimeout(() => {
+          router.push('/dashboard/parent/fees/history');
+        }, 1500);
+      } else {
+        const createdRecord = response.data.data || response.data;
+        const gatewayRes = await onlinePaymentAPI.initiate({
+          payment_type: 'master_checkout',
+          payment_id: createdRecord.receipt_id || createdRecord.id || createdRecord.checkout_id,
+          amount: tenderedKobo / 100,
+          email: billingEmail.trim(),
+        });
+        setShowPreview(false);
+        launchInlineCheckout(gatewayRes, tenderedKobo / 100);
+      }
     } catch (err: any) {
       showToast('error', extractError(err));
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -725,8 +857,8 @@ function ParentCheckoutContent() {
             </div>
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3 shrink-0">
               <button onClick={() => setShowPreview(false)} className="px-5 py-2.5 font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-100">Cancel</button>
-              <button onClick={handleConfirmClick} disabled={isSubmitting || !canConfirm} className="px-6 py-2.5 font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 flex items-center gap-2 disabled:opacity-50">
-                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin"/> : <><Check className="w-4 h-4"/> Confirm &amp; Process</>}
+              <button onClick={handleConfirmClick} disabled={isSubmitting || isVerifying || !canConfirm} className={`px-6 py-2.5 font-bold text-white rounded-xl flex items-center gap-2 disabled:opacity-50 ${paymentMode === 'online' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                {isSubmitting || isVerifying ? <Loader2 className="w-4 h-4 animate-spin"/> : paymentMode === 'online' ? <><Globe className="w-4 h-4"/> Pay Online</> : <><Check className="w-4 h-4"/> Confirm &amp; Process</>}
               </button>
             </div>
           </div>
@@ -913,50 +1045,106 @@ function ParentCheckoutContent() {
             </div>
           )}
 
-          {/* Upload Proof Card */}
+          {/* Upload Proof / Payment Details Card */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-            <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-              <Upload className="w-4 h-4 text-indigo-500" /> Payment Proof Details
-            </h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                  School Bank Account Paid Into <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={bankAccountId}
-                  onChange={e => setBankAccountId(e.target.value)}
-                  className={`w-full px-3.5 py-3 border rounded-xl text-xs font-bold outline-none bg-slate-50 transition-colors ${attemptedSubmit && bankRequired && !bankAccountId ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
-                >
-                  <option value="">Select an account...</option>
-                  {banks.map(b => <option key={b.id} value={b.id}>{b.bank_name} - {b.account_number}</option>)}
-                </select>
-                {attemptedSubmit && bankRequired && !bankAccountId && (
-                  <p className="text-[10px] text-red-500 font-bold mt-1">Please select which account you paid into.</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                  Transfer Reference <span className="text-slate-300 font-medium normal-case">(optional)</span>
-                </label>
-                <input type="text" value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. TRF-2026-XXXX" className="w-full px-3.5 py-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50" />
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                Receipt / Screenshot Document <span className="text-red-500">*</span>
-              </label>
-              <label className={`flex items-center justify-center gap-3 w-full px-4 py-6 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 transition-all ${attemptedSubmit && proofRequired && !proofFile ? 'border-red-300 bg-red-50 text-red-600' : 'border-slate-200 bg-slate-50/50 text-slate-600'}`}>
-                <Upload className={`w-5 h-5 shrink-0 ${proofFile ? 'text-emerald-500' : 'text-slate-400'}`} />
-                <span className="font-bold text-sm truncate max-w-sm">{proofFile ? proofFile.name : 'Click to Browse File (PDF, JPG, PNG)'}</span>
-                <input type="file" accept="image/*,.pdf" className="hidden" onChange={e => setProofFile(e.target.files?.[0] || null)} required />
-              </label>
-              {attemptedSubmit && proofRequired && !proofFile && (
-                <p className="text-[10px] text-red-500 font-bold mt-1.5">Please upload your payment receipt.</p>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                {paymentMode === 'online' ? <Globe className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-indigo-500" />} 
+                {paymentMode === 'online' ? 'Online Payment Details' : 'Payment Proof Details'}
+              </h3>
+              {hasActiveGateway && (
+                <div className="flex bg-slate-100 p-0.5 rounded-lg text-xs font-semibold shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMode('offline')}
+                    className={`px-3 py-1.5 rounded-md transition-all ${paymentMode === 'offline' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    Offline
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMode('online')}
+                    className={`px-3 py-1.5 rounded-md transition-all ${paymentMode === 'online' ? 'bg-white text-blue-700 shadow-sm border border-slate-200 flex items-center gap-1.5' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    <Globe className="h-3.5 w-3.5" /> Pay Online
+                  </button>
+                </div>
               )}
             </div>
+
+            {paymentMode === 'offline' && (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                      School Bank Account Paid Into <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={bankAccountId}
+                      onChange={e => setBankAccountId(e.target.value)}
+                      className={`w-full px-3.5 py-3 border rounded-xl text-xs font-bold outline-none bg-slate-50 transition-colors ${attemptedSubmit && bankRequired && !bankAccountId ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
+                    >
+                      <option value="">Select an account...</option>
+                      {banks.map(b => <option key={b.id} value={b.id}>{b.bank_name} - {b.account_number}</option>)}
+                    </select>
+                    {attemptedSubmit && bankRequired && !bankAccountId && (
+                      <p className="text-[10px] text-red-500 font-bold mt-1">Please select which account you paid into.</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                      Transfer Reference <span className="text-slate-300 font-medium normal-case">(optional)</span>
+                    </label>
+                    <input type="text" value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. TRF-2026-XXXX" className="w-full px-3.5 py-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50" />
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Receipt / Screenshot Document <span className="text-red-500">*</span>
+                  </label>
+                  <label className={`flex items-center justify-center gap-3 w-full px-4 py-6 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 transition-all ${attemptedSubmit && proofRequired && !proofFile ? 'border-red-300 bg-red-50 text-red-600' : 'border-slate-200 bg-slate-50/50 text-slate-600'}`}>
+                    <Upload className={`w-5 h-5 shrink-0 ${proofFile ? 'text-emerald-500' : 'text-slate-400'}`} />
+                    <span className="font-bold text-sm truncate max-w-sm">{proofFile ? proofFile.name : 'Click to Browse File (PDF, JPG, PNG)'}</span>
+                    <input type="file" accept="image/*,.pdf" className="hidden" onChange={e => setProofFile(e.target.files?.[0] || null)} required />
+                  </label>
+                  {attemptedSubmit && proofRequired && !proofFile && (
+                    <p className="text-[10px] text-red-500 font-bold mt-1.5">Please upload your payment receipt.</p>
+                  )}
+                </div>
+              </>
+            )}
+
+            {paymentMode === 'online' && (
+              <div className="p-4 bg-indigo-50/30 rounded-xl border border-slate-100 mt-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">
+                  Billing Email <span className="text-red-500">*</span>
+                </label>
+                {isManualEmail ? (
+                  <div>
+                    <input
+                      type="email"
+                      required
+                      value={billingEmail}
+                      onChange={e => setBillingEmail(e.target.value)}
+                      placeholder="Enter payer email address"
+                      className="w-full px-3.5 py-2.5 text-sm font-medium border-2 border-slate-200 rounded-xl bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 outline-none"
+                    />
+                    <p className="text-[10px] text-amber-600 font-medium mt-1.5 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Required for online checkout receipt.</p>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between px-3.5 py-2.5 bg-white rounded-xl border-2 border-slate-200">
+                    <span className="font-bold text-sm text-slate-700 truncate">{billingEmail}</span>
+                    <button type="button" onClick={() => setIsManualEmail(true)} className="text-[11px] text-indigo-600 font-black hover:underline uppercase tracking-wider shrink-0 ml-2">
+                      Change
+                    </button>
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-500 font-medium mt-3 leading-relaxed">
+                  An online checkout window will open. Once payment is confirmed, the ledger will be automatically updated.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Overpayment Logic */}
@@ -1048,11 +1236,11 @@ function ParentCheckoutContent() {
               </div>
               <button
                 onClick={handleConfirmClick}
-                disabled={!canConfirm || isSubmitting}
-                title={!canConfirm ? 'Enter amount and upload receipt' : undefined}
-                className="px-7 py-3 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+                disabled={!canConfirm || isSubmitting || isVerifying}
+                title={!canConfirm ? 'Enter amount and fill required details' : undefined}
+                className={`px-7 py-3 text-white text-sm font-bold rounded-xl shadow-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2 ${paymentMode === 'online' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'}`}
               >
-                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin"/> : <><Check className="w-4 h-4"/> Submit Proof</>}
+                {isSubmitting || isVerifying ? <Loader2 className="w-5 h-5 animate-spin"/> : paymentMode === 'online' ? <><Globe className="w-4 h-4"/> Pay Online</> : <><Check className="w-4 h-4"/> Submit Proof</>}
               </button>
             </div>
           </div>

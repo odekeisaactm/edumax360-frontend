@@ -70,12 +70,13 @@ function StatCard({ title, value, icon: Icon, gradient, linkText, linkHref, dela
 // ============================================================================
 
 export default function ParentDashboard() {
-  const { selectedWard, loading: wardLoading } = useWard();
+  const { selectedWard, loading: wardLoading, refreshWards } = useWard();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    refreshWards(true);
+  }, [refreshWards]);
 
   if (!mounted || wardLoading) {
     return (
@@ -220,7 +221,7 @@ export default function ParentDashboard() {
           delay="0ms"
         />
         <StatCard
-          title="Canteen Wallet Balance"
+          title="TuckShop Wallet Balance"
           value={formatCurrency(Number(selectedWard.canteen_balance))}
           valueColor="text-amber-600"
           icon={Wallet}

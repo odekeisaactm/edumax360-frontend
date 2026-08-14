@@ -3,13 +3,21 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useWard } from '@/context/WardContext';
-import { financeAPI } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import { financeAPI, gatewayAPI, onlinePaymentAPI } from '@/lib/api';
 import {
   Loader2, AlertCircle, CheckCircle2,
   CreditCard, Upload, X, Landmark, FileText, ChevronDown,
-  ShieldCheck, Clock, ArrowRight, Banknote, UtensilsCrossed, ArrowLeft
+  ShieldCheck, Clock, ArrowRight, Banknote, UtensilsCrossed, ArrowLeft, Globe
 } from 'lucide-react';
 import type { SchoolBankDetail } from '@/lib/types';
+
+declare global {
+  interface Window {
+    PaystackPop?: any;
+    FlutterwaveCheckout?: any;
+  }
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 let _toastId = 0;
@@ -60,6 +68,7 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 export default function ParentFundWalletPage() {
   const router = useRouter();
   const { selectedWard } = useWard();
+  const { user } = useAuth();
 
   // Form State
   const [walletType, setWalletType] = useState<'canteen' | 'fee'>('canteen');
@@ -68,10 +77,16 @@ export default function ParentFundWalletPage() {
   const [tellerNumber, setTellerNumber] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
 
+  const [paymentMode, setPaymentMode] = useState<'offline' | 'online'>('offline');
+  const [billingEmail, setBillingEmail] = useState('');
+  const [isManualEmail, setIsManualEmail] = useState(false);
+  const [hasActiveGateway, setHasActiveGateway] = useState(false);
+
   // Data & Loading State
   const [banks, setBanks] = useState<SchoolBankDetail[]>([]);
   const [loadingBanks, setLoadingBanks] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -84,6 +99,24 @@ export default function ParentFundWalletPage() {
   // Derived
   const selectedBank = banks.find(b => String(b.id) === String(bankAccount));
 
+  // Dynamically Load Payment Gateway Scripts
+  useEffect(() => {
+    if (!document.getElementById('paystack-script')) {
+      const script = document.createElement('script');
+      script.id = 'paystack-script';
+      script.src = 'https://js.paystack.co/v1/inline.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+    if (!document.getElementById('flutterwave-script')) {
+      const script = document.createElement('script');
+      script.id = 'flutterwave-script';
+      script.src = 'https://checkout.flutterwave.com/v3.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
   // 1. Clear form whenever the selected ward changes
   useEffect(() => {
     setWalletType('canteen');
@@ -92,30 +125,112 @@ export default function ParentFundWalletPage() {
     setTellerNumber('');
     setProofFile(null);
     setError(null);
-  }, [selectedWard?.id]);
+    if (user?.email) {
+      setBillingEmail(user.email);
+      setIsManualEmail(false);
+    } else {
+      setBillingEmail('');
+      setIsManualEmail(true);
+    }
+  }, [selectedWard?.id, user?.email]);
 
-  // 2. Fetch Active Commercial Banks
+  // 2. Fetch Active Commercial Banks and Gateways
   useEffect(() => {
-    const fetchBanks = async () => {
+    const fetchBanksAndGateways = async () => {
       setLoadingBanks(true);
       try {
-        const bankData = await financeAPI.bankDetails.list({
-          is_active: true,
-          account_type: 'bank' as any,
-        });
-        setBanks(bankData);
+        const [bankData, gatewaysData] = await Promise.all([
+          financeAPI.bankDetails.list({
+            is_active: true,
+            account_type: 'bank' as any,
+          }),
+          gatewayAPI.list().catch(() => [])
+        ]);
+        const filteredBanks = bankData.filter((b: any) => b.purpose === 'wallet_funding' || b.purpose === 'both');
+        setBanks(filteredBanks);
+        setHasActiveGateway(Array.isArray(gatewaysData) && gatewaysData.some((g: any) => g.is_active));
       } catch (err) {
-        showToast('error', 'Failed to load school bank accounts.');
+        showToast('error', 'Failed to load school bank accounts or payment gateways.');
       } finally {
         setLoadingBanks(false);
       }
     };
-    fetchBanks();
+    fetchBanksAndGateways();
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setProofFile(e.target.files[0]);
+    }
+  };
+
+  // Post-payment verification for online payments
+  const handlePostPaymentReconciliation = async (txRef: string) => {
+    setIsVerifying(true);
+    try {
+      await onlinePaymentAPI.verifyLive(txRef);
+      showToast('success', 'Payment successfully verified and credited to your ward\'s wallet!');
+      setTimeout(() => {
+        router.push('/dashboard/parent/wallet/history');
+      }, 1500);
+    } catch (err) {
+      setError(extractError(err));
+      showToast('error', 'Payment verification failed or is pending. Please check transaction history.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const launchInlineCheckout = (gatewayRes: any, numAmount: number) => {
+    const provider = gatewayRes.provider;
+    const publicKey = gatewayRes.public_key;
+    const txRef = gatewayRes.reference;
+
+    if (provider === 'paystack') {
+      if (!window.PaystackPop) {
+        showToast('error', 'Paystack SDK failed to load. Redirecting via web checkout...');
+        if (gatewayRes.payment_url) window.location.href = gatewayRes.payment_url;
+        return;
+      }
+      const handler = window.PaystackPop.setup({
+        key: publicKey,
+        email: billingEmail.trim(),
+        amount: numAmount * 100, // Kobo
+        ref: txRef,
+        access_code: gatewayRes.access_code,
+        onClose: () => {
+          showToast('error', 'Online payment checkout canceled.');
+        },
+        callback: () => {
+          handlePostPaymentReconciliation(txRef);
+        },
+      });
+      handler.openIframe();
+    } else if (provider === 'flutterwave') {
+      if (!window.FlutterwaveCheckout) {
+        showToast('error', 'Flutterwave SDK failed to load. Redirecting via web checkout...');
+        if (gatewayRes.payment_url) window.location.href = gatewayRes.payment_url;
+        return;
+      }
+      window.FlutterwaveCheckout({
+        public_key: publicKey,
+        tx_ref: txRef,
+        amount: numAmount,
+        currency: 'NGN',
+        customer: { email: billingEmail.trim() },
+        onclose: () => {
+          showToast('error', 'Online payment checkout canceled.');
+        },
+        callback: () => {
+          handlePostPaymentReconciliation(txRef);
+        },
+      });
+    } else {
+      if (gatewayRes.payment_url) {
+        window.location.href = gatewayRes.payment_url;
+      } else {
+        setError('Payment gateway did not return valid inline checkout credentials.');
+      }
     }
   };
 
@@ -129,40 +244,69 @@ export default function ParentFundWalletPage() {
       setError('Please enter a valid amount greater than ₦0.00.');
       return;
     }
-    if (!bankAccount) {
-      setError('Please select the school bank account you paid into.');
-      return;
-    }
-    if (!proofFile) {
-      setError('A proof of payment document (receipt/screenshot) is strictly required.');
-      return;
+
+    if (paymentMode === 'offline') {
+      if (!bankAccount) {
+        setError('Please select the school bank account you paid into.');
+        return;
+      }
+      if (!proofFile) {
+        setError('A proof of payment document (receipt/screenshot) is strictly required.');
+        return;
+      }
+    } else {
+      if (!billingEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingEmail)) {
+        setError('A valid billing email address (e.g., name@domain.com) is strictly required by online payment gateways.');
+        return;
+      }
     }
 
     setIsSubmitting(true);
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('student', String(selectedWard.id));
-      formData.append('wallet_type', walletType);
-      formData.append('amount', String(numAmount));
-      formData.append('method', 'bank_transfer');
-      formData.append('mode', 'offline');
-      formData.append('bank_account', bankAccount);
-      formData.append('proof_of_payment', proofFile);
+      if (paymentMode === 'offline') {
+        const formData = new FormData();
+        formData.append('student', String(selectedWard.id));
+        formData.append('wallet_type', walletType);
+        formData.append('amount', String(numAmount));
+        formData.append('method', 'bank_transfer');
+        formData.append('mode', 'offline');
+        formData.append('bank_account', bankAccount);
+        formData.append('proof_of_payment', proofFile as Blob);
 
-      if (tellerNumber.trim()) formData.append('teller_number', tellerNumber.trim());
+        if (tellerNumber.trim()) formData.append('teller_number', tellerNumber.trim());
 
-      await financeAPI.studentFunding.create(formData);
+        await financeAPI.studentFunding.create(formData);
 
-      showToast('success', `Deposit of ₦${numAmount.toLocaleString()} submitted successfully.`);
+        showToast('success', `Deposit of ₦${numAmount.toLocaleString()} submitted successfully.`);
 
-      setTimeout(() => {
-        router.push('/dashboard/parent/wallet/history');
-      }, 1000);
+        setTimeout(() => {
+          router.push('/dashboard/parent/wallet/history');
+        }, 1000);
+      } else {
+        const pendingPayload = {
+          student: selectedWard.id,
+          wallet_type: walletType,
+          amount: numAmount,
+          method: 'online_gateway',
+          mode: 'online',
+        };
 
+        const createdRecord = await financeAPI.studentFunding.create(pendingPayload);
+
+        const gatewayRes = await onlinePaymentAPI.initiate({
+          payment_type: 'student_funding',
+          payment_id: createdRecord.id,
+          amount: numAmount,
+          email: billingEmail.trim(),
+        });
+
+        launchInlineCheckout(gatewayRes, numAmount);
+      }
     } catch (err) {
       setError(extractError(err));
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -208,10 +352,28 @@ export default function ParentFundWalletPage() {
                 Fund Wallet
               </h1>
               <p className="text-[11px] font-medium text-slate-500 truncate">
-                Upload payment proof to top-up
+                Upload payment proof or pay online to top-up
               </p>
             </div>
           </div>
+          {hasActiveGateway && (
+            <div className="flex bg-slate-100 p-0.5 rounded-lg text-xs font-semibold shrink-0">
+              <button
+                type="button"
+                onClick={() => setPaymentMode('offline')}
+                className={`px-3 py-1.5 rounded-md transition-all ${paymentMode === 'offline' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                Offline
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMode('online')}
+                className={`px-3 py-1.5 rounded-md transition-all ${paymentMode === 'online' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200 flex items-center gap-1.5' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                <Globe className="h-3.5 w-3.5" /> Pay Online
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -325,128 +487,163 @@ export default function ParentFundWalletPage() {
               </div>
             </div>
 
-            {/* ─── Bank Account Selection ─── */}
-            <div className="px-4 sm:px-5 py-3.5">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">
-                Paid Into Bank <span className="text-red-500">*</span>
-              </label>
+            {paymentMode === 'offline' && (
+              <>
+                {/* ─── Bank Account Selection ─── */}
+                <div className="px-4 sm:px-5 py-3.5 border-t border-slate-100">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">
+                    Paid Into Bank <span className="text-red-500">*</span>
+                  </label>
 
-              {loadingBanks ? (
-                <div className="flex items-center gap-2 px-3 py-2.5 border-2 border-slate-100 bg-slate-50 rounded-xl text-xs text-slate-400 font-medium">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />
-                  Fetching bank accounts...
-                </div>
-              ) : (
-                <>
-                  <div className="relative">
-                    <Landmark className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-                    <select
-                      value={bankAccount}
-                      onChange={(e) => setBankAccount(e.target.value)}
-                      className="w-full pl-9 pr-9 py-2.5 text-sm font-bold border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 outline-none appearance-none text-slate-700 bg-slate-50/50 transition-all cursor-pointer"
-                      required
-                    >
-                      <option value="" disabled>
-                        Select bank account
-                      </option>
-                      {banks.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.bank_name} — {b.account_number}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-                  </div>
-
-                  {/* Selected bank detail */}
-                  {selectedBank && (
-                    <div className="mt-2.5 p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl animate-in slide-in-from-top-1 duration-200">
-                      <div className="flex items-start gap-2.5">
-                        <div className="w-7 h-7 bg-emerald-100 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
-                          <Landmark className="h-3.5 w-3.5 text-emerald-600" />
-                        </div>
-                        <div className="flex-1 min-w-0 space-y-1">
-                          <p className="text-xs font-black text-emerald-900">
-                            {selectedBank.bank_name}
-                          </p>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold text-emerald-600 uppercase">Acct:</span>
-                            <span className="text-xs font-mono font-black text-emerald-900 tracking-wider">
-                              {selectedBank.account_number}
-                            </span>
-                          </div>
-                          <p className="text-[11px] font-medium text-emerald-700 truncate">
-                            {selectedBank.account_name}
-                          </p>
-                        </div>
-                        <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                      </div>
+                  {loadingBanks ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 border-2 border-slate-100 bg-slate-50 rounded-xl text-xs text-slate-400 font-medium">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />
+                      Fetching bank accounts...
                     </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* ─── Proof of Payment Upload — compact ─── */}
-            <div className="px-4 sm:px-5 py-3.5">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">
-                Proof of Payment <span className="text-red-500">*</span>
-              </label>
-              <div
-                className={`relative flex items-center gap-3 px-3.5 py-2.5 border-2 border-dashed rounded-xl transition-all duration-200 cursor-pointer ${
-                  proofFile
-                    ? 'border-emerald-300 bg-emerald-50/40'
-                    : 'border-slate-300 hover:border-indigo-400 bg-slate-50/50'
-                }`}
-              >
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={handleFileChange}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  required
-                />
-                <div
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                    proofFile
-                      ? 'bg-emerald-100 text-emerald-600'
-                      : 'bg-white border border-slate-200 text-slate-400'
-                  }`}
-                >
-                  {proofFile ? (
-                    <CheckCircle2 className="h-4 w-4" />
                   ) : (
-                    <Upload className="h-3.5 w-3.5" />
+                    <>
+                      <div className="relative">
+                        <Landmark className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                        <select
+                          value={bankAccount}
+                          onChange={(e) => setBankAccount(e.target.value)}
+                          className="w-full pl-9 pr-9 py-2.5 text-sm font-bold border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 outline-none appearance-none text-slate-700 bg-slate-50/50 transition-all cursor-pointer"
+                          required
+                        >
+                          <option value="" disabled>
+                            Select bank account
+                          </option>
+                          {banks.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.bank_name} — {b.account_number}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                      </div>
+
+                      {/* Selected bank detail */}
+                      {selectedBank && (
+                        <div className="mt-2.5 p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl animate-in slide-in-from-top-1 duration-200">
+                          <div className="flex items-start gap-2.5">
+                            <div className="w-7 h-7 bg-emerald-100 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
+                              <Landmark className="h-3.5 w-3.5 text-emerald-600" />
+                            </div>
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <p className="text-xs font-black text-emerald-900">
+                                {selectedBank.bank_name}
+                              </p>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-bold text-emerald-600 uppercase">Acct:</span>
+                                <span className="text-xs font-mono font-black text-emerald-900 tracking-wider">
+                                  {selectedBank.account_number}
+                                </span>
+                              </div>
+                              <p className="text-[11px] font-medium text-emerald-700 truncate">
+                                {selectedBank.account_name}
+                              </p>
+                            </div>
+                            <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
-                <div className="min-w-0">
-                  <p className={`text-xs font-bold truncate ${proofFile ? 'text-emerald-800' : 'text-slate-600'}`}>
-                    {proofFile ? proofFile.name : 'Tap to attach receipt'}
-                  </p>
-                  <p className="text-[10px] text-slate-400">PDF, JPG, PNG · Max 5MB</p>
-                </div>
-              </div>
-            </div>
 
-            {/* ─── Optional Teller Number — full width ─── */}
-            <div className="px-4 sm:px-5 py-3.5">
-              <div className="flex items-center gap-2 mb-2.5">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  Teller Number
+                {/* ─── Proof of Payment Upload — compact ─── */}
+                <div className="px-4 sm:px-5 py-3.5 border-t border-slate-100">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">
+                    Proof of Payment <span className="text-red-500">*</span>
+                  </label>
+                  <div
+                    className={`relative flex items-center gap-3 px-3.5 py-2.5 border-2 border-dashed rounded-xl transition-all duration-200 cursor-pointer ${
+                      proofFile
+                        ? 'border-emerald-300 bg-emerald-50/40'
+                        : 'border-slate-300 hover:border-indigo-400 bg-slate-50/50'
+                    }`}
+                  >
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={handleFileChange}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      required
+                    />
+                    <div
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                        proofFile
+                          ? 'bg-emerald-100 text-emerald-600'
+                          : 'bg-white border border-slate-200 text-slate-400'
+                      }`}
+                    >
+                      {proofFile ? (
+                        <CheckCircle2 className="h-4 w-4" />
+                      ) : (
+                        <Upload className="h-3.5 w-3.5" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-xs font-bold truncate ${proofFile ? 'text-emerald-800' : 'text-slate-600'}`}>
+                        {proofFile ? proofFile.name : 'Tap to attach receipt'}
+                      </p>
+                      <p className="text-[10px] text-slate-400">PDF, JPG, PNG · Max 5MB</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ─── Optional Teller Number — full width ─── */}
+                <div className="px-4 sm:px-5 py-3.5 border-t border-slate-100">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      Teller Number
+                    </label>
+                    <span className="text-[9px] font-bold text-slate-300 uppercase">Optional</span>
+                  </div>
+                  <div className="relative">
+                    <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-300" />
+                    <input
+                      type="text"
+                      value={tellerNumber}
+                      onChange={(e) => setTellerNumber(e.target.value)}
+                      className="w-full pl-8 pr-3 py-2.5 text-sm font-medium border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 outline-none bg-slate-50/50 transition-all placeholder:text-slate-300"
+                      placeholder="Enter teller number if available"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {paymentMode === 'online' && (
+              <div className="px-4 sm:px-5 py-4 border-t border-slate-100 bg-indigo-50/30">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">
+                  Billing Email <span className="text-red-500">*</span>
                 </label>
-                <span className="text-[9px] font-bold text-slate-300 uppercase">Optional</span>
+                {isManualEmail ? (
+                  <div>
+                    <input
+                      type="email"
+                      required
+                      value={billingEmail}
+                      onChange={e => setBillingEmail(e.target.value)}
+                      placeholder="Enter payer email address"
+                      className="w-full px-3.5 py-2.5 text-sm font-medium border-2 border-slate-200 rounded-xl bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 outline-none"
+                    />
+                    <p className="text-[10px] text-amber-600 font-medium mt-1.5 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Required for online checkout receipt.</p>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between px-3.5 py-2.5 bg-white rounded-xl border-2 border-slate-200">
+                    <span className="font-bold text-sm text-slate-700 truncate">{billingEmail}</span>
+                    <button type="button" onClick={() => setIsManualEmail(true)} className="text-[11px] text-indigo-600 font-black hover:underline uppercase tracking-wider shrink-0 ml-2">
+                      Change
+                    </button>
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-500 font-medium mt-3 leading-relaxed">
+                  An online checkout window will open. Once payment is confirmed, your ward's wallet will be funded automatically.
+                </p>
               </div>
-              <div className="relative">
-                <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-300" />
-                <input
-                  type="text"
-                  value={tellerNumber}
-                  onChange={(e) => setTellerNumber(e.target.value)}
-                  className="w-full pl-8 pr-3 py-2.5 text-sm font-medium border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 outline-none bg-slate-50/50 transition-all placeholder:text-slate-300"
-                  placeholder="Enter teller number if available"
-                />
-              </div>
-            </div>
+            )}
           </div>
 
           {/* ── Error Banner ── */}
@@ -469,7 +666,9 @@ export default function ParentFundWalletPage() {
           <div className="mx-4 sm:mx-5 mt-3 flex items-start gap-2 bg-amber-50/70 border border-amber-200 rounded-xl p-3">
             <Clock className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
             <p className="text-[11px] text-amber-800 font-medium leading-relaxed">
-              Deposits are subject to verification. Your wallet balance will update once the school confirms your payment.
+              {paymentMode === 'offline' 
+                ? 'Deposits are subject to verification. Your wallet balance will update once the school confirms your payment.' 
+                : 'Your wallet will be credited automatically upon successful online payment confirmation.'}
             </p>
           </div>
 
@@ -477,12 +676,21 @@ export default function ParentFundWalletPage() {
           <div className="p-4 sm:p-5 pt-3">
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="w-full flex items-center justify-center gap-2.5 py-3 text-sm font-black text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-lg shadow-indigo-200 hover:shadow-indigo-300 active:scale-[0.99]"
+              disabled={isSubmitting || isVerifying}
+              className={`w-full flex items-center justify-center gap-2.5 py-3 text-sm font-black text-white rounded-xl disabled:opacity-50 transition-all shadow-lg active:scale-[0.99] ${
+                paymentMode === 'online' 
+                  ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200 hover:shadow-blue-300' 
+                  : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200 hover:shadow-indigo-300'
+              }`}
             >
-              {isSubmitting ? (
+              {isSubmitting || isVerifying ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Processing Deposit...
+                  <Loader2 className="h-4 w-4 animate-spin" /> {isVerifying ? 'Verifying...' : 'Processing...'}
+                </>
+              ) : paymentMode === 'online' ? (
+                <>
+                  <Globe className="h-4 w-4" /> Pay Online
+                  <ArrowRight className="h-4 w-4" />
                 </>
               ) : (
                 <>

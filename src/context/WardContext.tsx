@@ -19,7 +19,7 @@ interface WardContextType {
   selectedWard: Ward | null;
   setSelectedWard: (ward: Ward) => void;
   loading: boolean;
-  refreshWards: () => Promise<void>;
+  refreshWards: (silent?: boolean) => Promise<void>;
 }
 
 const WardContext = createContext<WardContextType | undefined>(undefined);
@@ -29,8 +29,8 @@ export function WardProvider({ children }: { children: ReactNode }) {
   const [selectedWard, setSelectedWardState] = useState<Ward | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const refreshWards = useCallback(async () => {
-    setLoading(true);
+  const refreshWards = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       // Use your exact endpoint
       const response = await api.get('/api/student/parents/my-wards/');
@@ -54,7 +54,7 @@ export function WardProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error("Failed to fetch wards", err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 

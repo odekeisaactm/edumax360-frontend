@@ -7,7 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { SOFTWARE_NAME } from '@/lib/constants';
 import {
   Home, Eye, CreditCard, Upload, History, Wallet, DollarSign, Store, ShoppingCart,
-  User, Users, Phone, LogOut, ChevronDown, ChevronRight, GraduationCap, Award, Layers
+  User, Users, Phone, LogOut, ChevronDown, ChevronRight, GraduationCap, Award, Layers, Lock, Landmark
 } from 'lucide-react';
 
 interface NavItem {
@@ -128,6 +128,31 @@ export function ParentSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: (
           current: isCurrentPath('/dashboard/parent/inventory/purchases'),
         },
         // You can easily drop in Cafeteria and Inventory Collection here later!
+      ],
+    },
+    {
+      name: 'School Banks',
+      href: '/dashboard/parent/banks',
+      icon: <Landmark className="h-5 w-5" />,
+      current: pathname === '/dashboard/parent/banks' || pathname.startsWith('/dashboard/parent/banks/'),
+    },
+    {
+      name: 'Account',
+      href: '#',
+      icon: <User className="h-5 w-5" />,
+      children: [
+        {
+          name: 'My Profile',
+          href: '/dashboard/parent/profile',
+          icon: <User className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/parent/profile'),
+        },
+        {
+          name: 'Change Password',
+          href: '/dashboard/parent/change-password',
+          icon: <Lock className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/parent/change-password'),
+        },
       ],
     },
   ];

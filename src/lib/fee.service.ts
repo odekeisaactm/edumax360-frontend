@@ -636,10 +636,11 @@ export const receiptsAPI = {
       throw new Error(getDrfError(error));
     }
   },
-  getPublicBanks: async (): Promise<any[]> => {
-    const response = await api.get(`${FEE_API_BASE}/public-banks/`);
+  getPublicBanks: async (params?: { purpose?: 'fee_payment' | 'wallet_funding' }): Promise<any[]> => {
+    const response = await api.get(`${FEE_API_BASE}/public-banks/`, { params });
     return response.data;
   },
+
 };
 
 
@@ -729,10 +730,16 @@ export const billingLedgerAPI = {
   bulkAction: async (payload: {
     action: 'send_reminders' | 'send_summaries';
     target_type: 'parent' | 'student';
-    target_ids: number[];
-    session_id: number;
-    period_id: number;
-  }): Promise<{ detail: string }> => {
+    // Either explicit target_ids OR send_to_all=true with filter params
+    target_ids?: number[];
+    send_to_all?: boolean;
+    session_id?: number;
+    period_id?: number;
+    class_id?: number;
+    section_id?: number;
+    debtors_only?: boolean;
+    min_debt?: number;
+  }): Promise<{ detail: string; recipient_count?: number }> => {
     const response = await api.post(`${FEE_API_BASE}/ledger/`, payload);
     return response.data;
   }

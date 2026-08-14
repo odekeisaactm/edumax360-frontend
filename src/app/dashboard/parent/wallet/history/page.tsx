@@ -100,7 +100,7 @@ function triggerPrintReceipt(item: any, schoolName?: string) {
   <div class="row"><span>Credited To:</span><span class="bold">${personName}</span></div>
   <div class="row"><span>ID Number:</span><span>${regNo || 'N/A'}</span></div>
   <div class="row"><span>Wallet Type:</span><span class="bold uppercase">${item.wallet_type}</span></div>
-  <div class="row"><span>Payment Method:</span><span class="capitalize">${item.method} (${item.mode})</span></div>
+  <div class="row"><span>Payment Method:</span><span class="capitalize">${item.method === 'online_gateway' ? 'Online Gateway' : item.method?.replace(/_/g, ' ') || item.method} (${item.mode})</span></div>
   <div class="amount">${fmtMoney(item.amount)}</div>
   <div class="border-b"></div>
   <div class="text-center" style="font-size:11px;margin-top:16px;">Thank you for your payment.<br/>Printed on ${new Date().toLocaleString()}</div>
@@ -214,7 +214,7 @@ function AuditDrawer({ item, onClose, schoolName }: any) {
             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Transaction Details</h4>
             <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 text-sm bg-white shadow-sm">
               <div className="p-3.5 flex justify-between"><span className="text-slate-500 font-medium">Channel Mode</span><span className="font-bold capitalize text-slate-800">{item.mode}</span></div>
-              <div className="p-3.5 flex justify-between"><span className="text-slate-500 font-medium">Method</span><span className="font-bold capitalize text-slate-800">{item.method}</span></div>
+              <div className="p-3.5 flex justify-between"><span className="text-slate-500 font-medium">Method</span><span className="font-bold capitalize text-slate-800">{item.method === 'online_gateway' ? 'Online Gateway' : item.method?.replace(/_/g, ' ') || item.method}</span></div>
               {item.teller_number && (
                 <div className="p-3.5 flex justify-between"><span className="text-slate-500 font-medium">Teller Number</span><span className="font-mono font-bold text-slate-800">{item.teller_number}</span></div>
               )}
