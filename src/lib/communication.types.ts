@@ -372,3 +372,48 @@ export interface InAppNotificationResponse {
   unread_count: number;
   notifications: InAppNotification[];
 }
+
+export interface CustomContact {
+  id: number;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+  whatsapp_number: string | null;
+  tag: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+// ============================================================================
+// MARQUEE MESSAGES
+// ============================================================================
+
+export type MarqueeTargetType = 'STUDENT' | 'STAFF' | 'PARENT' | 'ALL';
+export type MarqueeDisplayLocation = 'DASHBOARD_ONLY' | 'ALL_PAGES';
+export type MarqueeDismissalBehavior = 'CANNOT_DISMISS' | 'SESSION' | 'PERMANENT';
+
+export interface MarqueeMessage {
+  id: number;
+  message: string;
+  target_type: MarqueeTargetType;
+  filter_criteria: Record<string, any>;
+  display_location: MarqueeDisplayLocation;
+  dismissal_behavior: MarqueeDismissalBehavior;
+  is_active: boolean;
+  start_date: string | null;
+  end_date: string | null;
+  created_by?: number | null;
+  created_by_name?: string | null;
+  created_at: string;
+}
+
+export interface MarqueeMessageFormValues {
+  message: string;
+  target_type: MarqueeTargetType;
+  filter_criteria: Record<string, any>;
+  display_location: MarqueeDisplayLocation;
+  dismissal_behavior: MarqueeDismissalBehavior;
+  is_active: boolean;
+  start_date: string | null;
+  end_date: string | null;
+}

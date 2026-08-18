@@ -97,3 +97,13 @@
   }
 }
 
+@keyframes marquee-scroll {
+  0% { transform: translateX(100vw); } /* 100vw pushes it to the right edge of the screen */
+  100% { transform: translateX(-100%); }
+}
+
+.animate-marquee {
+  animation: marquee-scroll 25s linear infinite;
+  display: inline-block;
+  white-space: nowrap;
+}

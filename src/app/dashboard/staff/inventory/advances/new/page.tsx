@@ -102,7 +102,7 @@ export default function NewPurchaseAdvancePage() {
   const staffSearchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorypurchaseadvancemodel');
+  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorypurchaseordermodel');
 
   const showToast = useCallback((type: 'success' | 'error' | 'info', message: string) => {
     const id = ++_toastId;

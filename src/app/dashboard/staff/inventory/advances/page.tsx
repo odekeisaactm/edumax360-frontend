@@ -88,7 +88,7 @@ export default function PurchaseAdvanceListPage() {
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Permission check based on views.py & permissions.py
-  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorypurchaseadvancemodel');
+  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorypurchaseordermodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;

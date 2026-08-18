@@ -4,14 +4,18 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import api, { activityLogsAPI, staffDashboardAPI, academicAPI, academicCalendarAPI } from '@/lib/api';
-import { ActivityLog } from '@/lib/types';
-import { ClassConfiguration, ClassModel, AcademicSettings, Timetable, Day, AcademicSessionPeriod } from '@/lib/types';
+import { announcementsAPI } from '@/lib/communication.service';
+import { stripHtml } from '@/components/communication/RichTextEditor';
+import {
+  ActivityLog, ClassConfiguration, ClassModel, AcademicSettings,
+  Timetable, Day, AcademicSessionPeriod, Announcement
+} from '@/lib/types';
 import { MASTER_QUICK_LINKS } from '@/lib/quickLinks';
 import {
   Users, BookOpen, DollarSign, UserCheck, Shield, FileText,
   Calendar, Loader2, ChevronRight, UserCircle, Briefcase, Award, User,
   ArrowRight, Clock, ChevronDown, Coffee, Sunset, LogOut, MapPin,
-  GraduationCap, Zap, TrendingUp, Activity,
+  GraduationCap, Zap, TrendingUp, Activity, Megaphone, CalendarDays, Tag
 } from 'lucide-react';
 
 // ============================================================================
@@ -463,6 +467,10 @@ export default function StaffDashboard() {
   const [recentActivities, setRecentActivities] = useState<ActivityLog[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(true);
 
+  // New state for Announcements
+  const [recentAnnouncements, setRecentAnnouncements] = useState<Announcement[]>([]);
+  const [loadingAnnouncements, setLoadingAnnouncements] = useState(true);
+
   const [summaryData, setSummaryData] = useState<any>({});
   const [loadingSummary, setLoadingSummary] = useState(true);
   const [currentPeriod, setCurrentPeriod] = useState<AcademicSessionPeriod | null>(null);
@@ -492,18 +500,25 @@ export default function StaffDashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const activityRes = await activityLogsAPI.list({ session_period__is_current: true });
+        const [activityRes, summaryRes, annRes] = await Promise.all([
+          activityLogsAPI.list({ session_period__is_current: true }),
+          staffDashboardAPI.getSummary(),
+          // Fetch up to 3 published announcements globally targeted or specifically to staff
+          announcementsAPI.list({ is_published: true, page_size: 3 }).catch(() => null)
+        ]);
+
         const activityData = Array.isArray(activityRes) ? activityRes : (activityRes as any).results || [];
         setRecentActivities(activityData.slice(0, 10));
 
-        const summaryRes = await staffDashboardAPI.getSummary();
         setSummaryData(summaryRes || {});
+
+        const annData = Array.isArray(annRes) ? annRes : (annRes as any)?.results || [];
+        setRecentAnnouncements(annData);
 
         // Fetch current academic period
         try {
           const curPerRes = await api.get('/api/school/session-periods/current/');
           const periodData = curPerRes?.data?.data || curPerRes?.data;
-
           if (periodData && periodData.id) {
             setCurrentPeriod(periodData);
           }
@@ -513,6 +528,7 @@ export default function StaffDashboard() {
       } finally {
         setLoadingActivities(false);
         setLoadingSummary(false);
+        setLoadingAnnouncements(false);
       }
     };
     fetchData();
@@ -648,8 +664,68 @@ export default function StaffDashboard() {
         </div>
       )}
 
-      {/* ── 3. ACTIVITY FEED + TIMETABLE ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {/* ── 3. RECENT ANNOUNCEMENTS (LAYER CAKE) ── */}
+      {!loadingAnnouncements && recentAnnouncements.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <div className="p-1.5 bg-indigo-100 text-indigo-600 rounded-lg shadow-sm">
+                <Megaphone className="h-4 w-4" />
+              </div>
+              Recent Noticeboard Updates
+            </h2>
+            <Link
+              href="/dashboard/staff/communication/announcements"
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5 transition-colors"
+            >
+              View all notices <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {recentAnnouncements.map(ann => (
+              <div key={ann.id} className="bg-white rounded-2xl p-5 border border-indigo-50 shadow-sm relative overflow-hidden group hover:border-indigo-200 transition-colors flex flex-col h-full">
+                {/* Left accent strip */}
+                <div className={`absolute top-0 left-0 w-1 h-full ${ann.priority === 'urgent' ? 'bg-red-500' : ann.priority === 'high' ? 'bg-orange-500' : 'bg-indigo-400'}`} />
+
+                <div className="flex flex-col flex-1">
+                  <div className="flex items-start justify-between gap-3 mb-2.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <CalendarDays className="w-3.5 h-3.5" />
+                      {new Date(ann.created_at).toLocaleDateString()}
+                    </span>
+                    {ann.priority === 'urgent' && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-red-100 text-red-700">
+                        <Tag className="w-2.5 h-2.5 mr-1" /> Urgent
+                      </span>
+                    )}
+                  </div>
+
+                  <h3 className="font-bold text-slate-900 text-[15px] leading-tight line-clamp-1 group-hover:text-indigo-700 transition-colors mb-1.5">
+                    {ann.title}
+                  </h3>
+
+                  <p className="text-[13px] text-slate-500 leading-relaxed line-clamp-2">
+                    {stripHtml(ann.content)}
+                  </p>
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
+                  <Link
+                    href={`/dashboard/staff/communication/announcements/${ann.id}`}
+                    className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-indigo-600 hover:text-indigo-800 transition-colors"
+                  >
+                    Read full notice <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 4. ACTIVITY FEED + TIMETABLE ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pt-2">
 
         {/* Activity Feed */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col">
@@ -733,9 +809,9 @@ export default function StaffDashboard() {
         <MiniTimetable />
       </div>
 
-      {/* ── 4. QUICK ACTIONS ── */}
+      {/* ── 5. QUICK ACTIONS ── */}
       {allowedQuickLinks.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mt-2">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-sm">
               <Zap className="h-3.5 w-3.5 text-white" />

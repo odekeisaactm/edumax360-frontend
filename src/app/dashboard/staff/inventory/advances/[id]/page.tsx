@@ -59,7 +59,7 @@ export default function PurchaseAdvanceDetailPage() {
   const [confirmModal, setConfirmModal] = useState<{ show: boolean, action: string, message: string, payload: any } | null>(null);
   const [approveAmount, setApproveAmount] = useState('');
 
-  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorypurchaseadvancemodel');
+  const canManage = user?.is_superuser || hasPermission('inventory.add_inventorypurchaseordermodel');
 
   const showToast = (type: 'success' | 'error', msg: string) => {
     setToast({ type, msg });

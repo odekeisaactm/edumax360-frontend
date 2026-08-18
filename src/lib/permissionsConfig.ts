@@ -551,6 +551,64 @@ export const MODULES: ModuleDef[] = [
   ],
 },
    {
+    key: 'communication',
+    label: 'Communication & Messaging',
+    description: 'Bulk campaigns, admission enquiries, announcements, queries, and communication config',
+    areas: [
+      {
+        key: 'bulk_messaging',
+        label: 'Bulk Messaging',
+        description: 'Manage and send SMS, Email, and WhatsApp campaigns',
+        permissions: [
+          { codename: 'view_bulkmessagecampaignmodel', label: 'View Campaigns', desc: 'Read bulk message campaigns' },
+          { codename: 'add_bulkmessagecampaignmodel',  label: 'Create Campaigns', desc: 'Draft new bulk message campaigns' },
+          { codename: 'send_bulk_campaign',            label: 'Send Campaigns', desc: 'Queue and dispatch campaigns to recipients' },
+        ],
+      },
+      {
+        key: 'admission_enquiries',
+        label: 'Admission Enquiries',
+        description: 'Track prospective students and lead pipeline',
+        permissions: [
+          { codename: 'view_admissionenquirymodel',   label: 'View Enquiries', desc: 'Read prospective student enquiries' },
+          { codename: 'add_admissionenquirymodel',    label: 'Add Enquiries',  desc: 'Log new admission enquiries' },
+          { codename: 'change_admissionenquirymodel', label: 'Manage Enquiries', desc: 'Update and convert enquiries to enrolled students' },
+        ],
+      },
+      {
+        key: 'announcements_marquee',
+        label: 'Announcements & Portal Messages',
+        description: 'School-wide announcements and scrolling marquee alerts',
+        permissions: [
+          { codename: 'view_announcementmodel',   label: 'View Announcements', desc: 'Read published announcements' },
+          { codename: 'add_announcementmodel',    label: 'Manage Announcements', desc: 'Create and target school announcements' },
+          { codename: 'view_marqueemessagemodel', label: 'View Marquee Messages', desc: 'Read active marquee alerts' },
+          { codename: 'add_marqueemessagemodel',  label: 'Manage Marquee Messages', desc: 'Create and target portal-top marquee messages' },
+        ],
+      },
+      {
+        key: 'queries_helpdesk',
+        label: 'Queries & Helpdesk',
+        description: 'General queries, complaints, and follow-up threading',
+        permissions: [
+          { codename: 'view_querymodel',   label: 'View Queries', desc: 'Read incoming queries and complaints' },
+          { codename: 'change_querymodel', label: 'Manage Queries', desc: 'Assign, reply to, and resolve queries' },
+        ],
+      },
+      {
+        key: 'communication_config',
+        label: 'Communication Configuration',
+        description: 'Custom contacts, gateways (SMTP/SMS/WhatsApp), and settings',
+        permissions: [
+          { codename: 'view_customcontactmodel',        label: 'View Custom Contacts', desc: 'Read manually added contacts' },
+          { codename: 'add_customcontactmodel',         label: 'Manage Custom Contacts', desc: 'Create and update custom contacts' },
+          { codename: 'view_communicationsettingmodel', label: 'View Config & Settings', desc: 'Read communication and gateway configurations' },
+          { codename: 'manage_communication_settings',  label: 'Manage Config & Settings', desc: 'Configure WhatsApp, SMS, SMTP, templates, and global rules' },
+        ],
+      },
+    ],
+  },
+   {
     key: 'assessment',
     label: 'Assessment Permissions',
     description: 'Classes, subjects, timetable, and academic setup',

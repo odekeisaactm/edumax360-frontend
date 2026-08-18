@@ -6,8 +6,10 @@ import { useWard } from '@/context/WardContext';
 import {
   Award, ChevronRight, Loader2, Zap, GraduationCap,
   CreditCard, Wallet, UserCircle, Briefcase, Info, BookOpen,
-  Receipt, ArrowRight
+  Receipt, ArrowRight, Bell, HelpCircle, ArrowUpRight
 } from 'lucide-react';
+import { announcementsAPI, queriesAPI } from '@/lib/communication.service';
+import { Announcement, Query } from '@/lib/types';
 
 // ============================================================================
 // HELPERS
@@ -72,11 +74,27 @@ function StatCard({ title, value, icon: Icon, gradient, linkText, linkHref, dela
 export default function ParentDashboard() {
   const { selectedWard, loading: wardLoading, refreshWards } = useWard();
   const [mounted, setMounted] = useState(false);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [queries, setQueries] = useState<Query[]>([]);
+  const [commsLoading, setCommsLoading] = useState(false);
 
   useEffect(() => {
     setMounted(true);
     refreshWards(true);
   }, [refreshWards]);
+
+  useEffect(() => {
+    if (selectedWard) {
+      setCommsLoading(true);
+      Promise.all([
+        announcementsAPI.list({ page_size: 3 }),
+        queriesAPI.list({ page_size: 3 })
+      ]).then(([annRes, qRes]) => {
+        setAnnouncements(annRes?.results || annRes || []);
+        setQueries(qRes?.results || qRes || []);
+      }).catch(console.error).finally(() => setCommsLoading(false));
+    }
+  }, [selectedWard]);
 
   if (!mounted || wardLoading) {
     return (
@@ -278,6 +296,79 @@ export default function ParentDashboard() {
               </Link>
             );
           })}
+        </div>
+      </div>
+
+      {/* ── 4. COMMUNICATION WIDGETS ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        {/* Announcements */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-sm">
+                <Bell className="h-4 w-4 text-white" />
+              </div>
+              <h2 className="text-base font-bold text-slate-800">Recent Announcements</h2>
+            </div>
+            <Link href="/dashboard/parent/communication/announcements" className="text-[11px] font-bold text-slate-400 hover:text-indigo-600 uppercase tracking-widest transition-colors">
+              View All
+            </Link>
+          </div>
+          <div className="flex-1 p-5">
+            {commsLoading ? (
+              <div className="flex justify-center p-8"><Loader2 className="h-5 w-5 animate-spin text-slate-300" /></div>
+            ) : announcements.length === 0 ? (
+              <div className="text-center p-8 text-sm text-slate-400 font-medium">No recent announcements.</div>
+            ) : (
+              <div className="space-y-4">
+                {announcements.map((ann, i) => (
+                  <div key={i} className="flex gap-4 group">
+                    <div className="w-1.5 h-1.5 rounded-full bg-orange-400 mt-2 shrink-0 group-hover:scale-150 transition-transform"></div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800 mb-1 leading-tight group-hover:text-indigo-600 transition-colors cursor-pointer">{ann.title}</h4>
+                      <p className="text-xs text-slate-500 line-clamp-2">{ann.content}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Queries */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-sm">
+                <HelpCircle className="h-4 w-4 text-white" />
+              </div>
+              <h2 className="text-base font-bold text-slate-800">My Helpdesk Tickets</h2>
+            </div>
+            <Link href="/dashboard/parent/communication/queries" className="text-[11px] font-bold text-slate-400 hover:text-indigo-600 uppercase tracking-widest transition-colors flex items-center gap-1">
+              Inbox <ArrowUpRight className="h-3 w-3" />
+            </Link>
+          </div>
+          <div className="flex-1 p-0">
+            {commsLoading ? (
+              <div className="flex justify-center p-8"><Loader2 className="h-5 w-5 animate-spin text-slate-300" /></div>
+            ) : queries.length === 0 ? (
+              <div className="text-center p-8 text-sm text-slate-400 font-medium">You have no active queries.</div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {queries.map((q, i) => (
+                  <Link key={i} href={`/dashboard/parent/communication/queries/${q.id}`} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800 leading-tight">{q.title}</h4>
+                      <p className="text-xs text-slate-500 mt-0.5">{q.query_type}</p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600">
+                      {q.status}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

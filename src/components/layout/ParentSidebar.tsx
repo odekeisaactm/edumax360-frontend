@@ -7,7 +7,8 @@ import { useAuth } from '@/context/AuthContext';
 import { SOFTWARE_NAME } from '@/lib/constants';
 import {
   Home, Eye, CreditCard, Upload, History, Wallet, DollarSign, Store, ShoppingCart,
-  User, Users, Phone, LogOut, ChevronDown, ChevronRight, GraduationCap, Award, Layers, Lock, Landmark
+  User, Users, Phone, LogOut, ChevronDown, ChevronRight, GraduationCap, Award, Layers, Lock, Landmark,
+  MessageCircle, HelpCircle, Bell
 } from 'lucide-react';
 
 interface NavItem {
@@ -128,6 +129,27 @@ export function ParentSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: (
           current: isCurrentPath('/dashboard/parent/inventory/purchases'),
         },
         // You can easily drop in Cafeteria and Inventory Collection here later!
+      ],
+    },
+    {
+      name: 'Communication',
+      href: '#',
+      icon: <MessageCircle className="h-5 w-5" />,
+      moduleCode: 'communication',
+      children: [
+        {
+          name: 'Announcements',
+          href: '/dashboard/parent/communication/announcements',
+          icon: <Bell className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/parent/communication/announcements'),
+        },
+        {
+          name: 'Queries / Helpdesk',
+          href: '/dashboard/parent/communication/queries',
+          icon: <HelpCircle className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/parent/communication/queries'),
+        },
+
       ],
     },
     {
