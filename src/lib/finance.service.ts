@@ -76,7 +76,6 @@ const getDrfError = (error: any): string => {
 // ============================================================
 // 1. FINANCE SETTINGS (Singleton)
 // ============================================================
-
 export const financeSettingsAPI = {
   get: async (): Promise<FinanceSettings | null> => {
     try {

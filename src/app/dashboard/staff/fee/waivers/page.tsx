@@ -5,7 +5,7 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { feeAPI, studentsAPI, academicCalendarAPI } from '@/lib/api';
 import {
-  Award, Clock, CheckCircle2, XCircle, Eye, X, Loader2,
+  Award, Clock, CheckCircle2, XCircle, Eye, X, Loader2, RotateCcw, Edit3,
   AlertCircle, Search, Check, Plus, GraduationCap, ArrowLeft, ExternalLink
 } from 'lucide-react';
 
@@ -53,15 +53,10 @@ function getImageUrl(path: string | null): string | undefined {
   return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-// Item descriptions come as "Fee Name — Group Name" (e.g. "Pta — Junior Student Fees").
-// The group name is redundant in the list view — only the fee name matters there.
-// (Kept in full in the audit drawer, where there's room and the group context helps.)
 function stripGroupSuffix(description: string): string {
   return (description || '').split(' — ')[0];
 }
 
-// Summarize a bundle's items in plain terms instead of "N items bundled".
-// Up to 3 items: list their descriptions. Beyond that: name the first 2 + a count.
 function summarizeItems(items: any[]): string {
   if (!items || items.length === 0) return 'Fee Item';
   const names = items.map(i => toTitleCase(stripGroupSuffix(i.item_description || 'Fee Item')));
@@ -70,7 +65,6 @@ function summarizeItems(items: any[]): string {
   return `${names.slice(0, 2).join(', ')} + ${names.length - 2} more`;
 }
 
-// Dedupe a bundle's items down to unique source invoices, for the "View Invoice" links.
 function getUniqueInvoiceLinks(items: any[] = []): { id: number; type: 'student' | 'family' }[] {
   const map = new Map<number, { id: number; type: 'student' | 'family' }>();
   for (const it of items) {
@@ -105,12 +99,12 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 function ConfirmActionModal({ open, title, message, onConfirm, onCancel, loading }: any) {
   if (!open) return null;
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="waiver-confirm-title" className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
       <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center border border-slate-100 animate-in zoom-in-95 duration-200">
         <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-emerald-600">
           <Check className="h-6 w-6" />
         </div>
-        <h3 id="waiver-confirm-title" className="text-lg font-bold text-slate-900 mb-1">{title}</h3>
+        <h3 className="text-lg font-bold text-slate-900 mb-1">{title}</h3>
         <p className="text-xs text-slate-500 leading-relaxed mb-6">{message}</p>
         <div className="flex gap-2">
           <button onClick={onCancel} disabled={loading} className="flex-1 py-2.5 text-xs font-semibold border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Cancel</button>
@@ -140,19 +134,18 @@ function ReasonModal({ open, title, icon, actionText, actionColor, onConfirm, on
   const headerColor = actionColor === 'rose' ? 'text-rose-600' : 'text-amber-600';
 
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="waiver-reason-title" className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
       <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200 space-y-4 text-left">
-        <div id="waiver-reason-title" className={`flex items-center gap-2 font-bold text-base ${headerColor}`}>
+        <div className={`flex items-center gap-2 font-bold text-base ${headerColor}`}>
           {icon} {title}
         </div>
         <p className="text-xs text-slate-500 leading-relaxed">Please state the exact reason for this action to maintain ledger integrity.</p>
         <div>
-          <label htmlFor="waiver-reason-textarea" className="block text-xs font-bold text-slate-600 uppercase mb-1">Reason for Rejection <span className="text-rose-500">*</span></label>
+          <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Reason <span className="text-rose-500">*</span></label>
           <textarea
-            id="waiver-reason-textarea"
             ref={textareaRef}
             rows={3}
-            placeholder="Provide clear reason for rejection..."
+            placeholder="Provide clear reason..."
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             className="w-full p-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-400 outline-none text-slate-800"
@@ -175,10 +168,11 @@ function StatusBadge({ status }: { status: string }) {
     pending: { label: 'Pending Approval', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', icon: <Clock className="h-3 w-3" /> },
     approved: { label: 'Approved', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: <CheckCircle2 className="h-3 w-3" /> },
     rejected: { label: 'Rejected', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200', icon: <XCircle className="h-3 w-3" /> },
+    reversed: { label: 'Reversed', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200', icon: <RotateCcw className="h-3 w-3" /> },
   };
   const meta = map[status?.toLowerCase() || 'pending'] ?? map.pending;
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${meta.bg} ${meta.color} ${meta.border}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${meta.bg} ${meta.color} ${meta.border}`}>
       {meta.icon}
       {meta.label}
     </span>
@@ -194,11 +188,6 @@ function WaiversContent() {
 
   const canManageWaivers = user?.is_superuser || hasPermission('fee_management.manage_fees');
 
-  // Deep-link params. When arriving from the Debtors page:
-  //   ?student_id=123            -> auto-select this student and load their waivable items
-  //   &return_to=/dashboard/staff/fee/debtors&return_student_id=123
-  //                               -> back button / drawer close routes back to Debtors
-  //                                  with the same student's detail drawer re-opened
   const deepLinkStudentId = searchParams.get('student_id');
   const returnTo = searchParams.get('return_to');
   const returnStudentId = searchParams.get('return_student_id');
@@ -214,9 +203,9 @@ function WaiversContent() {
   const [sessionFilter, setSessionFilter] = useState('');
   const [periodFilter, setPeriodFilter] = useState('');
 
-  // Pagination
+  // Pagination (Fixed at 20 items per page)
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(50);
+  const [pageSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
@@ -225,11 +214,16 @@ function WaiversContent() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Edit / Reversal State
+  const [isEditingWaiver, setIsEditingWaiver] = useState(false);
+  const [waiverEdits, setWaiverEdits] = useState<Record<number, string>>({});
+
   // Modals
   const [approveModal, setApproveModal] = useState<{ open: boolean; item: any }>({ open: false, item: null });
   const [rejectModal, setRejectModal] = useState<{ open: boolean; item: any }>({ open: false, item: null });
+  const [reverseModal, setReverseModal] = useState<{ open: boolean; item: any }>({ open: false, item: null });
 
-  // ─── New Waiver Drawer State ──────────────────────────────────────────────
+  // New Waiver Drawer State
   const [isNewWaiverOpen, setIsNewWaiverOpen] = useState(false);
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
   const [studentSearchResults, setStudentSearchResults] = useState<any[]>([]);
@@ -237,6 +231,7 @@ function WaiversContent() {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [includeInactiveStudents, setIncludeInactiveStudents] = useState(false);
+
   const [waivableItems, setWaivableItems] = useState<any[]>([]);
   const [loadingWaivables, setLoadingWaivables] = useState(false);
   const [deepLinkLoading, setDeepLinkLoading] = useState(false);
@@ -265,36 +260,30 @@ function WaiversContent() {
     }
   }, [returnTo, returnStudentId, router]);
 
-  // ─── Lock background page scroll whenever any drawer/modal is open ────────
-  // Previously the page behind the drawer stayed scrollable at the same time as
-  // the drawer body and the items list inside it — three scrollable regions
-  // active at once. Locking body scroll here removes that outer layer.
   useEffect(() => {
-    const anyOverlayOpen = isNewWaiverOpen || isDrawerOpen || confirmBulkModal || approveModal.open || rejectModal.open;
+    const anyOverlayOpen = isNewWaiverOpen || isDrawerOpen || confirmBulkModal || approveModal.open || rejectModal.open || reverseModal.open;
     if (anyOverlayOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
     }
     return () => { document.body.style.overflow = ''; };
-  }, [isNewWaiverOpen, isDrawerOpen, confirmBulkModal, approveModal.open, rejectModal.open]);
+  }, [isNewWaiverOpen, isDrawerOpen, confirmBulkModal, approveModal.open, rejectModal.open, reverseModal.open]);
 
-  // ─── Escape key closes the topmost open overlay ────────────────────────────
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (confirmBulkModal) setConfirmModal(false);
       else if (approveModal.open) setApproveModal({ open: false, item: null });
       else if (rejectModal.open) setRejectModal({ open: false, item: null });
+      else if (reverseModal.open) setReverseModal({ open: false, item: null });
       else if (isDrawerOpen) setIsDrawerOpen(false);
       else if (isNewWaiverOpen) closeNewWaiverDrawer();
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confirmBulkModal, approveModal.open, rejectModal.open, isDrawerOpen, isNewWaiverOpen]);
+  }, [confirmBulkModal, approveModal.open, rejectModal.open, reverseModal.open, isDrawerOpen, isNewWaiverOpen]);
 
-  // ─── Close the student search dropdown on outside click ───────────────────
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (studentSearchRef.current && !studentSearchRef.current.contains(e.target as Node)) {
@@ -304,6 +293,13 @@ function WaiversContent() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!isDrawerOpen) {
+      setIsEditingWaiver(false);
+      setWaiverEdits({});
+    }
+  }, [isDrawerOpen]);
 
   useEffect(() => {
     academicCalendarAPI.listSessions()
@@ -326,7 +322,7 @@ function WaiversContent() {
     const requestId = ++requestIdRef.current;
     setLoading(true);
     try {
-      const params: any = { page: currentPage };
+      const params: any = { page: currentPage, page_size: pageSize };
       if (statusFilter) params.status = statusFilter;
       if (sessionFilter) params.session = sessionFilter;
       if (periodFilter) params.period = periodFilter;
@@ -359,21 +355,15 @@ function WaiversContent() {
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [statusFilter, sessionFilter, periodFilter, currentPage]);
+  }, [statusFilter, sessionFilter, periodFilter, currentPage, pageSize]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchWaiversAndStats();
-    }, 200);
+    const timer = setTimeout(() => { fetchWaiversAndStats(); }, 200);
     return () => clearTimeout(timer);
   }, [fetchWaiversAndStats]);
 
-  // Reset to page 1 whenever filters change.
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [statusFilter, sessionFilter, periodFilter]);
+  useEffect(() => { setCurrentPage(1); }, [statusFilter, sessionFilter, periodFilter]);
 
-  // Loads a student's waivable items given a raw student object.
   const loadWaivableItemsFor = useCallback(async (student: any) => {
     setSelectedStudent(student);
     setStudentSearchQuery('');
@@ -392,10 +382,6 @@ function WaiversContent() {
     }
   }, []);
 
-  // ─── Deep-link entry from Debtors page ──────────────────────────────────
-  // Fetches the student record directly (search endpoint needs a query string,
-  // not an id, so we can't reuse the autocomplete search here) then opens the
-  // drawer pre-loaded with that student's waivable items.
   useEffect(() => {
     if (!deepLinkStudentId) return;
     let cancelled = false;
@@ -412,10 +398,6 @@ function WaiversContent() {
       } finally {
         if (cancelled) return;
         setDeepLinkLoading(false);
-        // Consume student_id from the URL now that it's loaded into state, so a
-        // later reload (e.g. after Cancel) doesn't re-trigger this same auto-open.
-        // return_to / return_student_id are kept so Cancel & the back button
-        // still know where to go.
         const params = new URLSearchParams(searchParams.toString());
         params.delete('student_id');
         const qs = params.toString();
@@ -423,10 +405,8 @@ function WaiversContent() {
       }
     })();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkStudentId]);
 
-  // Student Search in New Waiver Drawer
   useEffect(() => {
     if (!studentSearchQuery.trim()) {
       setStudentSearchResults([]);
@@ -458,21 +438,12 @@ function WaiversContent() {
       if (copy[item.id]) {
         delete copy[item.id];
       } else {
-        copy[item.id] = {
-          id: item.id,
-          type: item.type,
-          amount: item.balance,
-          max: parseFloat(item.balance),
-          description: item.description,
-          group: item.group_label
-        };
+        copy[item.id] = { id: item.id, type: item.type, amount: item.balance, max: parseFloat(item.balance), description: item.description, group: item.group_label };
       }
       return copy;
     });
   };
 
-  // Select or deselect every item within one fee group in a single click,
-  // instead of ticking each item individually.
   const toggleSelectAllInGroup = (items: any[]) => {
     setWaiverSelections(prev => {
       const copy = { ...prev };
@@ -482,14 +453,7 @@ function WaiversContent() {
       } else {
         items.forEach((it: any) => {
           if (!copy[it.id]) {
-            copy[it.id] = {
-              id: it.id,
-              type: it.type,
-              amount: it.balance,
-              max: parseFloat(it.balance),
-              description: it.description,
-              group: it.group_label
-            };
+            copy[it.id] = { id: it.id, type: it.type, amount: it.balance, max: parseFloat(it.balance), description: it.description, group: it.group_label };
           }
         });
       }
@@ -503,14 +467,10 @@ function WaiversContent() {
       const num = parseFloat(val);
       const max = prev[id].max;
       const clamped = isNaN(num) ? '' : Math.min(num, max).toString();
-      return {
-        ...prev,
-        [id]: { ...prev[id], amount: clamped }
-      };
+      return { ...prev, [id]: { ...prev[id], amount: clamped } };
     });
   };
 
-  // Only genuinely submittable selections: a positive, non-blank amount.
   const validSelections = Object.values(waiverSelections).filter(
     sel => sel.amount !== '' && !isNaN(parseFloat(sel.amount)) && parseFloat(sel.amount) > 0
   );
@@ -548,9 +508,6 @@ function WaiversContent() {
     }
   };
 
-  // Patches a bundle's status locally instead of a full refetch, to avoid the
-  // whole-table loading flicker. Falls back to a background refetch if an
-  // active status filter no longer matches the bundle's new status.
   const patchWaiverGroup = useCallback((reference: string, patch: Partial<any>) => {
     setWaivers(prev => {
       const idx = prev.findIndex(g => g.reference === reference);
@@ -567,8 +524,6 @@ function WaiversContent() {
     setSelectedGroup((prev: any) => (prev && prev.reference === reference ? { ...prev, ...patch } : prev));
   }, [statusFilter, fetchWaiversAndStats]);
 
-  // Approves/rejects every item in the bundle (a bundle is N FeeWaiverModel
-  // rows sharing one `reference`), not just the first — via the bulk endpoints.
   const handleApproveSubmit = async () => {
     if (!approveModal.item) return;
     setActionLoading(true);
@@ -579,6 +534,7 @@ function WaiversContent() {
       patchWaiverGroup(approveModal.item.reference, { status: 'approved' });
       setApproveModal({ open: false, item: null });
       setIsDrawerOpen(false);
+      fetchWaiversAndStats();
     } catch (err: any) {
       showToast('error', extractError(err));
     } finally {
@@ -602,6 +558,69 @@ function WaiversContent() {
       setActionLoading(false);
     }
   };
+
+  const handleReverseSubmit = async (reason: string) => {
+    if (!reverseModal.item) return;
+    setActionLoading(true);
+    try {
+      const ids = reverseModal.item.items.map((i: any) => i.id);
+      await feeAPI.bulkReverseWaivers({ ids, reason });
+      showToast('success', 'Waiver successfully reversed and ledger balances restored.');
+      patchWaiverGroup(reverseModal.item.reference, {
+        status: 'reversed',
+        rejection_reason: `Reversed: ${reason}`
+      });
+      setReverseModal({ open: false, item: null });
+      setIsDrawerOpen(false);
+      fetchWaiversAndStats();
+    } catch (err: any) {
+      showToast('error', extractError(err));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSaveCorrections = async () => {
+    setActionLoading(true);
+    try {
+      const updates = Object.entries(waiverEdits).map(([id, amount]) => ({
+        id: Number(id),
+        amount_waived: amount || "0.00"
+      }));
+      await feeAPI.bulkAdjustWaivers({ updates });
+      showToast('success', 'Waiver amounts successfully corrected.');
+      setIsEditingWaiver(false);
+      setIsDrawerOpen(false);
+      fetchWaiversAndStats();
+    } catch (err: any) {
+      showToast('error', extractError(err));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Enters edit mode with each item's current waived amount pre-filled.
+  // No client-side ceiling here — the backend validates the amount against
+  // the item's real outstanding balance and rejects anything over it.
+  const handleStartEditing = useCallback(() => {
+    if (!selectedGroup) return;
+    const initials: Record<number, string> = {};
+    selectedGroup.items.forEach((it: any) => {
+      initials[it.id] = parseFloat(it.amount_waived || '0').toString();
+    });
+    setWaiverEdits(initials);
+    setIsEditingWaiver(true);
+  }, [selectedGroup]);
+
+  const groupedWaivableItems = waivableItems.reduce((acc: any[], item: any) => {
+    let group = acc.find(g => g.label === item.group_label);
+    if (!group) {
+      group = { label: item.group_label, items: [] };
+      acc.push(group);
+    }
+    group.items.push(item);
+    return acc;
+  }, []);
 
   return (
     <div className="pb-28 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
@@ -632,11 +651,22 @@ function WaiversContent() {
         loading={actionLoading}
       />
 
+      <ReasonModal
+        open={reverseModal.open}
+        title="Reverse Waiver"
+        icon={<RotateCcw className="h-5 w-5" />}
+        actionText="Confirm Reversal"
+        actionColor="rose"
+        onConfirm={handleReverseSubmit}
+        onCancel={() => setReverseModal({ open: false, item: null })}
+        loading={actionLoading}
+      />
+
       {/* BULK CONFIRMATION MODAL */}
       {confirmBulkModal && (
-        <div role="dialog" aria-modal="true" aria-labelledby="waiver-bulk-confirm-title" className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
           <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 space-y-4 text-left animate-in zoom-in-95">
-            <div id="waiver-bulk-confirm-title" className="flex items-center gap-2.5 font-bold text-base text-slate-900">
+            <div className="flex items-center gap-2.5 font-bold text-base text-slate-900">
               <div className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
                 <Award className="h-5 w-5" />
               </div>
@@ -750,6 +780,7 @@ function WaiversContent() {
           <option value="approved">Approved</option>
           <option value="pending">Pending</option>
           <option value="rejected">Rejected</option>
+          <option value="reversed">Reversed</option>
         </select>
       </div>
 
@@ -786,7 +817,6 @@ function WaiversContent() {
 
                   return (
                     <tr key={group.reference} className="hover:bg-slate-50/70 transition-colors">
-                      {/* Student Profile Column */}
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           {group.student_image_url ? (
@@ -796,8 +826,6 @@ function WaiversContent() {
                               <GraduationCap className="h-4 w-4 text-emerald-600" />
                             </div>
                           )}
-                          {/* Reg no and class stacked, not crammed on one line — long class
-                              names (e.g. "SS 2 (Science - Blue)") need their own row. */}
                           <div className="min-w-0">
                             <p className="font-bold text-slate-900 truncate">{studentName}</p>
                             <p className="text-[10px] font-mono text-slate-500 uppercase truncate">{group.student_reg_no}</p>
@@ -808,36 +836,32 @@ function WaiversContent() {
                         </div>
                       </td>
 
-                      {/* Items Summary Column */}
                       <td className="px-5 py-4">
                         <p className="font-bold text-slate-800">{summarizeItems(group.items)}</p>
                         <p className="text-xs text-slate-400 truncate max-w-xs">{group.reason || 'No reason provided'}</p>
                       </td>
 
-                      {/* Total Waived Column */}
                       <td className="px-5 py-4 text-right font-black text-slate-900 whitespace-nowrap">
                         {fmtMoney(totalGroupAmount)}
                       </td>
 
-                      {/* Status Column */}
                       <td className="px-5 py-4 text-center">
                         <StatusBadge status={group.status} />
                       </td>
 
-                      {/* Actions Column */}
                       <td className="px-5 py-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           {isPending && canManageWaivers && (
                             <>
-                              <button onClick={() => setApproveModal({ open: true, item: group })} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors" title="Approve" aria-label={`Approve waiver for ${studentName}`}>
+                              <button onClick={() => setApproveModal({ open: true, item: group })} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors" title="Approve">
                                 <CheckCircle2 className="w-4 h-4" />
                               </button>
-                              <button onClick={() => setRejectModal({ open: true, item: group })} className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors" title="Reject" aria-label={`Reject waiver for ${studentName}`}>
+                              <button onClick={() => setRejectModal({ open: true, item: group })} className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors" title="Reject">
                                 <XCircle className="w-4 h-4" />
                               </button>
                             </>
                           )}
-                          <button onClick={() => { setSelectedGroup(group); setIsDrawerOpen(true); }} className="p-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl transition-colors shadow-2xs" title="View Details" aria-label={`View waiver details for ${studentName}`}>
+                          <button onClick={() => { setSelectedGroup(group); setIsDrawerOpen(true); }} className="p-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl transition-colors shadow-2xs" title="View Details">
                             <Eye className="w-4 h-4" />
                           </button>
                         </div>
@@ -850,24 +874,24 @@ function WaiversContent() {
           </table>
         </div>
 
-        {/* PAGINATION */}
+        {/* FIXED PAGINATION */}
         {!loading && totalPages > 1 && (
           <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500">
-              Page {currentPage} of {totalPages} · {totalCount} total
+              Page {currentPage} of {totalPages} · {totalCount} total records
             </span>
             <div className="flex items-center gap-1.5">
               <button
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage(p => p - 1)}
-                className="px-3.5 py-2 text-xs font-bold bg-white border border-slate-200 rounded-xl shadow-2xs text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+                className="px-3.5 py-2 text-xs font-bold bg-white border border-slate-200 rounded-xl shadow-2xs text-slate-600 hover:bg-slate-100 disabled:opacity-40 transition-colors"
               >
                 Previous
               </button>
               <button
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage(p => p + 1)}
-                className="px-3.5 py-2 text-xs font-bold bg-white border border-slate-200 rounded-xl shadow-2xs text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+                className="px-3.5 py-2 text-xs font-bold bg-white border border-slate-200 rounded-xl shadow-2xs text-slate-600 hover:bg-slate-100 disabled:opacity-40 transition-colors"
               >
                 Next
               </button>
@@ -879,9 +903,8 @@ function WaiversContent() {
       {/* ─── NEW WAIVER REQUEST SLIDE-OVER DRAWER ────────────────────────── */}
       {isNewWaiverOpen && (
         <div onClick={closeNewWaiverDrawer} className="fixed inset-0 z-50 overflow-hidden bg-slate-900/40 backdrop-blur-sm flex justify-end animate-in fade-in">
-          <div role="dialog" aria-modal="true" aria-labelledby="new-waiver-title" onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col border-l border-slate-100 overflow-hidden animate-in slide-in-from-right duration-200">
+          <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col border-l border-slate-100 overflow-hidden animate-in slide-in-from-right duration-200">
 
-            {/* Header */}
             <div className="px-6 py-5 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-2">
                 {returnTo && (
@@ -889,18 +912,14 @@ function WaiversContent() {
                     <ArrowLeft className="h-4 w-4" />
                   </button>
                 )}
-                <h3 id="new-waiver-title" className="text-base font-bold">Request Fee Waiver</h3>
+                <h3 className="text-base font-bold">Request Fee Waiver</h3>
               </div>
-              <button onClick={closeNewWaiverDrawer} className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors" aria-label="Close">
+              <button onClick={closeNewWaiverDrawer} className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Single scrollable body — the items list below no longer carries its
-                own nested scroll container, so this is the only scroll region
-                inside the drawer (background page scroll is locked separately). */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-
               {deepLinkLoading && (
                 <div className="py-10 text-center text-slate-400">
                   <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-emerald-600" />
@@ -908,17 +927,12 @@ function WaiversContent() {
                 </div>
               )}
 
-              {/* Step 1: Student Search / Selector */}
+              {/* Step 1: Student Search */}
               {!deepLinkLoading && (
               <div className="space-y-3">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">1. Select Student</label>
-
                 {!selectedStudent ? (
                   <div className="space-y-3">
-                    {/* Search input + floating results overlay live inside this
-                        ref'd wrapper so outside clicks can close the dropdown,
-                        and the results no longer push page content around or
-                        add a permanent nested scroll region. */}
                     <div className="relative" ref={studentSearchRef}>
                       <div className="relative">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -930,9 +944,7 @@ function WaiversContent() {
                           onFocus={() => setShowSearchDropdown(true)}
                           className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-medium text-slate-800"
                         />
-                        {isSearchingStudents && (
-                          <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500 animate-spin" />
-                        )}
+                        {isSearchingStudents && <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500 animate-spin" />}
                       </div>
 
                       {showSearchDropdown && studentSearchQuery.trim() && (
@@ -949,18 +961,12 @@ function WaiversContent() {
                               const classLabel = st.current_class_name || st.current_class || '';
 
                               return (
-                                <div
-                                  key={st.id}
-                                  onClick={() => loadWaivableItemsFor(st)}
-                                  className="p-3.5 hover:bg-emerald-50/70 cursor-pointer flex items-center justify-between transition-colors gap-3"
-                                >
+                                <div key={st.id} onClick={() => loadWaivableItemsFor(st)} className="p-3.5 hover:bg-emerald-50/70 cursor-pointer flex items-center justify-between transition-colors gap-3">
                                   <div className="flex items-center gap-3 min-w-0">
                                     {st.image_url ? (
                                       <img src={getImageUrl(st.image_url)} alt="" className="w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0" />
                                     ) : (
-                                      <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs shrink-0">
-                                        <GraduationCap className="h-4 w-4 text-emerald-600" />
-                                      </div>
+                                      <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs shrink-0"><GraduationCap className="h-4 w-4 text-emerald-600" /></div>
                                     )}
                                     <div className="min-w-0">
                                       <p className="text-sm font-bold text-slate-900 truncate">{studentName}</p>
@@ -968,9 +974,7 @@ function WaiversContent() {
                                       {classLabel && <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 truncate">{classLabel}</p>}
                                     </div>
                                   </div>
-                                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase shrink-0 ${st.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                                    {st.status || 'Active'}
-                                  </span>
+                                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase shrink-0 ${st.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{st.status || 'Active'}</span>
                                 </div>
                               );
                             })
@@ -980,14 +984,8 @@ function WaiversContent() {
                         </div>
                       )}
                     </div>
-
                     <label className="flex items-center gap-2.5 text-xs text-slate-600 font-medium px-1 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={includeInactiveStudents}
-                        onChange={(e) => setIncludeInactiveStudents(e.target.checked)}
-                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4"
-                      />
+                      <input type="checkbox" checked={includeInactiveStudents} onChange={(e) => setIncludeInactiveStudents(e.target.checked)} className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4" />
                       Include graduated / inactive students (Alumni)
                     </label>
                   </div>
@@ -997,44 +995,30 @@ function WaiversContent() {
                       {selectedStudent.image_url ? (
                         <img src={getImageUrl(selectedStudent.image_url)} alt="" className="w-12 h-12 rounded-2xl object-cover border border-emerald-200 shadow-2xs shrink-0" />
                       ) : (
-                        <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-base shrink-0">
-                          <GraduationCap className="h-6 w-6 text-emerald-600" />
-                        </div>
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-base shrink-0"><GraduationCap className="h-6 w-6 text-emerald-600" /></div>
                       )}
                       <div className="min-w-0">
-                        <p className="font-bold text-slate-900 truncate">
-                          {toTitleCase(selectedStudent.full_name || `${selectedStudent.first_name || ''} ${selectedStudent.last_name || ''}`.trim())}
-                        </p>
+                        <p className="font-bold text-slate-900 truncate">{toTitleCase(selectedStudent.full_name || `${selectedStudent.first_name || ''} ${selectedStudent.last_name || ''}`.trim())}</p>
                         <p className="text-xs text-slate-500 font-mono truncate">{selectedStudent.registration_number || selectedStudent.reg_no || 'No Reg'}</p>
                         <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md mt-1 inline-block">
                           {selectedStudent.status === 'graduated' ? 'Graduated' : (selectedStudent.current_class_name || selectedStudent.current_class || 'Enrolled')}
                         </span>
                       </div>
                     </div>
-                    {/* Hidden when arriving via deep link — the student is fixed to the
-                        one selected on the Debtors page, changing it would break the
-                        "back to same debtor" flow. */}
                     {!deepLinkStudentId && (
-                      <button
-                        onClick={() => { setSelectedStudent(null); setWaivableItems([]); }}
-                        className="text-xs font-bold text-rose-600 hover:text-rose-800 bg-white border border-rose-200 px-3 py-1.5 rounded-xl shadow-2xs transition-colors shrink-0"
-                      >
-                        Change Student
-                      </button>
+                      <button onClick={() => { setSelectedStudent(null); setWaivableItems([]); }} className="text-xs font-bold text-rose-600 hover:text-rose-800 bg-white border border-rose-200 px-3 py-1.5 rounded-xl shadow-2xs transition-colors shrink-0">Change Student</button>
                     )}
                   </div>
                 )}
               </div>
               )}
 
-              {/* Step 2: Outstanding Items Grouped by Period */}
+              {/* Step 2: Outstanding Items */}
               {!deepLinkLoading && selectedStudent && (
                 <div className="space-y-3 pt-2">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">2. Select Unpaid Items to Waive</label>
-                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl">
-                      {validSelections.length} selected
-                    </span>
+                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl">{validSelections.length} selected</span>
                   </div>
 
                   {loadingWaivables ? (
@@ -1047,68 +1031,38 @@ function WaiversContent() {
                       This student has no outstanding debts or unpaid invoice items to waive.
                     </div>
                   ) : (
-                    /* No longer its own scroll container — flows within the drawer's
-                       single scrollable body above, removing one nested scroll region. */
                     <div className="space-y-4">
-                      {Object.entries(
-                        waivableItems.reduce((acc: any, item: any) => {
-                          acc[item.group_label] = acc[item.group_label] || [];
-                          acc[item.group_label].push(item);
-                          return acc;
-                        }, {})
-                      ).map(([groupLabel, items]: [string, any]) => {
-                        const allGroupSelected = items.every((it: any) => !!waiverSelections[it.id]);
+                      {groupedWaivableItems.map((group: any) => {
+                        const allGroupSelected = group.items.every((it: any) => !!waiverSelections[it.id]);
                         return (
-                        <div key={groupLabel} className="border border-slate-200 rounded-2xl p-4 bg-white space-y-3 shadow-2xs">
+                        <div key={group.label} className="border border-slate-200 rounded-2xl p-4 bg-white space-y-3 shadow-2xs">
                           <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5" /> {groupLabel}
-                            </h4>
-                            <button
-                              type="button"
-                              onClick={() => toggleSelectAllInGroup(items)}
-                              className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 uppercase tracking-wide transition-colors"
-                            >
+                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> {group.label}</h4>
+                            <button type="button" onClick={() => toggleSelectAllInGroup(group.items)} className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 uppercase tracking-wide transition-colors">
                               {allGroupSelected ? 'Deselect all' : 'Select all'}
                             </button>
                           </div>
                           <div className="space-y-2">
-                            {items.map((item: any) => {
+                            {group.items.map((item: any) => {
                               const isSelected = !!waiverSelections[item.id];
                               const currentVal = isSelected ? waiverSelections[item.id].amount : '';
                               const isInvalid = isSelected && currentVal === '';
 
                               return (
-                                <div key={item.id} className={`p-3.5 rounded-xl border transition-all ${
-                                  isInvalid ? 'border-rose-400 bg-rose-50/30' : isSelected ? 'border-emerald-500 bg-emerald-50/20 shadow-2xs' : 'border-slate-100 bg-slate-50/50 hover:border-slate-200'
-                                }`}>
+                                <div key={item.id} className={`p-3.5 rounded-xl border transition-all ${isInvalid ? 'border-rose-400 bg-rose-50/30' : isSelected ? 'border-emerald-500 bg-emerald-50/20 shadow-2xs' : 'border-slate-100 bg-slate-50/50 hover:border-slate-200'}`}>
                                   <div className="flex items-center justify-between gap-3">
                                     <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
-                                      <input
-                                        type="checkbox"
-                                        checked={isSelected}
-                                        onChange={() => handleToggleWaivableItem(item)}
-                                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 flex-shrink-0"
-                                      />
+                                      <input type="checkbox" checked={isSelected} onChange={() => handleToggleWaivableItem(item)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 flex-shrink-0" />
                                       <div className="min-w-0">
                                         <p className="text-sm font-bold text-slate-800 truncate">{toTitleCase(item.description)}</p>
                                         <p className="text-xs font-semibold text-slate-400">Max Balance: <span className="font-mono text-slate-700">{fmtMoney(parseFloat(item.balance))}</span></p>
                                       </div>
                                     </label>
-
                                     {isSelected && (
                                       <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
                                         <div className="flex items-center gap-1">
                                           <span className="text-xs font-bold text-slate-400">₦</span>
-                                          <input
-                                            type="number"
-                                            step="0.01"
-                                            max={item.balance}
-                                            value={currentVal}
-                                            onChange={(e) => handleUpdateWaiverAmount(item.id, e.target.value)}
-                                            placeholder={item.balance}
-                                            className={`w-28 px-3 py-1.5 text-xs font-black text-slate-900 bg-white border rounded-xl outline-none focus:ring-2 text-right shadow-2xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isInvalid ? 'border-rose-400 focus:ring-rose-400' : 'border-emerald-300 focus:ring-emerald-500'}`}
-                                          />
+                                          <input type="number" step="0.01" max={item.balance} value={currentVal} onChange={(e) => handleUpdateWaiverAmount(item.id, e.target.value)} placeholder={item.balance} className={`w-28 px-3 py-1.5 text-xs font-black text-slate-900 bg-white border rounded-xl outline-none focus:ring-2 text-right shadow-2xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isInvalid ? 'border-rose-400 focus:ring-rose-400' : 'border-emerald-300 focus:ring-emerald-500'}`} />
                                         </div>
                                         {isInvalid && <span className="text-[10px] font-bold text-rose-500">Enter an amount</span>}
                                       </div>
@@ -1130,140 +1084,126 @@ function WaiversContent() {
               {!deepLinkLoading && selectedStudent && (
                 <div className="space-y-2 pt-2">
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">3. Reason for Waiver <span className="text-rose-500">*</span></label>
-                  <textarea
-                    rows={3}
-                    placeholder="State clear justification for this waiver (e.g. Principal Concession, Staff Child Scholarship)..."
-                    value={globalReason}
-                    onChange={(e) => setGlobalReason(e.target.value)}
-                    className="w-full p-3.5 text-sm border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800"
-                  />
+                  <textarea rows={3} placeholder="State clear justification for this waiver..." value={globalReason} onChange={(e) => setGlobalReason(e.target.value)} className="w-full p-3.5 text-sm border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800" />
                 </div>
               )}
-
             </div>
 
-            {/* Drawer Footer */}
             <div className="p-5 border-t border-slate-100 bg-slate-50 flex items-center justify-between flex-shrink-0">
               <div>
-                {validSelections.length > 0 && (
-                  <p className="text-xs font-bold text-slate-600">
-                    Total Waived: <span className="text-sm font-black text-emerald-700">{fmtMoney(validSelections.reduce((s, x) => s + parseFloat(x.amount || 0), 0))}</span>
-                  </p>
-                )}
-                {hasInvalidSelections && (
-                  <p className="text-[10px] font-bold text-rose-500 mt-0.5">Some selected items are missing an amount.</p>
-                )}
+                {validSelections.length > 0 && <p className="text-xs font-bold text-slate-600">Total Waived: <span className="text-sm font-black text-emerald-700">{fmtMoney(validSelections.reduce((s, x) => s + parseFloat(x.amount || 0), 0))}</span></p>}
+                {hasInvalidSelections && <p className="text-[10px] font-bold text-rose-500 mt-0.5">Some selected items are missing an amount.</p>}
               </div>
               <div className="flex gap-2">
-                <button onClick={closeNewWaiverDrawer} className="px-4 py-2 text-xs font-semibold border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">
-                  {returnTo ? 'Cancel & Return' : 'Cancel'}
-                </button>
-                <button
-                  disabled={validSelections.length === 0 || hasInvalidSelections || !globalReason.trim() || actionLoading}
-                  onClick={() => setConfirmModal(true)}
-                  className="px-5 py-2.5 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-emerald-200 transition-colors flex items-center gap-1.5"
-                >
-                  <Award className="w-4 h-4" /> Submit Waiver Request
-                </button>
+                <button onClick={closeNewWaiverDrawer} className="px-4 py-2 text-xs font-semibold border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">{returnTo ? 'Cancel & Return' : 'Cancel'}</button>
+                <button disabled={validSelections.length === 0 || hasInvalidSelections || !globalReason.trim() || actionLoading} onClick={() => setConfirmModal(true)} className="px-5 py-2.5 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-emerald-200 transition-colors flex items-center gap-1.5"><Award className="w-4 h-4" /> Submit Waiver Request</button>
               </div>
             </div>
-
           </div>
         </div>
       )}
 
-      {/* ─── AUDIT DETAIL DRAWER ─────────────────────────────────────────── */}
+      {/* ─── AUDIT DETAIL DRAWER (WITH EDIT & REVERSE MODE) ───────────────── */}
       {isDrawerOpen && selectedGroup && (
         <div onClick={() => setIsDrawerOpen(false)} className="fixed inset-0 z-50 overflow-hidden bg-slate-900/40 backdrop-blur-sm flex justify-end animate-in fade-in">
-          <div role="dialog" aria-modal="true" aria-labelledby="audit-drawer-title" onClick={(e) => e.stopPropagation()} className="w-full max-w-xl bg-white h-full shadow-2xl flex flex-col border-l border-slate-100 overflow-hidden animate-in slide-in-from-right duration-200">
+          <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} className="w-full max-w-xl bg-white h-full shadow-2xl flex flex-col border-l border-slate-100 overflow-hidden animate-in slide-in-from-right duration-200">
 
-            {/* Header */}
             <div className="px-6 py-5 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between flex-shrink-0">
               <div>
                 <span className="text-xs font-mono text-slate-400 uppercase tracking-widest">Waiver Audit Trail</span>
-                <h3 id="audit-drawer-title" className="text-base font-bold">Ref: {selectedGroup.reference}</h3>
+                <h3 className="text-base font-bold">Ref: {selectedGroup.reference}</h3>
               </div>
-              <button onClick={() => setIsDrawerOpen(false)} className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors" aria-label="Close">
-                <X className="h-5 w-5" />
-              </button>
+              <button onClick={() => setIsDrawerOpen(false)} className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors"><X className="h-5 w-5" /></button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
-              {/* Summary Card */}
               <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-slate-400 font-semibold uppercase">Total Amount Waived</p>
                   <p className="text-3xl font-black text-slate-900">
-                    {fmtMoney(selectedGroup.items.reduce((s: number, i: any) => s + parseFloat(i.amount_waived || 0), 0))}
+                    {fmtMoney(selectedGroup.items.reduce((s: number, i: any) => s + parseFloat(isEditingWaiver ? (waiverEdits[i.id] || 0) : (i.amount_waived || 0)), 0))}
                   </p>
                 </div>
-                <StatusBadge status={selectedGroup.status} />
+                {!isEditingWaiver && <StatusBadge status={selectedGroup.status} />}
               </div>
 
               {selectedGroup.rejection_reason && (
                 <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl space-y-1">
-                  <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wide flex items-center gap-1.5">
-                    <XCircle className="h-4 w-4 text-rose-600" /> Rejection Reason
-                  </span>
+                  <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wide flex items-center gap-1.5"><XCircle className="h-4 w-4 text-rose-600" /> Note / Rejection Reason</span>
                   <p className="text-xs text-rose-950 font-medium leading-relaxed">{selectedGroup.rejection_reason}</p>
                 </div>
               )}
 
-              {/* Student Profile Info */}
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Student Profile</h4>
                 <div className="p-4 rounded-2xl border border-slate-100 bg-white flex items-center gap-3.5">
                   {selectedGroup.student_image_url ? (
                     <img src={getImageUrl(selectedGroup.student_image_url)} alt="" className="w-12 h-12 rounded-2xl object-cover border border-slate-200 shrink-0" />
                   ) : (
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-base shrink-0">
-                      <GraduationCap className="h-6 w-6 text-emerald-600" />
-                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-base shrink-0"><GraduationCap className="h-6 w-6 text-emerald-600" /></div>
                   )}
                   <div className="min-w-0">
                     <p className="font-bold text-slate-900 text-base truncate">{toTitleCase(selectedGroup.student_name)}</p>
                     <p className="text-[10px] font-mono text-slate-500 uppercase truncate">{selectedGroup.student_reg_no}</p>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded mt-1 inline-block">
-                      {selectedGroup.student_class}
-                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded mt-1 inline-block">{selectedGroup.student_class}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Items Breakdown */}
               <div className="space-y-3">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Items Waived ({selectedGroup.items.length})</h4>
-                <div className="space-y-2">
-                  {selectedGroup.items.map((item: any) => (
-                    <div key={item.id} className="p-4 rounded-2xl border border-slate-100 bg-white flex items-center justify-between shadow-2xs">
-                      <div>
-                        <p className="text-sm font-bold text-slate-900">{toTitleCase(item.item_description || 'Fee Item')}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">Reason: {item.reason || selectedGroup.reason}</p>
-                      </div>
-                      <p className="font-black text-slate-900">{fmtMoney(parseFloat(item.amount_waived || 0))}</p>
-                    </div>
-                  ))}
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Items Waived ({selectedGroup.items.length})</h4>
+
+                  {canManageWaivers && selectedGroup.status !== 'reversed' && !isEditingWaiver && (
+                    <button
+                      onClick={handleStartEditing}
+                      className="text-[10px] font-bold text-blue-600 hover:text-blue-800 uppercase tracking-wide flex items-center gap-1"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" /> Edit Values
+                    </button>
+                  )}
                 </div>
 
-                {/* One "View Invoice" link per unique source invoice, deduped —
-                    routes match the billing ledger / payments pages. */}
-                {(() => {
+                <div className="space-y-2">
+                  {selectedGroup.items.map((item: any) => {
+                    const originalAmount = parseFloat(item.amount_waived || '0');
+                    return (
+                      <div key={item.id} className={`p-4 rounded-2xl border flex items-center justify-between shadow-2xs transition-colors ${isEditingWaiver ? 'border-blue-200 bg-blue-50/30' : 'border-slate-100 bg-white'}`}>
+                        <div className="flex-1 min-w-0 pr-4">
+                          <p className="text-sm font-bold text-slate-900 truncate">{toTitleCase(item.item_description || 'Fee Item')}</p>
+                          <p className="text-xs text-slate-500 mt-0.5 truncate">Reason: {item.reason || selectedGroup.reason}</p>
+                        </div>
+
+                        {isEditingWaiver ? (
+                          <div className="flex flex-col items-end gap-0.5 shrink-0">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs font-bold text-slate-400">₦</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={waiverEdits[item.id] !== undefined ? waiverEdits[item.id] : item.amount_waived}
+                                onChange={(e) => setWaiverEdits(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                className="w-24 px-3 py-1.5 text-sm font-black text-slate-900 bg-white border border-blue-300 focus:ring-2 focus:ring-blue-500 rounded-xl outline-none text-right shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="font-black text-slate-900 shrink-0">{fmtMoney(originalAmount)}</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {!isEditingWaiver && (() => {
                   const uniqueInvoices = getUniqueInvoiceLinks(selectedGroup.items);
                   if (uniqueInvoices.length === 0) return null;
                   return (
                     <div className="flex flex-wrap gap-2 pt-1">
                       {uniqueInvoices.map(({ id, type }) => (
-                        <button
-                          key={id}
-                          onClick={() => {
-                            setIsDrawerOpen(false);
-                            router.push(`/dashboard/staff/fee/invoices/${id}?type=${type}`);
-                          }}
-                          className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-[10px] uppercase font-bold bg-blue-50 px-2 py-1 rounded transition-colors"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                          View {type === 'family' ? 'Family Invoice' : 'Invoice'}{uniqueInvoices.length > 1 ? ` #${id}` : ''}
+                        <button key={id} onClick={() => { setIsDrawerOpen(false); router.push(`/dashboard/staff/fee/invoices/${id}?type=${type}`); }} className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-[10px] uppercase font-bold bg-blue-50 px-2 py-1 rounded transition-colors">
+                          <ExternalLink className="w-3 h-3" /> View {type === 'family' ? 'Family Invoice' : 'Invoice'}{uniqueInvoices.length > 1 ? ` #${id}` : ''}
                         </button>
                       ))}
                     </div>
@@ -1271,7 +1211,6 @@ function WaiversContent() {
                 })()}
               </div>
 
-              {/* Administrative Timeline */}
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Administrative Governance</h4>
                 <div className="grid grid-cols-2 gap-3 text-xs">
@@ -1287,31 +1226,32 @@ function WaiversContent() {
                   </div>
                 </div>
               </div>
-
             </div>
 
-            {/* Footer Actions */}
             <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-end gap-2 flex-shrink-0">
-              {selectedGroup.status === 'pending' && canManageWaivers && (
+              {isEditingWaiver ? (
                 <>
-                  <button
-                    disabled={actionLoading}
-                    onClick={() => setRejectModal({ open: true, item: selectedGroup })}
-                    className="px-4 py-2.5 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5"
-                  >
-                    <XCircle className="w-4 h-4" /> Reject
+                  <button onClick={() => setIsEditingWaiver(false)} disabled={actionLoading} className="px-4 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-bold rounded-xl transition-colors">Cancel Edits</button>
+                  <button onClick={handleSaveCorrections} disabled={actionLoading} className="px-5 py-2.5 bg-blue-600 text-white hover:bg-blue-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-md shadow-blue-200">
+                    {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save Corrections
                   </button>
-                  <button
-                    disabled={actionLoading}
-                    onClick={() => setApproveModal({ open: true, item: selectedGroup })}
-                    className="px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-200"
-                  >
-                    <CheckCircle2 className="w-4 h-4" /> Approve Waiver
-                  </button>
+                </>
+              ) : (
+                <>
+                  {selectedGroup.status === 'pending' && canManageWaivers && (
+                    <>
+                      <button disabled={actionLoading} onClick={() => setRejectModal({ open: true, item: selectedGroup })} className="px-4 py-2.5 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5"><XCircle className="w-4 h-4" /> Reject</button>
+                      <button disabled={actionLoading} onClick={() => setApproveModal({ open: true, item: selectedGroup })} className="px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-200"><CheckCircle2 className="w-4 h-4" /> Approve</button>
+                    </>
+                  )}
+                  {selectedGroup.status === 'approved' && canManageWaivers && (
+                    <button disabled={actionLoading} onClick={() => setReverseModal({ open: true, item: selectedGroup })} className="px-4 py-2.5 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5">
+                      <RotateCcw className="w-4 h-4" /> Reverse Waiver
+                    </button>
+                  )}
                 </>
               )}
             </div>
-
           </div>
         </div>
       )}

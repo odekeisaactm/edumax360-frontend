@@ -362,7 +362,7 @@ export const appliedDiscountsAPI = {
   // Used by Tab 1 (Grouped and Paginated)
   grouped: async (params?: any) => {
     const response = await api.get(`${FEE_API_BASE}/student-discounts/grouped/`, { params });
-    return response.data; // Return full response to keep .count for pagination
+    return response.data;
   },
 };
 
@@ -443,6 +443,22 @@ export const feeWaiversAPI = {
   bulkReject: async (ids: number[], rejection_reason: string): Promise<FeeWaiver[]> => {
     try {
       const response = await api.post(`${FEE_API_BASE}/waivers/bulk-reject/`, { ids, rejection_reason });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+ bulkAdjust: async (payload: { updates: { id: number; amount_waived: string | number }[] }): Promise<any> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/waivers/bulk-adjust/`, payload);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(getDrfError(error));
+    }
+  },
+bulkReverse: async (payload: { ids: number[]; reason: string }): Promise<any> => {
+    try {
+      const response = await api.post(`${FEE_API_BASE}/waivers/bulk-reverse/`, payload);
       return response.data;
     } catch (error: any) {
       throw new Error(getDrfError(error));
