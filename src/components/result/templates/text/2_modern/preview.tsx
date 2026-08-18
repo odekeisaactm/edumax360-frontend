@@ -115,16 +115,21 @@ export default function ModernTextTemplate({
   React.useEffect(() => {
     if (isPreview) return;
     import('@/lib/api').then(({ textCategoriesAPI }) => {
-       textCategoriesAPI.list().then(data => {
-         setActiveCategories(data);
+       const params: any = {};
+       if (result?.academic_period) params.academic_period = result.academic_period;
+       if (result?.session) params.session = result.session;
+
+       textCategoriesAPI.list(params).then(res => {
+         const data = (res as any)?.results || res || [];
+         setActiveCategories(Array.isArray(data) ? data : []);
        }).catch(err => console.error("Failed to load text categories", err));
     }).catch(err => console.error(err));
-  }, [isPreview]);
+  }, [isPreview, result]);
 
   const groupedCategories = useMemo(() => {
     const rawData = result.result_data || {};
     
-    if (!activeCategories) {
+    if (activeCategories === null) {
       const groups = new Map<string, any[]>();
       Object.values(rawData).forEach((item: any) => {
         const catName = item.category_name || 'Uncategorized';
