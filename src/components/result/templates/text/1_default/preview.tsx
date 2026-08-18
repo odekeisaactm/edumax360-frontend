@@ -11,6 +11,10 @@
  * 4. Text Categories: Dynamically groups fields and renders them in a clean, alternating-color table.
  * 5. Remarks & Comments: Implements the signature-free, two-tone flat list design.
  * 6. Bulletproof mapping applied to Behavior Ratings to prevent JS crashes.
+ * 7. FIX: Text category fetch now driven by an explicit `periodId` prop (passed down from the
+ *    print/preview page's `period` URL param) instead of a non-existent `result.academic_period`
+ *    field. The category fetch no longer waits on `result` to load — it fires as soon as
+ *    `periodId` is available.
  */
 
 import React, { useMemo } from 'react';
@@ -37,6 +41,9 @@ interface TextTemplateProps {
   school_info?:        any;
   ratingOptions?:      any[];
   rating_options?:     any[];
+  // The academic session period id — the source of truth for scoping text categories.
+  // Passed down from the parent page's `period` URL search param.
+  periodId?:           string | number | null;
 }
 
 function hex(v: string, fallback: string): string {
@@ -86,6 +93,7 @@ export default function DefaultTextTemplate({
   behavior_ratings,
   schoolInfo,
   school_info,
+  periodId,
   ...props
 }: TextTemplateProps) {
 
@@ -128,26 +136,38 @@ export default function DefaultTextTemplate({
   const vendorPhone = school.vendor_phone   || '08163550192';
 
   // ── Group Data by Category ──────────────────────────────────────────────────
+  // Resolve the academic session period id to use for scoping categories.
+  // `periodId` (passed explicitly from the parent page's `period` URL param) is the
+  // source of truth. We keep a couple of defensive fallbacks in case the result payload
+  // ever does carry the id under a different key, but periodId always wins when present.
+  const resolvedPeriodId =
+    periodId ?? result?.academic_period ?? result?.academic_session_period ?? result?.period?.id ?? null;
+
   const [activeCategories, setActiveCategories] = React.useState<any[] | null>(null);
 
   React.useEffect(() => {
     if (isPreview) return;
+    if (!resolvedPeriodId) return;
+
+    let cancelled = false;
+
     import('@/lib/api').then(({ textCategoriesAPI }) => {
-       const params: any = {};
-       if (result?.academic_period) params.academic_period = result.academic_period;
-       if (result?.session) params.session = result.session;
+       const params: any = { academic_period: resolvedPeriodId };
 
        textCategoriesAPI.list(params).then(res => {
+         if (cancelled) return;
          // Extract results if paginated
          const data = (res as any)?.results || res || [];
          setActiveCategories(Array.isArray(data) ? data : []);
        }).catch(err => console.error("Failed to load text categories", err));
     }).catch(err => console.error(err));
-  }, [isPreview, result]);
+
+    return () => { cancelled = true; };
+  }, [isPreview, resolvedPeriodId]);
 
   const groupedCategories = useMemo(() => {
     const rawData = result.result_data || {};
-    
+
     // If active categories are not loaded yet, fallback to parsing whatever is in rawData
     if (activeCategories === null) {
       const groups = new Map<string, any[]>();
@@ -168,7 +188,7 @@ export default function DefaultTextTemplate({
     return activeCategories.map((cat: any) => {
       const activeFields = cat.fields_list || [];
       const fieldsForCat: any[] = [];
-      
+
       activeFields.forEach((f: any) => {
         const saved = rawData[String(f.id)];
         if (saved) {

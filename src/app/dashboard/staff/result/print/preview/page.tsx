@@ -40,6 +40,7 @@ interface PrintData {
   midterm_grade_list: any[];
   field_list: any[];
   school_info: any;
+  rating_options?: any[];
   settings: {
     primary_color: string;
     secondary_color: string;
@@ -493,6 +494,7 @@ export default function ResultPreviewPage() {
               schoolInfo={data.school_info}
               fieldList={data.field_list}
               ratingOptions={data.rating_options}
+              periodId={periodId}
             />
           </div>
         ) : (
