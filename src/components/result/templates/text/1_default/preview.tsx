@@ -128,23 +128,57 @@ export default function DefaultTextTemplate({
   const vendorPhone = school.vendor_phone   || '08163550192';
 
   // ── Group Data by Category ──────────────────────────────────────────────────
+  const [activeCategories, setActiveCategories] = React.useState<any[] | null>(null);
+
+  React.useEffect(() => {
+    if (isPreview) return;
+    import('@/lib/api').then(({ textCategoriesAPI }) => {
+       textCategoriesAPI.list().then(data => {
+         setActiveCategories(data);
+       }).catch(err => console.error("Failed to load text categories", err));
+    }).catch(err => console.error(err));
+  }, [isPreview]);
+
   const groupedCategories = useMemo(() => {
     const rawData = result.result_data || {};
-    const groups = new Map<string, any[]>();
+    
+    // If active categories are not loaded yet, fallback to parsing whatever is in rawData
+    if (!activeCategories) {
+      const groups = new Map<string, any[]>();
+      Object.values(rawData).forEach((item: any) => {
+        const catName = item.category_name || 'General';
+        if (!groups.has(catName)) {
+          groups.set(catName, []);
+        }
+        groups.get(catName)!.push(item);
+      });
+      return Array.from(groups.entries()).map(([name, fields]) => ({
+        name,
+        fields
+      }));
+    }
 
-    Object.values(rawData).forEach((item: any) => {
-      const catName = item.category_name || 'General';
-      if (!groups.has(catName)) {
-        groups.set(catName, []);
-      }
-      groups.get(catName)!.push(item);
-    });
+    // Filter strictly by the current active configuration
+    return activeCategories.map((cat: any) => {
+      const activeFields = cat.fields_list || [];
+      const fieldsForCat: any[] = [];
+      
+      activeFields.forEach((f: any) => {
+        const saved = rawData[String(f.id)];
+        if (saved) {
+          fieldsForCat.push({
+            ...saved,
+            field_name: f.name || saved.field_name
+          });
+        }
+      });
 
-    return Array.from(groups.entries()).map(([name, fields]) => ({
-      name,
-      fields
-    }));
-  }, [result.result_data]);
+      return {
+        name: cat.name,
+        fields: fieldsForCat
+      };
+    }).filter(group => group.fields.length > 0);
+  }, [result.result_data, activeCategories]);
 
   // ── Flat List of Comment Rows ───────────────────────────────────────────────
   const customFields: string[] = settings.enable_custom_comment_fields ? (settings.custom_comment_fields ?? []) : [];
@@ -307,7 +341,7 @@ export default function DefaultTextTemplate({
                       <td style={{ ...tdLeft, fontWeight: 500, paddingLeft: '16px' }}>{toSentenceCase(field.field_name)}</td>
                       {showComment && <td style={{ ...tdBase, textAlign: 'left', fontStyle: 'italic' }}>{field.comment || '—'}</td>}
                       <td style={{ ...tdBase, textAlign: 'center', fontWeight: 700, color: primaryColor }}>
-                        {field.rating ? String(field.rating).toUpperCase() : '—'}
+                        {field.rating ? String(field.rating).split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : '—'}
                       </td>
                     </tr>
                   ))}

@@ -110,23 +110,55 @@ export default function ModernTextTemplate({
   const vendorPhone = sInfo.vendor_phone   || '08163550192';
 
   // ── GROUP RESULT DATA BY CATEGORY ON THE FLY ──
+  const [activeCategories, setActiveCategories] = React.useState<any[] | null>(null);
+
+  React.useEffect(() => {
+    if (isPreview) return;
+    import('@/lib/api').then(({ textCategoriesAPI }) => {
+       textCategoriesAPI.list().then(data => {
+         setActiveCategories(data);
+       }).catch(err => console.error("Failed to load text categories", err));
+    }).catch(err => console.error(err));
+  }, [isPreview]);
+
   const groupedCategories = useMemo(() => {
     const rawData = result.result_data || {};
-    const groups = new Map<string, any[]>();
+    
+    if (!activeCategories) {
+      const groups = new Map<string, any[]>();
+      Object.values(rawData).forEach((item: any) => {
+        const catName = item.category_name || 'Uncategorized';
+        if (!groups.has(catName)) {
+          groups.set(catName, []);
+        }
+        groups.get(catName)!.push(item);
+      });
+      return Array.from(groups.entries()).map(([name, fields]) => ({
+        name,
+        fields
+      }));
+    }
 
-    Object.values(rawData).forEach((item: any) => {
-      const catName = item.category_name || 'Uncategorized';
-      if (!groups.has(catName)) {
-        groups.set(catName, []);
-      }
-      groups.get(catName)!.push(item);
-    });
+    return activeCategories.map((cat: any) => {
+      const activeFields = cat.fields_list || [];
+      const fieldsForCat: any[] = [];
+      
+      activeFields.forEach((f: any) => {
+        const saved = rawData[String(f.id)];
+        if (saved) {
+          fieldsForCat.push({
+            ...saved,
+            field_name: f.name || saved.field_name
+          });
+        }
+      });
 
-    return Array.from(groups.entries()).map(([name, fields]) => ({
-      name,
-      fields
-    }));
-  }, [result.result_data]);
+      return {
+        name: cat.name,
+        fields: fieldsForCat
+      };
+    }).filter(group => group.fields.length > 0);
+  }, [result.result_data, activeCategories]);
 
   const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 12 };
   const thStyle: React.CSSProperties = {
@@ -242,7 +274,7 @@ export default function ModernTextTemplate({
                     <td style={{ ...tdLeft, fontWeight: 500 }}>{toSentenceCase(field.field_name)}</td>
                     {showComment && <td style={{ ...tdBase, textAlign: 'left', fontStyle: 'italic' }}>{field.comment || '—'}</td>}
                     <td style={{ ...tdBase, textAlign: 'center', fontWeight: 700, color: primaryColor }}>
-                      {field.rating ? String(field.rating).toUpperCase() : '—'}
+                      {field.rating ? String(field.rating).split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : '—'}
                     </td>
                   </tr>
                 ))}
