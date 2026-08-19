@@ -200,6 +200,7 @@ function StatusBadge({ status }: { status: string }) {
     confirmed: { label: 'Confirmed', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: <CheckCircle2 className="h-3 w-3" /> },
     failed: { label: 'Failed', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200', icon: <XCircle className="h-3 w-3" /> },
     reverted: { label: 'Reverted', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200', icon: <RotateCcw className="h-3 w-3" /> },
+    declined: { label: 'Declined', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200', icon: <RotateCcw className="h-3 w-3" /> },
   };
   const meta = map[status?.toLowerCase() || 'pending'] ?? map.pending;
   return (
@@ -463,6 +464,7 @@ export default function PaymentsPage() {
           <option value="pending">Pending</option>
           <option value="failed">Failed</option>
           <option value="reverted">Reverted</option>
+          <option value="declined">Declined</option>
         </select>
       </div>
 

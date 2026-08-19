@@ -569,6 +569,14 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             },
           ],
         },
+        // ==================== REPORTS & ANALYTICS ====================
+        {
+          name: 'Reports & Analytics',
+          href: '/dashboard/staff/fee/reports',
+          icon: <BarChart2 className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/fee/reports'),
+          requiredPermissions: ['fee_management.manage_fees'],
+        },
         // ==================== PRICING ARCHITECTURE ====================
         {
           name: 'Pricing Architecture',

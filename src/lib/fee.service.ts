@@ -21,6 +21,10 @@ import type {
   PaymentReceipt , FundingSource, Allocation,InvoicePaymentSummary,
   InvoiceGenerationJob,
   StudentFinancialDashboard,
+  CollectionReportRow,
+  DashboardKPIs,
+  AgingBuckets,
+  PaymentTrend,
   PaginatedLedgerResponse
 } from '@/lib/fee.types';
 
@@ -761,6 +765,61 @@ export const billingLedgerAPI = {
   }
 };
 
+
+// ============================================================
+// 12. REPORTS & ANALYTICS
+// ============================================================
+
+export const reportsAPI = {
+  getCollections: async (params?: {
+    session_id?: number | string;
+    period_id?: number | string;
+    cumulative?: boolean;
+    class_id?: number | string;
+    section_id?: number | string;
+    debt_type?: 'all' | 'tuition_only' | 'ancillary_only';
+    group_by?: 'student' | 'parent';
+    threshold_pct?: number | string;
+    export?: 'excel' | 'pdf';
+  }): Promise<CollectionReportRow[] | any> => {
+    // Note: If 'export' is passed, you might want to handle this as a window.location.href
+    // or Blob download in the UI. This method handles the standard JSON fetch.
+    const response = await api.get(`${FEE_API_BASE}/reports/collections/`, { params });
+    return response.data?.results || response.data;
+  },
+
+  getDashboardKPIs: async (params?: {
+    session_id?: number | string;
+    period_id?: number | string;
+  }): Promise<DashboardKPIs> => {
+    const response = await api.get(`${FEE_API_BASE}/reports/dashboard-kpi/`, { params });
+    return response.data;
+  },
+
+  getTrends: async (params?: {
+    days?: number;
+    session_id?: number | string;
+  }): Promise<PaymentTrend[]> => {
+    const response = await api.get(`${FEE_API_BASE}/reports/trends/`, { params });
+    return response.data?.results || response.data;
+  },
+
+  getAging: async (params?: { session_id?: number | string }): Promise<AgingBuckets> => {
+    const response = await api.get(`${FEE_API_BASE}/reports/aging/`, { params });
+    return response.data;
+  },
+
+  getClassPerformance: async (params?: {
+    session_id?: number | string;
+    period_id?: number | string;
+    cumulative?: boolean;
+    export?: 'excel' | 'pdf';
+  }) => {
+    const response = await api.get(`${FEE_API_BASE}/reports/class-performance/`, { params });
+    return response.data?.results || response.data;
+  }
+};
+
 // ============================================================
 // EXPORT ALL API SERVICES AS A SINGLE OBJECT
 // ============================================================
@@ -783,8 +842,10 @@ export const feeAPI = {
   billingLedger: billingLedgerAPI,
   generationJobs: generationJobsAPI,
   studentDashboard: studentDashboardAPI,
+  reports: reportsAPI,
 
 };
+
 
 // ============================================================
 // DEFAULT EXPORT

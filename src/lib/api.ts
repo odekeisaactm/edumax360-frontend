@@ -2351,6 +2351,13 @@ export const feeAPI = {
   fundWallet: financeAPI.studentFunding.create,
   transferWalletField: async (d?: any) => financeAPI.walletTransfer?.create(d) || {},
   transferWalletSibling: async (d?: any) => financeAPI.walletTransfer?.create(d) || {},
+
+  // ==================== REPORTS & ANALYTICS (NEW) ====================
+  getCollectionReport: newFeeAPI.reports.getCollections,
+  getDashboardKPIs: newFeeAPI.reports.getDashboardKPIs,
+  getPaymentTrends: newFeeAPI.reports.getTrends,
+  getAgingBuckets: newFeeAPI.reports.getAging,
+  getClassPerformanceReport: newFeeAPI.reports.getClassPerformance,
 };
 export { bankDetailsAPI } from './finance.service';
 

@@ -432,3 +432,38 @@ export interface PaginatedLedgerResponse {
   previous: string | null;
   results: LedgerParent[];
 }
+
+// ==================== REPORTS & ANALYTICS (NEW) ====================
+
+export interface CollectionReportRow {
+  id: number;
+  name: string;
+  gross_billed: string | number;
+  discounts: string | number;
+  waivers: string | number;
+  net_expected: string | number;
+  paid: string | number;
+  balance: string | number;
+  pct_paid: number;
+}
+
+export interface DashboardKPIs {
+  total_billed: string;
+  total_discounts: string;
+  net_expected: string;
+  total_paid: string;
+  total_outstanding: string;
+  collection_rate: number;
+}
+
+export interface AgingBuckets {
+  '0_30': string | number;
+  '31_60': string | number;
+  '61_90': string | number;
+  '90_plus': string | number;
+}
+
+export interface PaymentTrend {
+  date: string;
+  amount: string | number;
+}
