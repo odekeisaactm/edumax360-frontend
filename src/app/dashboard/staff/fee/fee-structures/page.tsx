@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { feeAPI, academicCalendarAPI, academicAPI } from '@/lib/api';
+import { api, feeAPI, academicCalendarAPI, academicAPI } from '@/lib/api';
 import { FeeStructure, Fee, FeeGroup, ClassModel, ClassSection, AcademicSessionPeriod, Discount } from '@/lib/types';
 import {
   Layers, Plus, Edit2, Trash2, Check, X, AlertCircle,
@@ -19,6 +19,8 @@ import {
 const labelCls = 'block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5';
 const inputCls = 'w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 text-slate-800 bg-white transition-all';
 const selectCls = 'w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 text-slate-800 bg-white transition-all appearance-none';
+
+const PAGE_SIZE = 2;
 
 const fmtMoney = (v: string | number = 0) => `₦${Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
 
@@ -72,6 +74,12 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 // "double_billing" flags a PAIR of already-saved, active structures for the same
 // fee whose scopes overlap — the persistent, list-level counterpart to the
 // live/submit-time guard that only runs while the form is open.
+//
+// NOTE: both the scanner and the live guard deliberately run against the FULL,
+// unpaginated structures list (`structures`), fetched once via loadData().
+// The paginated `pagedStructures` state below is used ONLY to render the
+// visible table rows — it must never be used for anomaly detection, or
+// conflicts on other pages would silently stop being flagged.
 
 type MissingArmAnomaly = {
   type: 'missing_arm';
@@ -103,13 +111,19 @@ export default function FeeStructuresPage() {
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 5000);
   }, []);
 
-  // ── Data State ──
+  // ── Full Dataset (used by anomaly scanner + live double-billing guard) ──
   const [loading, setLoading] = useState(true);
   const [structures, setStructures] = useState<FeeStructure[]>([]);
   const [fees, setFees] = useState<Fee[]>([]);
   const [groups, setGroups] = useState<FeeGroup[]>([]);
   const [classes, setClasses] = useState<ClassModel[]>([]);
   const [sections, setSections] = useState<ClassSection[]>([]);
+
+  // ── Paginated Dataset (used ONLY to render the list-view table) ──
+  const [pagedStructures, setPagedStructures] = useState<FeeStructure[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [tableLoading, setTableLoading] = useState(true);
 
   // ── UI State ──
   const [view, setView] = useState<'list' | 'create' | { mode: 'edit'; structure: FeeStructure }>('list');
@@ -149,6 +163,7 @@ export default function FeeStructuresPage() {
   const [simLoading, setSimLoading] = useState(false);
   const [discountsOpen, setDiscountsOpen] = useState(false);
 
+  // ── Load FULL dataset (reference data + all structures, for anomaly scanner) ──
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -189,9 +204,44 @@ export default function FeeStructuresPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // ── Fetch PAGINATED structures for the visible table ──
+  const fetchPagedStructures = useCallback(async () => {
+    setTableLoading(true);
+    try {
+      const response = await api.get('/api/fee/structures/', {
+        params: {
+          page,
+          page_size: PAGE_SIZE,
+          search: search.trim() || undefined,
+          group: filterGroup !== 'all' ? filterGroup : undefined,
+          is_active: filterStatus === 'all' ? undefined : filterStatus === 'active',
+          fee__occurrence: filterOccurrence !== 'all' ? filterOccurrence : undefined,
+        },
+      });
+      const resData = response.data;
+      const data = resData.results || resData || [];
+      const count = typeof resData.count === 'number' ? resData.count : data.length;
+      setPagedStructures(data);
+      setTotal(count);
+    } catch (err) {
+      showToast('error', extractError(err));
+    } finally {
+      setTableLoading(false);
+    }
+  }, [page, search, filterGroup, filterStatus, filterOccurrence, showToast]);
+
+  // Reset to page 1 whenever a filter/search changes
+  useEffect(() => { setPage(1); }, [search, filterGroup, filterStatus, filterOccurrence]);
+
+  // Debounced fetch (same 400ms pattern as the Fee Types page)
+  useEffect(() => {
+    const handler = setTimeout(() => { fetchPagedStructures(); }, 400);
+    return () => clearTimeout(handler);
+  }, [fetchPagedStructures]);
+
   // ── Unified Anomaly Scanner ──
-  // Runs against saved data only (not the open form), so it stays accurate on the
-  // list page at all times, not just while someone happens to be editing.
+  // Runs against the FULL saved dataset (`structures`), not `pagedStructures`,
+  // so it stays accurate regardless of which table page someone is looking at.
   useEffect(() => {
     if (structures.length === 0 || classes.length === 0 || sections.length === 0) { setAnomalies([]); return; }
 
@@ -381,6 +431,7 @@ export default function FeeStructuresPage() {
       if (typeof view === 'object' && view.mode === 'edit') {
         const updated = await feeAPI.updateFeeStructure(view.structure.id, payload as any);
         setStructures(p => p.map(s => s.id === updated.id ? updated : s));
+        fetchPagedStructures(); // keep visible table in sync with the edit
         showToast('success', 'Fee structure updated successfully.');
         setView('list');
       } else {
@@ -403,6 +454,7 @@ export default function FeeStructuresPage() {
       await feeAPI.deleteFeeStructure(deleteModal.struct.id);
       purgeAnomalyIgnores(deleteModal.struct.id);
       setStructures(p => p.filter(s => s.id !== deleteModal.struct!.id));
+      fetchPagedStructures(); // keep visible table in sync with the deletion
       showToast('success', 'Structure deleted successfully.');
       setDeleteModal({ open: false, struct: null, isErrorMode: false, errorMsg: '' });
     } catch (err: any) {
@@ -460,20 +512,10 @@ export default function FeeStructuresPage() {
   // ============================================================================
 
   const renderListView = () => {
-    const filtered = structures.filter(s => {
-      const f = fees.find(x => x.id === s.fee);
-      const g = groups.find(x => x.id === s.group);
-
-      let pass = true;
-      if (search) pass = pass && ((f?.name.toLowerCase().includes(search.toLowerCase())) || (g?.name.toLowerCase().includes(search.toLowerCase())));
-      if (filterStatus === 'active') pass = pass && s.is_active;
-      if (filterStatus === 'inactive') pass = pass && !s.is_active;
-      if (filterGroup !== 'all') pass = pass && s.group.toString() === filterGroup;
-      if (filterOccurrence !== 'all') pass = pass && f?.occurrence === filterOccurrence;
-      return pass;
-    });
-
+    // Filtering now happens server-side (see fetchPagedStructures params),
+    // so pagedStructures is rendered directly — no client-side .filter() here.
     const severeCount = anomalies.filter(a => a.type === 'double_billing').length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
     return (
       <div className="space-y-5 pb-12 max-w-6xl mx-auto animate-in fade-in duration-300">
@@ -547,12 +589,12 @@ export default function FeeStructuresPage() {
 
         {/* Table */}
         <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
-          {loading ? (
+          {tableLoading ? (
              <div className="p-14 flex flex-col items-center justify-center text-slate-400">
                <Loader2 className="h-6 w-6 animate-spin text-cyan-600 mb-3" />
                <p className="text-sm font-semibold">Loading fee structures...</p>
              </div>
-          ) : filtered.length === 0 ? (
+          ) : pagedStructures.length === 0 ? (
              <div className="p-14 flex flex-col items-center justify-center text-slate-400">
                <Layers className="h-8 w-8 text-slate-300 mb-3" />
                <p className="text-sm font-semibold text-slate-600">No structures found</p>
@@ -573,7 +615,7 @@ export default function FeeStructuresPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {filtered.map(s => {
+                  {pagedStructures.map(s => {
                     const fee = fees.find(f => f.id === s.fee);
                     const group = groups.find(g => g.id === s.group);
                     const isExpanded = expandedRows.includes(s.id);
@@ -665,6 +707,34 @@ export default function FeeStructuresPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* ── Footer Pagination ── */}
+          {!tableLoading && pagedStructures.length > 0 && (
+            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs font-bold text-slate-500">
+              <span>
+                Showing Page {page} of {totalPages} (Total: {total} record{total !== 1 ? 's' : ''})
+              </span>
+
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm"
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages}
+                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -820,6 +820,23 @@ export const reportsAPI = {
   }
 };
 
+export const notificationBatchesAPI = {
+  list: async (params?: any): Promise<any> => {
+    const response = await api.get(`${FEE_API_BASE}/notification-batches/`, { params });
+    return response.data;
+  },
+
+  get: async (id: number): Promise<FeeNotificationBatch> => {
+    const response = await api.get(`${FEE_API_BASE}/notification-batches/${id}/`);
+    return response.data;
+  },
+
+  getStatus: async (id: number): Promise<any> => {
+    const response = await api.get(`${FEE_API_BASE}/notification-batches/${id}/status/`);
+    return response.data;
+  },
+};
+
 // ============================================================
 // EXPORT ALL API SERVICES AS A SINGLE OBJECT
 // ============================================================
@@ -843,6 +860,7 @@ export const feeAPI = {
   generationJobs: generationJobsAPI,
   studentDashboard: studentDashboardAPI,
   reports: reportsAPI,
+  notificationBatches: notificationBatchesAPI,
 
 };
 

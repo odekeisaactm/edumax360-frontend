@@ -467,3 +467,40 @@ export interface PaymentTrend {
   date: string;
   amount: string | number;
 }
+
+export interface FeeNotificationLog {
+  id: number;
+  parent_name?: string | null;
+  student_name?: string | null;
+  parent_phone?: string;
+  message_type: string;
+  message_type_display: string;
+  channel: string;
+  channel_display: string;
+  status: 'success' | 'failed' | 'skipped';
+  status_display: string;
+  error_message?: string | null;
+  created_at: string;
+}
+
+export interface FeeNotificationBatch {
+  id: number;
+  action: 'send_reminders' | 'send_summaries';
+  action_display: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  status_display: string;
+  session?: number | null;
+  session_display?: string;
+  period?: number | null;
+  period_display?: string;
+  total_targets: number;
+  processed: number;
+  successful: number;
+  failed: number;
+  skipped: number;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_by_name?: string;
+  created_at: string;
+  logs?: FeeNotificationLog[];
+}

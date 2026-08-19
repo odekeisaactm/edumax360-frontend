@@ -2358,6 +2358,11 @@ export const feeAPI = {
   getPaymentTrends: newFeeAPI.reports.getTrends,
   getAgingBuckets: newFeeAPI.reports.getAging,
   getClassPerformanceReport: newFeeAPI.reports.getClassPerformance,
+
+  // =================NOTIFICATIONS  ========================
+  getNotificationBatches: newFeeAPI.notificationBatches.list,
+  getNotificationBatch: newFeeAPI.notificationBatches.get,
+  getNotificationBatchStatus: newFeeAPI.notificationBatches.getStatus,
 };
 export { bankDetailsAPI } from './finance.service';
 
