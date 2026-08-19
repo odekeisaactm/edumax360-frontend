@@ -20,7 +20,7 @@ const labelCls = 'block text-xs font-bold text-slate-600 uppercase tracking-wide
 const inputCls = 'w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 text-slate-800 bg-white transition-all';
 const selectCls = 'w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 text-slate-800 bg-white transition-all appearance-none';
 
-const PAGE_SIZE = 2;
+const PAGE_SIZE = 20;
 
 const fmtMoney = (v: string | number = 0) => `₦${Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
 
