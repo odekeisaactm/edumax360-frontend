@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { feeAPI, academicCalendarAPI, academicAPI } from '@/lib/api';
+import { feeAPI, academicCalendarAPI, academicAPI, api } from '@/lib/api';
 import { Session, AcademicSessionPeriod, ClassModel } from '@/lib/types';
+import { getApiUrl } from '@/lib/getApiUrl';
 import {
   Filter, Loader2, BarChart2, PieChart,
   TrendingUp, Clock, FileText, CheckCircle, AlertTriangle, X,
@@ -244,36 +245,51 @@ export default function FeeReportsPage() {
 
   // ── CSV export: always the FULL filtered dataset, independent of any
   // client-side pagination happening inside the tab. ──
-  const handleExportCsv = () => {
-    if (activeTab === 'aging') return; // aging is a single small object, nothing to export
+  const handleExportCsv = async () => {
+    if (activeTab === 'aging') return;
     const endpointPath = activeTab === 'collections' ? 'collections'
       : activeTab === 'performance' ? 'class-performance'
       : 'trends';
 
-    const params = new URLSearchParams();
-    const base: Record<string, any> = {
+    const params: Record<string, any> = {
       session_id: filterSessionId,
       session_label: filterLabels.session_label,
       period_label: filterLabels.period_label,
       class_label: filterLabels.class_label,
     };
     if (activeTab === 'collections') {
-      Object.assign(base, {
+      Object.assign(params, {
         period_id: filterPeriodId, cumulative: isCumulative, class_id: filterClassId,
         section_id: filterSectionId, fee_id: specificFeeId, debt_type: debtType,
         group_by: groupBy, threshold_pct: thresholdPct,
       });
     } else if (activeTab === 'performance') {
-      Object.assign(base, { period_id: filterPeriodId, cumulative: isCumulative, debt_type: debtType });
+      Object.assign(params, { period_id: filterPeriodId, cumulative: isCumulative, debt_type: debtType });
     }
-
-    Object.entries(base).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== '' && v !== false) params.append(k, String(v));
+    Object.keys(params).forEach(k => {
+      if (params[k] === undefined || params[k] === null || params[k] === '' || params[k] === false) {
+        delete params[k];
+      }
     });
-    params.append('export', 'csv');
-    window.location.href = `/api/fee/reports/${endpointPath}/?${params.toString()}`;
-  };
+    params.export = 'csv';
 
+    try {
+      const res = await api.get(`${getApiUrl()}/api/fee/reports/${endpointPath}/`, {
+        params,
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${reportTitle}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showToast('error', extractError(err));
+    }
+  };
   // ── PDF export: browser print of the currently loaded (full, filtered)
   // dataset. Each tab renders a `data-print-summary` block that this
   // triggers via window.print(). ──
