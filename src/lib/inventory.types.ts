@@ -502,6 +502,7 @@ export interface PurchaseAdvanceCompletePayload {
 export interface InventoryAssignment {
   id: number;
   item: number;
+  title: string;
   item_name?: string; // Read-only
   quantity_per_student: string;
   student_classes: number[];
@@ -519,12 +520,14 @@ export interface InventoryAssignment {
 
 export interface InventoryAssignmentPayload {
   item: number;
+  title: string;
   quantity_per_student: string;
   student_classes: number[];
   gender: AssignmentGender;
   is_mandatory: boolean;
   is_free: boolean;
   is_active?: boolean;
+  academic_period?: number | null;
   notes?: string | null;
 }
 
@@ -548,3 +551,335 @@ export interface CollectionGenerationJob {
 export interface AssignmentJobStartPayload {
   assignment_id: number;
 }
+
+// ============================================================
+// ALLOCATIONS & COLLECTION EVENTS (NEW)
+// ============================================================
+
+export type AllocationStatus = 'pending' | 'partially_collected' | 'collected' | 'returned';
+export type CollectionEventStatus = 'completed' | 'reversed';
+export type CollectionPaymentMethod = 'cash' | 'student_wallet' | 'pos';
+export type ReturnReason = 'damaged' | 'wrong_size' | 'excess' | 'duplicate' | 'student_left' | 'other';
+
+export interface AllocationItem {
+  id: number;
+  assignment: number;
+  assignment_item_name: string;
+  assignment_item_unit: string;
+  assignment_item_price: string;
+  assignment_is_mandatory: boolean;
+  assignment_is_free: boolean;
+  quantity_assigned: string;
+  quantity_collected: string;
+  outstanding_quantity: string;
+  amount_due: string;
+  amount_collected: string;
+  amount_outstanding: string;
+  status: AllocationStatus;
+  status_display?: string;
+  due_date?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Allocation {
+  id: number;
+  student: number;
+  student_name: string;
+  student_registration_number: string;
+  student_class_name: string;
+  student_image_url?: string | null;
+  academic_period?: number | null;
+  status: AllocationStatus;
+  status_display?: string;
+  items: AllocationItem[];
+  total_items: number;
+  total_quantity_assigned: string;
+  total_quantity_collected: string;
+  total_quantity_outstanding: string;
+  total_amount_due: string;
+  total_amount_paid: string;
+  total_amount_outstanding: string;
+  collection_events?: CollectionEvent[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AllocationList {
+  id: number;
+  student: number;
+  student_name: string;
+  student_registration_number: string;
+  student_class_name: string;
+  academic_period?: number | null;
+  status: AllocationStatus;
+  status_display?: string;
+  total_items: number;
+  total_quantity_outstanding: string;
+  total_amount_outstanding: string;
+  created_at: string;
+}
+
+export interface CollectionEventItem {
+  id: number;
+  allocation_item: number;
+  item_name: string;
+  unit_display: string;
+  quantity_collected: string;
+  unit_price: string;
+  amount: string;
+}
+
+export interface CollectionEvent {
+  id: number;
+  allocation: number;
+  student_name: string;
+  location: number;
+  location_name: string;
+  payment_method: CollectionPaymentMethod;
+  payment_method_display?: string;
+  total_amount: string;
+  total_quantity?: string;
+  status: CollectionEventStatus;
+  status_display?: string;
+  reference: string;
+  collected_by_staff?: number | null;
+  collected_by_staff_name?: string;
+  collection_date: string;
+  notes?: string | null;
+  items: CollectionEventItem[];
+}
+
+export interface CollectionEventList {
+  id: number;
+  reference: string;
+  allocation: number;
+  student_name: string;
+  student_registration_number: string;
+  location_name: string;
+  payment_method: CollectionPaymentMethod;
+  payment_method_display?: string;
+  total_amount: string;
+  total_quantity: string;
+  total_items_count: number;
+  collected_by_staff_name?: string;
+  collection_date: string;
+  status: CollectionEventStatus;
+}
+
+export interface InventoryReturn {
+  id: number;
+  allocation_item: number;
+  student_name: string;
+  item_name: string;
+  quantity_returned: string;
+  return_reason: ReturnReason;
+  return_reason_display?: string;
+  return_date: string;
+  item_condition: string;
+  received_by_name?: string;
+  notes?: string | null;
+}
+
+export interface CollectionRecordPayload {
+  allocation_id: number;
+  items: Array<{
+    allocation_item_id: number;
+    quantity: string;
+  }>;
+  location_id: number;
+  payment_method: CollectionPaymentMethod;
+}
+
+export interface CollectionReturnPayload {
+  allocation_item_id: number;
+  quantity_to_return: string;
+  return_reason: ReturnReason;
+  item_condition?: string;
+  notes?: string;
+}
+
+export interface AllocationFilters {
+  academic_period?: number;
+  class_id?: number;
+  section_id?: number;
+  status?: AllocationStatus;
+  search?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface CollectionEventFilters {
+  student_id?: number;
+  location?: number;
+  payment_method?: CollectionPaymentMethod;
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface ReturnFilters {
+  reason?: ReturnReason;
+  student_id?: number;
+  date_from?: string;
+  date_to?: string;
+  page?: number;
+  page_size?: number;
+}
+
+// ============================================================
+// REPORT TYPES (NEW)
+// ============================================================
+
+export interface StockLevelReportItem {
+  id: number;
+  name: string;
+  barcode?: string | null;
+  category: string;
+  unit: string;
+  quantity: string;
+  reorder_level: string;
+  last_cost_price: string;
+  current_selling_price: string;
+  stock_value_at_cost: string;
+  stock_value_at_selling: string;
+  is_low_stock: boolean;
+  is_out_of_stock: boolean;
+  location_breakdown: Array<{
+    location_id: number;
+    location_name: string;
+    location_type: InventoryLocationType;
+    quantity: string;
+  }>;
+}
+
+export interface StockLevelReportSummary {
+  total_items: number;
+  low_stock_count: number;
+  out_of_stock_count: number;
+  total_value_at_cost: string;
+  total_value_at_selling: string;
+}
+
+export interface StockLevelReport {
+  summary: StockLevelReportSummary;
+  items: StockLevelReportItem[];
+}
+
+export interface SalesAnalysisItem {
+  item_id: number;
+  item_name: string;
+  category: string;
+  quantity_sold: string;
+  revenue: string;
+  cost: string;
+  profit: string;
+  profit_margin: string;
+}
+
+export interface SalesAnalysisSummary {
+  total_revenue: string;
+  total_profit: string;
+  profit_margin: string;
+  total_transactions: number;
+  payment_breakdown: {
+    cash: string;
+    student_wallet: string;
+    staff_wallet: string;
+    pos: string;
+  };
+  date_range: {
+    start_date: string;
+    end_date: string;
+  };
+}
+
+export interface DailyTrend {
+  date: string;
+  revenue: string;
+  transactions: number;
+  profit: string;
+}
+
+export interface SalesAnalysisReport {
+  summary: SalesAnalysisSummary;
+  top_items: SalesAnalysisItem[];
+  daily_trend: DailyTrend[];
+}
+
+export interface StaffSalesReportItem {
+  staff_id: number;
+  staff_name: string;
+  staff_code: string;
+  total_sales: number;
+  total_amount: string;
+  cash_total: string;
+  student_wallet_total: string;
+  staff_wallet_total: string;
+  pos_total: string;
+}
+
+export interface StaffSalesReportSummary {
+  total_staff: number;
+  total_sales: number;
+  total_amount: string;
+  cash_total: string;
+  student_wallet_total: string;
+  staff_wallet_total: string;
+  pos_total: string;
+}
+
+export interface StaffSalesReport {
+  summary: StaffSalesReportSummary;
+  staff_report: StaffSalesReportItem[];
+  date_range: {
+    start_date: string;
+    end_date: string;
+  };
+}
+
+export interface StockLevelReportFilters {
+  location?: 'all' | 'shop' | 'store';
+  category?: number;
+  stock_status?: 'all' | 'low' | 'out';
+  search?: string;
+}
+
+export interface SalesAnalysisFilters {
+  start_date?: string;
+  end_date?: string;
+  location?: number;
+  payment_method?: 'all' | SalePaymentMethod;
+  sort_by?: 'quantity' | 'revenue' | 'profit' | 'name';
+  sort_order?: 'asc' | 'desc';
+}
+
+export interface StaffSalesFilters {
+  start_date?: string;
+  end_date?: string;
+  location?: number;
+  staff?: number;
+}
+
+// Update StockOutReason to include class_disbursement
+export type StockOutReason =
+  | 'staff_collection'
+  | 'class_disbursement'
+  | 'damage'
+  | 'expired'
+  | 'adjustment'
+  | 'wastage'
+  | 'transfer'
+  | 'disbursement';
+
+// Update StockOutDepartment to include classroom
+export type StockOutDepartment =
+  | 'cleaning'
+  | 'drivers'
+  | 'clinic'
+  | 'admin'
+  | 'cafeteria'
+  | 'maintenance'
+  | 'classroom';

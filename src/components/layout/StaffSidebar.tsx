@@ -16,7 +16,7 @@ import {
   ArrowRight, Award, Printer, Shield, Upload, Download, CalendarDays, PlusCircle,
   FileSearch, Package, User, Zap, MapPin, Gift, TrendingDown, Wallet, History,
   ClipboardCheck, Radio, ListChecks, ScanLine, IdCard, Fingerprint,  Truck, ArrowDownCircle,
-  ShoppingCart, Monitor
+  ShoppingCart, Monitor, PackageCheck, Cog
 } from 'lucide-react';
 
 interface NavItem {
@@ -1178,42 +1178,42 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             },
           ],
         },
-        // ==================== ASSIGNMENTS & COLLECTIONS ====================
-        {
-          name: 'Assignments & Collections',
-          href: '#',
-          icon: <Users className="h-4 w-4" />,
-          children: [
-            {
-              name: 'Assignments',
-              href: '/dashboard/staff/inventory/assignments',
-              icon: <ListChecks className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/inventory/assignments'),
-              requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
-            },
-            {
-              name: 'Generation Jobs',
-              href: '/dashboard/staff/inventory/assignments/jobs',
-              icon: <Activity className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/inventory/assignments/jobs'),
-              requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
-            },
-            {
-              name: 'Student Collections',
-              href: '/dashboard/staff/inventory/collections/students',
-              icon: <UserCheck className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/inventory/collections/students'),
-              requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
-            },
-            {
-              name: 'Class Collections',
-              href: '/dashboard/staff/inventory/collections/classes',
+       {
+              name: 'Assignments & Collections',
+              href: '#',
               icon: <Users className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/inventory/collections/classes'),
-              requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
+              children: [
+
+                {
+                  name: 'View Allocations',
+                  href: '/dashboard/staff/inventory/allocations',
+                  icon: <Package className="h-4 w-4" />,
+                  current: isCurrentPath('/dashboard/staff/inventory/allocations'),
+                  requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
+                },
+                {
+                  name: 'View Collections',
+                  href: '/dashboard/staff/inventory/collections',
+                  icon: <PackageCheck className="h-4 w-4" />,
+                  current: isCurrentPath('/dashboard/staff/inventory/collections'),
+                  requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
+                },
+                {
+                  name: 'Assign Items',
+                  href: '/dashboard/staff/inventory/assignments',
+                  icon: <ClipboardList className="h-4 w-4" />,
+                  current: isCurrentPath('/dashboard/staff/inventory/assignments'),
+                  requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
+                },
+                {
+                  name: 'Generate Assignments',
+                  href: '/dashboard/staff/inventory/assignments/jobs',
+                  icon: <Cog className="h-4 w-4" />,
+                  current: isCurrentPath('/dashboard/staff/inventory/assignments/jobs'),
+                  requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
+                },
+              ],
             },
-          ],
-        },
 
 
         // ==================== CONFIGURATION ====================

@@ -372,12 +372,95 @@ export const inventoryAssignmentAPI = {
 // ── Background Jobs ──────────────────────────────────────────
 
 export const inventoryJobAPI = {
+  list: async (params?: Record<string, any>): Promise<any> => {
+    const r = await api.get('/api/inventory/jobs/', { params });
+    return unwrap(r);
+  },
   generateCollections: async (data: AssignmentJobStartPayload): Promise<CollectionGenerationJob> => {
     const r = await api.post('/api/inventory/jobs/generate-collections/', data);
     return unwrap(r);
   },
   getStatus: async (jobId: string): Promise<CollectionGenerationJob> => {
     const r = await api.get(`/api/inventory/jobs/${jobId}/status/`);
+    return unwrap(r);
+  },
+};
+
+export const allocationManagementAPI = {
+  manualAssign: async (data: { assignment_id: number; student_id: number }): Promise<any> => {
+    const r = await api.post('/api/inventory/assignments/manual-assign/', data);
+    return unwrap(r);
+  },
+  terminate: async (allocationItemId: number): Promise<any> => {
+    const r = await api.post(`/api/inventory/allocations/${allocationItemId}/terminate/`);
+    return unwrap(r);
+  },
+  listByAssignment: async (assignmentId: number, params?: any): Promise<any> => {
+    const r = await api.get(`/api/inventory/assignments/${assignmentId}/allocations/`, { params });
+    return unwrap(r);
+  },
+};
+
+// ── Allocations ─────────────────────────────────────────────
+
+export const allocationAPI = {
+  list: async (params?: AllocationFilters): Promise<PaginatedResponse<AllocationList> | AllocationList[]> => {
+    const r = await api.get('/api/inventory/allocations/', { params });
+    return unwrap(r);
+  },
+  get: async (id: number): Promise<Allocation> => {
+    const r = await api.get(`/api/inventory/allocations/${id}/`);
+    return unwrap(r);
+  },
+  getByStudent: async (studentId: number): Promise<Allocation[]> => {
+    const r = await api.get(`/api/inventory/allocations/student/${studentId}/`);
+    return unwrap(r);
+  },
+};
+
+// ── Collection Events ───────────────────────────────────────
+
+export const collectionEventAPI = {
+  list: async (params?: CollectionEventFilters): Promise<PaginatedResponse<CollectionEventList> | CollectionEventList[]> => {
+    const r = await api.get('/api/inventory/collection-events/', { params });
+    return unwrap(r);
+  },
+  get: async (id: number): Promise<CollectionEvent> => {
+    const r = await api.get(`/api/inventory/collection-events/${id}/`);
+    return unwrap(r);
+  },
+  record: async (data: CollectionRecordPayload): Promise<CollectionEvent> => {
+    const r = await api.post('/api/inventory/collections/record/', data);
+    return unwrap(r);
+  },
+  returnItem: async (data: CollectionReturnPayload): Promise<{ return_id: number }> => {
+    const r = await api.post('/api/inventory/collections/return/', data);
+    return unwrap(r);
+  },
+};
+
+// ── Returns ─────────────────────────────────────────────────
+
+export const returnAPI = {
+  list: async (params?: ReturnFilters): Promise<PaginatedResponse<InventoryReturn> | InventoryReturn[]> => {
+    const r = await api.get('/api/inventory/returns/', { params });
+    return unwrap(r);
+  },
+};
+
+// ── Enhanced Reports ────────────────────────────────────────
+
+export const inventoryReportAPI_v2 = {
+  stockLevel: async (params?: StockLevelReportFilters): Promise<StockLevelReport> => {
+    const r = await api.get('/api/inventory/reports/stock-level/', { params });
+    return unwrap(r);
+  },
+  salesAnalysis: async (params?: SalesAnalysisFilters): Promise<SalesAnalysisReport> => {
+    const r = await api.get('/api/inventory/reports/sales-analysis/', { params });
+    return unwrap(r);
+  },
+  staffSales: async (params?: StaffSalesFilters): Promise<StaffSalesReport> => {
+    const r = await api.get('/api/inventory/reports/staff-sales/', { params });
     return unwrap(r);
   },
 };
