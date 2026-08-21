@@ -1146,6 +1146,104 @@ export interface StudentDocument {
   uploaded_at: string;
 }
 
+// ==================== BULK UPDATE TYPES ====================
+
+/**
+ * Field groups the frontend can toggle.
+ * Maps group name to list of editable fields within that group.
+ */
+export interface BulkUpdateFieldGroups {
+  [groupName: string]: string[];
+}
+
+/**
+ * Per-row credential mode.
+ * - 'none' / undefined : leave unchanged
+ * - 'auto'             : backend generates based on settings
+ * - 'fixed'            : apply the same value to this row (or set for all)
+ * - 'manual'           : exact value typed by user for this row
+ */
+export type BulkCredentialMode = 'none' | 'auto' | 'fixed' | 'manual';
+
+/**
+ * A single row in a bulk-update request.
+ * The `fields` object contains only the fields belonging to the
+ * groups the user activated. Field names match model field names.
+ */
+export interface BulkUpdateRowPayload {
+  id: number; // record id (student or parent)
+
+  // Field updates (whitelisted by backend)
+  fields?: Record<string, any>;
+
+  // Credentials group
+  username_mode?: BulkCredentialMode | null;
+  username_value?: string | null;
+  password_mode?: BulkCredentialMode | null;
+  password_value?: string | null;
+  send_credentials_email?: boolean;
+
+  // Image group
+  remove_image?: boolean;
+  // Note: the actual image file is NOT sent here; it goes as a separate
+  // multipart file field named `image_<id>`. So don't include `image` here.
+}
+
+/**
+ * Bulk update request body.
+ * For JSON requests, just send this object as the body.
+ * For multipart requests, wrap this in a `rows` field (JSON string) and
+ * include the image files as `image_<id>` keys.
+ */
+export interface BulkUpdateRequest {
+  rows: BulkUpdateRowPayload[];
+}
+
+/**
+ * Per-record result returned by the bulk-update endpoint.
+ */
+export interface BulkUpdateResultItem {
+  id: number;
+  success: boolean;
+  error?: string;          // present on failure
+  warning?: string;        // present on success with a non-fatal issue
+  username?: string | null;
+  password?: string | null;
+  email_sent?: boolean;
+  image_updated?: boolean;
+}
+
+/**
+ * Full response from the bulk-update endpoint.
+ */
+export interface BulkUpdateResponse {
+  results: BulkUpdateResultItem[];
+  summary: {
+    total: number;
+    success: number;
+    failed: number;
+  };
+}
+
+/**
+ * Response from the live registration-number duplicate check endpoint.
+ * Mirrors the shape returned by /utils/check-duplicate-registration-number/
+ */
+export interface RegistrationNumberDuplicateCheckResult {
+  is_duplicate: boolean;
+  message: string | null;
+  student_id: number | null;
+  student_name: string | null;
+}
+
+/**
+ * Response from the field-groups metadata endpoint:
+ * GET /utils/bulk-field-groups/?entity_type=student|parent
+ */
+export interface BulkUpdateFieldGroupsResponse {
+  [groupName: string]: string[];
+}
+
 // Fingerprint
 export interface Fingerprint {
   id: number;

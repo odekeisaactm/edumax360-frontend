@@ -16,7 +16,7 @@ import {
   ArrowRight, Award, Printer, Shield, Upload, Download, CalendarDays, PlusCircle,
   FileSearch, Package, User, Zap, MapPin, Gift, TrendingDown, Wallet, History,
   ClipboardCheck, Radio, ListChecks, ScanLine, IdCard, Fingerprint,  Truck, ArrowDownCircle,
-  ShoppingCart, Monitor, PackageCheck, Cog
+  ShoppingCart, Monitor, PackageCheck, Cog, SquarePen
 } from 'lucide-react';
 
 interface NavItem {
@@ -125,6 +125,16 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           icon: <Upload className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/students/bulk-upload'),
           requiredPermissions: ['student_management.add_bulkstudentuploadmodel'],
+        },
+        {
+          name: 'Bulk Update',
+          href: '/dashboard/staff/students/bulk-update',
+          icon: <SquarePen className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/students/bulk-update'),
+          requiredPermissions: [
+            'student_management.change_studentmodel'
+
+          ],
         },
         {
           name: 'Alumni',

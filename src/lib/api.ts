@@ -25,6 +25,10 @@ import type {
   DuplicateCheckResult,
   AcademicPeriod,
   Bank,
+  BulkUpdateFieldGroups,
+BulkUpdateResponse,
+BulkUpdateRowPayload,
+RegistrationNumberDuplicateCheckResult,
 
 
 } from './types';
@@ -2013,7 +2017,116 @@ downloadStudentList: async (params: { current_class: number; current_class_secti
 
 };
 
+// ==================== BULK UPDATE API ====================
 
+export const bulkUpdateAPI = {
+  /**
+   * Fetch the editable field groups for bulk update.
+   * ?entity_type=student | parent
+   */
+  getFieldGroups: async (
+    entityType: 'student' | 'parent'
+  ): Promise<BulkUpdateFieldGroups> => {
+    const response = await api.get<ApiResponse<BulkUpdateFieldGroups>>(
+      '/api/student/utils/bulk-field-groups/',
+      { params: { entity_type: entityType } }
+    );
+    return response.data.data || {};
+  },
+
+  /**
+   * Check if a registration number is already taken.
+   * Used for live duplicate detection in the bulk-update form.
+   */
+  checkDuplicateRegistrationNumber: async (
+    registrationNumber: string,
+    excludeId?: number
+  ): Promise<RegistrationNumberDuplicateCheckResult> => {
+    const response = await api.post<ApiResponse<RegistrationNumberDuplicateCheckResult>>(
+      '/api/student/utils/check-duplicate-registration-number/',
+      {
+        registration_number: registrationNumber,
+        exclude_id: excludeId,
+      }
+    );
+    return response.data.data!;
+  },
+
+  // ---------- Students ----------
+
+  /**
+   * Bulk update students using JSON (no image files).
+   */
+  updateStudents: async (
+    rows: BulkUpdateRowPayload[]
+  ): Promise<BulkUpdateResponse> => {
+    const response = await api.post<ApiResponse<BulkUpdateResponse>>(
+      '/api/student/bulk/update/student/',
+      { rows }
+    );
+    return response.data.data!;
+  },
+
+  /**
+   * Bulk update students with image files (multipart).
+   * `imageFiles` maps record id -> File object.
+   */
+  updateStudentsMultipart: async (
+    rows: BulkUpdateRowPayload[],
+    imageFiles: Record<number, File>
+  ): Promise<BulkUpdateResponse> => {
+    const formData = new FormData();
+    formData.append('rows', JSON.stringify(rows));
+
+    Object.entries(imageFiles).forEach(([id, file]) => {
+      formData.append(`image_${id}`, file);
+    });
+
+    const response = await api.post<ApiResponse<BulkUpdateResponse>>(
+      '/api/student/bulk/update/student/',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data.data!;
+  },
+
+  // ---------- Parents ----------
+
+  /**
+   * Bulk update parents using JSON (no image files).
+   */
+  updateParents: async (
+    rows: BulkUpdateRowPayload[]
+  ): Promise<BulkUpdateResponse> => {
+    const response = await api.post<ApiResponse<BulkUpdateResponse>>(
+      '/api/student/bulk/update/parent/',
+      { rows }
+    );
+    return response.data.data!;
+  },
+
+  /**
+   * Bulk update parents with image files (multipart).
+   */
+  updateParentsMultipart: async (
+    rows: BulkUpdateRowPayload[],
+    imageFiles: Record<number, File>
+  ): Promise<BulkUpdateResponse> => {
+    const formData = new FormData();
+    formData.append('rows', JSON.stringify(rows));
+
+    Object.entries(imageFiles).forEach(([id, file]) => {
+      formData.append(`image_${id}`, file);
+    });
+
+    const response = await api.post<ApiResponse<BulkUpdateResponse>>(
+      '/api/student/bulk/update/parent/',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data.data!;
+  },
+};
 
 // New — guardians, documents, fingerprints APIs
 export const otherGuardiansAPI = {
