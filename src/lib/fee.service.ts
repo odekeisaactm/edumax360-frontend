@@ -98,10 +98,33 @@ export interface OtherPaymentListFilters {
 // 1. FEE GROUPS
 // ============================================================
 
+// ============================================================
+// 1. FEE GROUPS
+// ============================================================
+
 export const feeGroupsAPI = {
   list: async (search?: string): Promise<FeeGroup[]> => {
-    const response = await api.get(`${FEE_API_BASE}/groups/`, { params: { search } });
-    return response.data?.results || response.data || [];
+    let allResults: FeeGroup[] = [];
+    let url: string | null = `${FEE_API_BASE}/groups/`;
+    let params: any = search ? { search } : {};
+
+    while (url) {
+      const response = await api.get(url, { params });
+
+      // Handle both paginated and non-paginated responses
+      if (response.data?.results) {
+        allResults = allResults.concat(response.data.results);
+        url = response.data.next || null;
+      } else {
+        allResults = Array.isArray(response.data) ? response.data : [];
+        break;
+      }
+
+      // Clear params after first call — the `next` URL already includes them
+      params = {};
+    }
+
+    return allResults;
   },
 
   create: async (data: { name: string; description?: string }): Promise<FeeGroup> => {
@@ -138,8 +161,27 @@ export const feeGroupsAPI = {
 
 export const feesAPI = {
   list: async (filters?: FeeListFilters): Promise<Fee[]> => {
-    const response = await api.get(`${FEE_API_BASE}/fees/`, { params: filters });
-    return response.data?.results || response.data || [];
+    let allResults: Fee[] = [];
+    let url: string | null = `${FEE_API_BASE}/fees/`;
+    let params: any = { ...filters };
+
+    while (url) {
+      const response = await api.get(url, { params });
+
+      // Handle both paginated and non-paginated responses
+      if (response.data?.results) {
+        allResults = allResults.concat(response.data.results);
+        url = response.data.next || null;
+      } else {
+        allResults = Array.isArray(response.data) ? response.data : [];
+        break;
+      }
+
+      // Clear params after first call — the `next` URL already includes them
+      params = {};
+    }
+
+    return allResults;
   },
 
   create: async (data: Partial<Fee>): Promise<Fee> => {
