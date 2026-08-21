@@ -2,6 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { api, feeAPI, academicCalendarAPI, academicAPI } from '@/lib/api';
@@ -82,11 +83,43 @@ function SearchableSelect({
 }: { options: ComboOption[]; value: string; onChange: (v: string) => void; placeholder?: string; disabled?: boolean; }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0, openUp: false });
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const computeCoords = useCallback(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const estimatedHeight = 260; // rough max height of the panel (search bar + list)
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUp = spaceBelow < estimatedHeight && rect.top > spaceBelow;
+    setCoords({
+      top: openUp ? rect.top : rect.bottom,
+      left: rect.left,
+      width: rect.width,
+      openUp,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    computeCoords();
+    const onScrollOrResize = () => computeCoords();
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [open, computeCoords]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const insideWrapper = wrapperRef.current && wrapperRef.current.contains(target);
+      const insideDropdown = dropdownRef.current && dropdownRef.current.contains(target);
+      if (!insideWrapper && !insideDropdown) {
         setOpen(false); setQuery('');
       }
     }
@@ -111,8 +144,18 @@ function SearchableSelect({
         <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && (
-        <div className="absolute z-20 mt-1.5 w-full bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+      {open && typeof document !== 'undefined' && ReactDOM.createPortal(
+        <div
+          ref={dropdownRef}
+          style={{
+            position: 'fixed',
+            top: coords.openUp ? undefined : coords.top + 6,
+            bottom: coords.openUp ? window.innerHeight - coords.top + 6 : undefined,
+            left: coords.left,
+            width: coords.width,
+          }}
+          className="z-[100] bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden"
+        >
           <div className="p-2 border-b border-slate-100">
             <div className="relative">
               <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -141,7 +184,8 @@ function SearchableSelect({
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
