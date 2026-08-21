@@ -68,6 +68,85 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
+// ─── Searchable Select ────────────────────────────────────────────────────────
+// Drop-in replacement for a plain <select> when the option list is fully loaded
+// (not paginated) but may be long enough that scrolling a native dropdown is
+// painful. Filtering happens entirely client-side against `options`, so it
+// requires the FULL list to already be in memory — see loadData() below, which
+// now loads every fee/group instead of just the first page.
+
+interface ComboOption { value: string; label: string; }
+
+function SearchableSelect({
+  options, value, onChange, placeholder = 'Select...', disabled = false,
+}: { options: ComboOption[]; value: string; onChange: (v: string) => void; placeholder?: string; disabled?: boolean; }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false); setQuery('');
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedLabel = options.find(o => o.value === value)?.label;
+  const filtered = query.trim()
+    ? options.filter(o => o.label.toLowerCase().includes(query.trim().toLowerCase()))
+    : options;
+
+  return (
+    <div className="relative" ref={wrapperRef}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(o => !o)}
+        className={`${selectCls} text-left flex items-center justify-between gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
+      >
+        <span className={`truncate ${selectedLabel ? 'text-slate-800' : 'text-slate-400'}`}>{selectedLabel || placeholder}</span>
+        <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-20 mt-1.5 w-full bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-slate-100">
+            <div className="relative">
+              <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
+              <input
+                autoFocus
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Type to filter..."
+                className="w-full pl-8 pr-2.5 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 text-slate-800"
+              />
+            </div>
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="p-3 text-xs text-slate-400 text-center">No matches</p>
+            ) : filtered.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => { onChange(opt.value); setOpen(false); setQuery(''); }}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-cyan-50 flex items-center justify-between gap-2 transition-colors ${opt.value === value ? 'bg-cyan-50 font-semibold text-cyan-700' : 'text-slate-700'}`}
+              >
+                <span className="truncate">{opt.label}</span>
+                {opt.value === value && <Check className="h-3.5 w-3.5 text-cyan-600 shrink-0" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Anomaly Types ──────────────────────────────────────────────────────────
 // One unified scanner instead of two disconnected systems. "missing_arm" flags a
 // single structure that covers some but not all sibling sections of a class.
@@ -163,11 +242,31 @@ export default function FeeStructuresPage() {
   const [simLoading, setSimLoading] = useState(false);
   const [discountsOpen, setDiscountsOpen] = useState(false);
 
+  // Fees/Groups are reference/master data used to populate the "Fee Blueprint"
+  // and "Financial Group" pickers in the create/edit form. The endpoint may
+  // return either a plain array (already unpaginated) or a DRF-style paginated
+  // object ({ results, count, next }) — previously we assumed the former and
+  // just took whatever came back, which silently truncated to one page (20
+  // items) whenever the backend paginated. This normalizes both shapes and, if
+  // paginated, keeps following `next` until it's null, so the full set is
+  // always loaded no matter the backend's page_size/max_page_size.
+  const fetchAllPages = useCallback(async (initial: any): Promise<any[]> => {
+    if (Array.isArray(initial)) return initial;
+    let acc: any[] = initial?.results || [];
+    let nextUrl: string | null = initial?.next || null;
+    while (nextUrl) {
+      const res = await api.get(nextUrl);
+      acc = acc.concat(res.data?.results || []);
+      nextUrl = res.data?.next || null;
+    }
+    return acc;
+  }, []);
+
   // ── Load FULL dataset (reference data + all structures, for anomaly scanner) ──
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [sData, fData, gData, cData, secData, pData] = await Promise.all([
+      const [sData, fRaw, gRaw, cData, secData, pData] = await Promise.all([
         feeAPI.getFeeStructures(),
         feeAPI.getFees(),
         feeAPI.getFeeGroups(),
@@ -175,6 +274,7 @@ export default function FeeStructuresPage() {
         academicAPI.listClassSections(),
         academicCalendarAPI.listSessionPeriods({ is_current: true }),
       ]);
+      const [fData, gData] = await Promise.all([fetchAllPages(fRaw), fetchAllPages(gRaw)]);
       setStructures(sData); setFees(fData); setGroups(gData); setClasses(cData); setSections(secData);
 
       // De-duplicate session-period rows down to one entry per underlying period.
@@ -200,7 +300,7 @@ export default function FeeStructuresPage() {
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [showToast, fetchAllPages]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -801,17 +901,21 @@ export default function FeeStructuresPage() {
               <div className="p-5 space-y-4">
                 <div>
                   <label className={labelCls}>Fee Blueprint <span className="text-rose-500">*</span></label>
-                  <select value={selectedFee} onChange={e => setSelectedFee(e.target.value)} className={selectCls}>
-                    <option value="">Select Fee...</option>
-                    {fees.map(f => <option key={f.id} value={f.id}>{f.name} ({f.code})</option>)}
-                  </select>
+                  <SearchableSelect
+                    value={selectedFee}
+                    onChange={setSelectedFee}
+                    placeholder="Select Fee..."
+                    options={fees.map(f => ({ value: f.id.toString(), label: `${f.name} (${f.code})` }))}
+                  />
                 </div>
                 <div>
                   <label className={labelCls}>Financial Group <span className="text-rose-500">*</span></label>
-                  <select value={selectedGroup} onChange={e => setSelectedGroup(e.target.value)} className={selectCls}>
-                    <option value="">Select Group...</option>
-                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                  </select>
+                  <SearchableSelect
+                    value={selectedGroup}
+                    onChange={setSelectedGroup}
+                    placeholder="Select Group..."
+                    options={groups.map(g => ({ value: g.id.toString(), label: g.name }))}
+                  />
                 </div>
                 <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
                   <div>
