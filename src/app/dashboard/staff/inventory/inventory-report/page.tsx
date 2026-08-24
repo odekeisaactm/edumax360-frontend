@@ -3,23 +3,20 @@ export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { inventoryReportAPI_v2, inventoryCategoryAPI, inventoryLocationAPI } from '@/lib/api';
+import { inventoryReportAPI_v2, inventoryCategoryAPI, inventoryLocationAPI, schoolInfoAPI, inventorySettingAPI } from '@/lib/api';
 import {
   Filter, Loader2, BarChart2, TrendingUp, Users,
-  CheckCircle, AlertTriangle, X, Printer, Package
+  CheckCircle, AlertTriangle, X, Printer, Package, FileBarChart2
 } from 'lucide-react';
 import dynamicImport from 'next/dynamic';
 
-// ─── Dynamic Tab Imports ──────────────────────────────────────────────────────
-// ssr: false — these tabs are purely client-driven (data starts null, fetched
-// client-side only via useEffect), so server-rendering them has no benefit and
-// is the source of hydration mismatches (e.g. recharts' ResponsiveContainer
-// measuring container size via ResizeObserver, which server has no snapshot of).
+// Dynamic Tab Imports
 const StockLevelTab = dynamicImport(() => import('./tabs/StockLevelTab'), { loading: () => <TabSkeleton />, ssr: false });
 const SalesProfitTab = dynamicImport(() => import('./tabs/SalesProfitTab'), { loading: () => <TabSkeleton />, ssr: false });
 const StaffSalesTab = dynamicImport(() => import('./tabs/StaffSalesTab'), { loading: () => <TabSkeleton />, ssr: false });
+const InventoryLevelTab = dynamicImport(() => import('./tabs/InventoryLevelTab'), { loading: () => <TabSkeleton />, ssr: false });
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// Helpers
 let _toastId = 0;
 interface ToastItem { id: number; type: 'success' | 'error'; message: string; }
 
@@ -52,9 +49,8 @@ function TabSkeleton() {
   return <div className="h-96 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-cyan-200" /></div>;
 }
 
-type TabKey = 'stock-level' | 'sales-profit' | 'staff-sales';
+type TabKey = 'stock-level' | 'sales-profit' | 'staff-sales' | 'inventory-level';
 
-// ─── Main Component ───────────────────────────────────────────────────────────
 export default function InventoryReportsPage() {
   const { user, hasPermission } = useAuth();
   const canManage = user?.is_superuser || hasPermission('inventory.view_inventory_report');
@@ -66,50 +62,57 @@ export default function InventoryReportsPage() {
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 5000);
   }, []);
 
-  // ── Reference Data ──
+  // Reference Data
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<any[]>([]);
   const [locations, setLocations] = useState<any[]>([]);
+  const [schoolInfo, setSchoolInfo] = useState<any>(null);
+  const [settings, setSettings] = useState<any>(null);
 
-  // ── Filter State ──
+  // Filter State
   const [filterLocation, setFilterLocation] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('');
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
   const [filterPaymentMethod, setFilterPaymentMethod] = useState<string>('all');
+  const [skipZero, setSkipZero] = useState<boolean>(false);
+  const [showOptional, setShowOptional] = useState<boolean>(false);
 
-  // ── Tab State ──
+  // Tab State
   const [activeTab, setActiveTab] = useState<TabKey>('stock-level');
   const [dataLoading, setDataLoading] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
   const fetchRequestIdRef = useRef(0);
   const printRef = useRef<HTMLDivElement>(null);
 
-  // Clear reportData synchronously with the tab change (same event) so we never
-  // render a tab with the previous tab's data shape for a stray frame.
   const handleTabChange = useCallback((tab: TabKey) => {
     setReportData(null);
     setActiveTab(tab);
+    // Reset date filters for non-movement reports? Keep as is.
   }, []);
 
-  // ── Client-only timestamp for print header (avoids SSR/CSR hydration mismatch) ──
+  // Client-only timestamp
   const [printedAt, setPrintedAt] = useState<string>('');
   useEffect(() => {
     setPrintedAt(new Date().toLocaleString('en-GB'));
   }, []);
 
-  // ── Initialize Reference Data ──
+  // Initialize reference data
   useEffect(() => {
     const init = async () => {
       try {
-        const [catRes, locRes] = await Promise.all([
+        const [catRes, locRes, schoolRes, settingsRes] = await Promise.all([
           inventoryCategoryAPI.list(),
           inventoryLocationAPI.list(),
+          schoolInfoAPI.get(),
+          inventorySettingAPI.get(),
         ]);
         setCategories(Array.isArray(catRes) ? catRes : catRes?.results || []);
         setLocations(Array.isArray(locRes) ? locRes : locRes?.results || []);
+        setSchoolInfo(schoolRes);
+        setSettings(settingsRes);
       } catch (err) {
-        showToast('error', 'Failed to load filter parameters.');
+        showToast('error', 'Failed to load filter parameters or school info.');
       } finally {
         setLoading(false);
       }
@@ -117,7 +120,7 @@ export default function InventoryReportsPage() {
     init();
   }, [showToast]);
 
-  // ── Fetch Report Data ──
+  // Fetch report data based on active tab
   const fetchReport = useCallback(async () => {
     const requestId = ++fetchRequestIdRef.current;
     setDataLoading(true);
@@ -143,6 +146,14 @@ export default function InventoryReportsPage() {
         if (filterEndDate) params.end_date = filterEndDate;
         if (filterLocation !== 'all') params.location = filterLocation;
         data = await inventoryReportAPI_v2.staffSales(params);
+      } else if (activeTab === 'inventory-level') {
+        const params: any = {};
+        if (filterStartDate) params.date_from = filterStartDate;
+        if (filterEndDate) params.date_to = filterEndDate;
+        if (filterLocation !== 'all') params.location = filterLocation;
+        params.skip_zero = skipZero;
+        params.show_optional = showOptional;
+        data = await inventoryReportAPI_v2.stockMovement(params);
       }
 
       if (requestId !== fetchRequestIdRef.current) return;
@@ -153,35 +164,31 @@ export default function InventoryReportsPage() {
     } finally {
       if (requestId === fetchRequestIdRef.current) setDataLoading(false);
     }
-  }, [activeTab, filterLocation, filterCategory, filterStartDate, filterEndDate, filterPaymentMethod, showToast]);
+  }, [activeTab, filterLocation, filterCategory, filterStartDate, filterEndDate, filterPaymentMethod, skipZero, showOptional, showToast]);
 
   useEffect(() => {
     if (!loading) fetchReport();
   }, [fetchReport, loading]);
 
-  // ─── Dynamic Title ───
   const reportTitle = useMemo(() => {
     const base = activeTab === 'stock-level' ? 'Stock Level Report'
       : activeTab === 'sales-profit' ? 'Sales & Profit Analysis'
-      : 'Staff Sales Report';
+      : activeTab === 'staff-sales' ? 'Staff Sales Report'
+      : 'Inventory Level Report';
     const parts = [base];
     if (filterLocation !== 'all') {
       const loc = locations.find(l => l.id.toString() === filterLocation);
       if (loc) parts.push(loc.name);
     }
-    if (filterStartDate && filterEndDate) {
+    if ((filterStartDate && filterEndDate) && (activeTab !== 'stock-level')) {
       parts.push(`${filterStartDate} to ${filterEndDate}`);
     }
     return parts.join(' — ');
   }, [activeTab, filterLocation, filterStartDate, filterEndDate, locations]);
 
-  const handleExportPdf = () => {
-    window.print();
-  };
+  const handleExportPdf = () => window.print();
 
-  if (!canManage) {
-    return <div className="p-16 text-center font-bold text-red-600">Access Denied: Missing inventory report permissions.</div>;
-  }
+  if (!canManage) return <div className="p-16 text-center font-bold text-red-600">Access Denied: Missing inventory report permissions.</div>;
 
   if (loading) {
     return (
@@ -204,7 +211,7 @@ export default function InventoryReportsPage() {
           </div>
           <div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">Inventory Reports</h1>
-            <p className="text-xs text-slate-500 mt-1 font-medium">Stock levels, sales performance, and staff analytics.</p>
+            <p className="text-xs text-slate-500 mt-1 font-medium">Stock levels, sales performance, staff analytics, and inventory movements.</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -222,16 +229,18 @@ export default function InventoryReportsPage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Location filter */}
           <div>
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Location</label>
             <select value={filterLocation} onChange={e => setFilterLocation(e.target.value)} className="w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-cyan-500">
               <option value="all">All Locations</option>
               <option value="shop">All Shops</option>
               <option value="store">All Stores</option>
-              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              {locations.filter(l => l.location_type !== 'generic').map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </div>
 
+          {/* Category only for stock-level */}
           {activeTab === 'stock-level' && (
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Category</label>
@@ -242,6 +251,7 @@ export default function InventoryReportsPage() {
             </div>
           )}
 
+          {/* Date range for sales/profit, staff-sales, and inventory-level */}
           {activeTab !== 'stock-level' && (
             <>
               <div>
@@ -266,6 +276,22 @@ export default function InventoryReportsPage() {
               )}
             </>
           )}
+
+          {/* Checkboxes for inventory-level */}
+          {activeTab === 'inventory-level' && (
+            <>
+              <div className="col-span-2 flex flex-wrap items-center gap-4 mt-2">
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                  <input type="checkbox" checked={skipZero} onChange={e => setSkipZero(e.target.checked)} className="form-checkbox rounded text-cyan-600" />
+                  Skip items with no activity
+                </label>
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                  <input type="checkbox" checked={showOptional} onChange={e => setShowOptional(e.target.checked)} className="form-checkbox rounded text-cyan-600" />
+                  Show Qty Sold & Stocked Out
+                </label>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -280,10 +306,20 @@ export default function InventoryReportsPage() {
         <button onClick={() => handleTabChange('staff-sales')} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'staff-sales' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
           <Users className="w-4 h-4" /> Staff Sales
         </button>
+        <button onClick={() => handleTabChange('inventory-level')} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'inventory-level' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
+          <FileBarChart2 className="w-4 h-4" /> Inventory Level
+        </button>
       </div>
 
-      {/* Print-only title */}
+      {/* Print header with school info */}
       <div className="hidden print:block px-1">
+        {schoolInfo && (
+          <div className="text-center mb-4">
+            <h1 className="text-lg font-black text-slate-900">{schoolInfo.name}</h1>
+            {schoolInfo.address && <p className="text-xs text-slate-600">{schoolInfo.address}</p>}
+            <p className="text-xs text-slate-600">{schoolInfo.mobile_1} | {schoolInfo.email}</p>
+          </div>
+        )}
         <h1 className="text-lg font-black text-slate-900">{reportTitle}</h1>
         <p className="text-xs text-slate-500">Printed {printedAt}</p>
       </div>
@@ -299,7 +335,8 @@ export default function InventoryReportsPage() {
         <div className="p-1">
           {activeTab === 'stock-level' && <StockLevelTab data={reportData} reportTitle={reportTitle} />}
           {activeTab === 'sales-profit' && <SalesProfitTab data={reportData} reportTitle={reportTitle} />}
-          {activeTab === 'staff-sales' && <StaffSalesTab data={reportData} reportTitle={reportTitle} />}
+          {activeTab === 'staff-sales' && <StaffSalesTab data={reportData} reportTitle={reportTitle} settings={settings} />}
+          {activeTab === 'inventory-level' && <InventoryLevelTab data={reportData} reportTitle={reportTitle} showOptional={showOptional} />}
         </div>
       </div>
 
@@ -308,9 +345,9 @@ export default function InventoryReportsPage() {
           @page { margin: 1.2cm; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           table { width: 100% !important; }
-          thead { display: table-header-group; } /* repeat header on every printed page */
-          tr { break-inside: avoid; page-break-inside: avoid; } /* never cut a row mid-way */
-          .overflow-x-auto { overflow: visible !important; } /* don't clip wide tables when printing */
+          thead { display: table-header-group; }
+          tr { break-inside: avoid; page-break-inside: avoid; }
+          .overflow-x-auto { overflow: visible !important; }
         }
       `}</style>
     </div>

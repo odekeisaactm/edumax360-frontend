@@ -863,6 +863,36 @@ export interface StaffSalesFilters {
   staff?: number;
 }
 
+export interface StockMovementItem {
+  id: number;
+  name: string;
+  barcode?: string | null;
+  category: string;
+  unit: string;
+  qty_stocked_in: string;
+  qty_sold: string;
+  qty_stocked_out: string;
+  qty_left: string;
+}
+
+export interface StockMovementReport {
+  items: StockMovementItem[];
+  date_range: {
+    start: string;
+    end: string;
+  };
+  location_filter: string;
+  show_optional: boolean;
+}
+
+export interface StockMovementFilters {
+  date_from?: string;
+  date_to?: string;
+  location?: 'all' | 'shop' | 'store';
+  skip_zero?: boolean;
+  show_optional?: boolean;
+}
+
 // Update StockOutReason to include class_disbursement
 export type StockOutReason =
   | 'staff_collection'

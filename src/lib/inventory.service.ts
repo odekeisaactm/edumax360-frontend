@@ -463,4 +463,8 @@ export const inventoryReportAPI_v2 = {
     const r = await api.get('/api/inventory/reports/staff-sales/', { params });
     return unwrap(r);
   },
+  stockMovement: async (params?: StockMovementFilters): Promise<StockMovementReport> => {
+      const r = await api.get('/api/inventory/reports/stock-movement/', { params });
+      return unwrap(r);
+  },
 };
