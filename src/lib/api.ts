@@ -63,6 +63,13 @@ api.interceptors.request.use(
 );
 
 // Response interceptor to handle token refresh
+const forceLogout = () => {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  localStorage.removeItem('selectedWardId');
+  window.location.href = '/login';
+};
+
 api.interceptors.response.use(
   (response: AxiosResponse) => {
     return response;
@@ -74,26 +81,36 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (!refreshToken) {
+        // No refresh token at all — nothing to try, log out immediately
+        // instead of letting this 401 propagate silently to whichever
+        // caller happens to have its own error handling.
+        forceLogout();
+        return Promise.reject(error);
+      }
+
       try {
-        // Try to refresh the token
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (refreshToken) {
-          const response = await axios.post(`${getApiUrl()}/api/token/refresh/`, {
-            refresh: refreshToken,
-          }, { timeout: 10000 });
+        const response = await axios.post(`${getApiUrl()}/api/token/refresh/`, {
+          refresh: refreshToken,
+        }, { timeout: 10000 });
 
-          const { access } = response.data;
-          localStorage.setItem('access_token', access);
+        const { access } = response.data;
+        localStorage.setItem('access_token', access);
+        originalRequest.headers.Authorization = `Bearer ${access}`;
 
-          // Retry the original request with new token
-          originalRequest.headers.Authorization = `Bearer ${access}`;
-          return api(originalRequest);
-        }
+        // Retry the original request with new token.
+        // AWAITED so that if this retry ALSO fails (e.g. the refreshed
+        // token still doesn't authenticate), we land in this same catch
+        // block and force a logout — instead of silently rejecting
+        // straight back to the original caller, some of which (e.g.
+        // background polling calls) never check for 401 and would
+        // otherwise fail silently forever.
+        return await api(originalRequest);
       } catch (refreshError) {
-        // Refresh failed, clear tokens and redirect to login
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        window.location.href = '/login';
+        // Either the refresh call itself failed, or the retried request
+        // still came back unauthorized. Either way, the session is dead.
+        forceLogout();
         return Promise.reject(refreshError);
       }
     }

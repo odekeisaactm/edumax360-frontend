@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { StaffSidebar } from '@/components/layout/StaffSidebar';
 import { StudentSidebar } from '@/components/layout/StudentSidebar';
@@ -12,8 +13,17 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user } = useAuth();
+  const { user, loading, authReady } = useAuth();
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Auth has finished initializing and there's no user — send them to login.
+  // Without this, an unauthenticated visit just spins here forever.
+  useEffect(() => {
+    if (authReady && !loading && !user) {
+      router.replace('/login');
+    }
+  }, [authReady, loading, user, router]);
 
   if (!user) {
     return (
