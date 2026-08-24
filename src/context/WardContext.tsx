@@ -51,7 +51,17 @@ export function WardProvider({ children }: { children: ReactNode }) {
         // MULTIPLE WARDS & NO SAVED STATE: Force selection
         setSelectedWardState(null);
       }
-    } catch (err) {
+    } catch (err: any) {
+      const status = err?.response?.status;
+
+      // Session expired / invalid token — do NOT treat this as "parent has no wards".
+      // Send them to login instead of falling through to the empty-wards UI.
+      if (status === 401 || status === 403) {
+        localStorage.removeItem('selectedWardId');
+        window.location.href = '/login';
+        return; // bail out before finally flips loading to false — we're navigating away
+      }
+
       console.error("Failed to fetch wards", err);
     } finally {
       if (!silent) setLoading(false);

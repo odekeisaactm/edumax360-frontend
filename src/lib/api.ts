@@ -80,7 +80,7 @@ api.interceptors.response.use(
         if (refreshToken) {
           const response = await axios.post(`${getApiUrl()}/api/token/refresh/`, {
             refresh: refreshToken,
-          });
+          }, { timeout: 10000 });
 
           const { access } = response.data;
           localStorage.setItem('access_token', access);
@@ -2478,4 +2478,3 @@ export const feeAPI = {
   getNotificationBatchStatus: newFeeAPI.notificationBatches.getStatus,
 };
 export { bankDetailsAPI } from './finance.service';
-
