@@ -26,6 +26,30 @@ interface RebillStatus {
   error_message: string | null;
 }
 
+interface BatchDetailData {
+  id: number;
+  title: string;
+  reason: string;
+  status: string;
+  status_display: string;
+  created_by_name: string;
+  created_at: string;
+  affected_documents: any[];
+  pagination: {
+    page: number;
+    page_size: number;
+    count: number;
+    total_pages: number;
+  };
+  summary: {
+    total_count: number;
+    total_billed: string;
+    total_paid: string;
+    online_count: number;
+    manual_count: number;
+  };
+}
+
 function extractError(err: any): string {
   const d = err?.response?.data;
   if (d && typeof d === 'object') {
@@ -115,37 +139,49 @@ export default function CorrectionBatchDetailPage() {
   }, []);
 
   const [loading, setLoading] = useState(true);
-  const [batchData, setBatchData] = useState<any>(null);
+  const [batchData, setBatchData] = useState<BatchDetailData | null>(null);
   const [liveStatus, setLiveStatus] = useState<RebillStatus | null>(null);
 
+  // Server-side filters & pagination
   const [searchQuery, setSearchQuery] = useState('');
   const [channelFilter, setChannelFilter] = useState<string>('');
   const [classFilter, setClassFilter] = useState<string>('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // Accordion State
   const [expandedDocs, setExpandedDocs] = useState<Set<number>>(new Set());
 
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 1. Unified fetch that grabs the static details + live Celery status
+  // 1. Fetch static details + live Celery status using server-side filters/pagination
   const fetchBatchDetails = useCallback(async () => {
     if (!batchId) return null;
     try {
+      const query: any = {
+        page,
+        page_size: pageSize,
+      };
+      if (searchQuery.trim()) query.search = searchQuery.trim();
+      if (channelFilter) query.channel = channelFilter;
+      if (classFilter) query.class_name = classFilter;
+      if (sortOrder) query.sort = sortOrder;
+
       const [detailRes, statusRes] = await Promise.all([
-        feeAPI.getCorrectionBatchDetail(Number(batchId)),
-        feeAPI.getRebillStatus(Number(batchId))
+        feeAPI.getCorrectionBatchDetail(Number(batchId), query),
+        feeAPI.getRebillStatus(Number(batchId)),
       ]);
-      setBatchData(detailRes);
+      setBatchData(detailRes as BatchDetailData);
       setLiveStatus(statusRes);
       return statusRes;
     } catch (err) {
       showToast('error', extractError(err));
       return null;
     }
-  }, [batchId, showToast]);
+  }, [batchId, page, pageSize, searchQuery, channelFilter, classFilter, sortOrder, showToast]);
 
-  // 2. Poll loop if the status is not complete
+  // 2. Poll loop while correction is in progress
   useEffect(() => {
     let isMounted = true;
 
@@ -162,7 +198,6 @@ export default function CorrectionBatchDetailPage() {
             pollTimeoutRef.current = setTimeout(poll, 2500);
           }
         } catch (e) {
-          // Resilience: network blip shouldn't kill the poll
           pollTimeoutRef.current = setTimeout(poll, 3000);
         }
       };
@@ -180,7 +215,12 @@ export default function CorrectionBatchDetailPage() {
     };
   }, [fetchBatchDetails]);
 
-  // Extract unique classes for filter dropdown
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, channelFilter, classFilter, sortOrder]);
+
+  // Extract unique classes for filter dropdown from current page — good enough
   const availableClasses = useMemo(() => {
     const docs = batchData?.affected_documents || [];
     const classesSet = new Set<string>();
@@ -192,57 +232,25 @@ export default function CorrectionBatchDetailPage() {
     return Array.from(classesSet).sort();
   }, [batchData]);
 
-  // Filter and Sort affected documents
-  const filteredDocuments = useMemo(() => {
-    const docs = batchData?.affected_documents || [];
-    let filtered = [...docs];
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter((d: any) =>
-        d.invoice_number?.toLowerCase().includes(q) ||
-        d.new_invoice_number?.toLowerCase().includes(q) ||
-        d.billed_name?.toLowerCase().includes(q) ||
-        d.registration_number?.toLowerCase().includes(q)
-      );
-    }
-
-    if (channelFilter) {
-      filtered = filtered.filter((d: any) => d.payment_channel === channelFilter);
-    }
-
-    if (classFilter) {
-      filtered = filtered.filter((d: any) => d.class_name === classFilter);
-    }
-
-    // Sort by class name
-    filtered.sort((a, b) => {
-      const classA = (a.class_name || '').toLowerCase();
-      const classB = (b.class_name || '').toLowerCase();
-      if (classA < classB) return sortOrder === 'asc' ? -1 : 1;
-      if (classA > classB) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    return filtered;
-  }, [batchData, searchQuery, channelFilter, classFilter, sortOrder]);
-
-  // Statistics Summary
+  // Statistics Summary from the backend summary endpoint (full dataset, not page)
   const stats = useMemo(() => {
-    const docs = batchData?.affected_documents || [];
-    let totalBilled = 0;
-    let totalPaid = 0;
-    let onlineCount = 0;
-    let manualCount = 0;
-
-    docs.forEach((d: any) => {
-      totalBilled += parseFloat(d.amount_billed || '0');
-      totalPaid += parseFloat(d.amount_paid || '0');
-      if (d.payment_channel === 'online' || d.payment_channel === 'mixed') onlineCount++;
-      if (d.payment_channel === 'manual' || d.payment_channel === 'mixed') manualCount++;
-    });
-
-    return { totalBilled, totalPaid, count: docs.length, onlineCount, manualCount };
+    const s = batchData?.summary;
+    if (!s) {
+      return {
+        totalBilled: 0,
+        totalPaid: 0,
+        count: 0,
+        onlineCount: 0,
+        manualCount: 0,
+      };
+    }
+    return {
+      totalBilled: parseFloat(s.total_billed || '0'),
+      totalPaid: parseFloat(s.total_paid || '0'),
+      count: s.total_count || 0,
+      onlineCount: s.online_count || 0,
+      manualCount: s.manual_count || 0,
+    };
   }, [batchData]);
 
   const toggleDoc = (index: number) => {
@@ -254,14 +262,14 @@ export default function CorrectionBatchDetailPage() {
   };
 
   const expandAll = () => {
-    setExpandedDocs(new Set(filteredDocuments.map((_, i) => i)));
+    setExpandedDocs(new Set((batchData?.affected_documents || []).map((_, i) => i)));
   };
 
   const collapseAll = () => {
     setExpandedDocs(new Set());
   };
 
-  if (loading) {
+  if (loading && !batchData) {
     return (
       <div className="py-20 flex justify-center items-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-rose-600" />
@@ -280,6 +288,10 @@ export default function CorrectionBatchDetailPage() {
       </div>
     );
   }
+
+  const docs = batchData.affected_documents || [];
+  const pagination = batchData.pagination;
+  const totalPages = pagination?.total_pages || 1;
 
   return (
     <div className="space-y-6 pb-20 w-full max-w-7xl mx-auto animate-in fade-in duration-300">
@@ -327,7 +339,7 @@ export default function CorrectionBatchDetailPage() {
         </div>
       </div>
 
-      {/* ── KPI Summary Cards ── */}
+      {/* ── KPI Summary Cards (full data from summary endpoint) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Processed Target</p>
@@ -399,7 +411,7 @@ export default function CorrectionBatchDetailPage() {
         </div>
       </div>
 
-      {/* ── Affected Documents Table (Accordion) ── */}
+      {/* ── Affected Documents Table ── */}
       <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -407,7 +419,7 @@ export default function CorrectionBatchDetailPage() {
             <h3 className="font-bold text-slate-800 text-sm">Execution Log & Resolution</h3>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest border-r border-slate-200 pr-3">{filteredDocuments.length} Records</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest border-r border-slate-200 pr-3">{pagination?.count || 0} Records</span>
             <button onClick={expandAll} className="text-xs font-bold text-cyan-600 hover:text-cyan-700">Expand All</button>
             <button onClick={collapseAll} className="text-xs font-bold text-slate-400 hover:text-slate-600">Collapse All</button>
           </div>
@@ -426,7 +438,7 @@ export default function CorrectionBatchDetailPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredDocuments.length === 0 ? (
+              {docs.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-16 text-center text-slate-400 font-medium">
                     {searchQuery || classFilter || channelFilter
@@ -435,11 +447,10 @@ export default function CorrectionBatchDetailPage() {
                   </td>
                 </tr>
               ) : (
-                filteredDocuments.map((doc: any, i: number) => {
+                docs.map((doc: any, i: number) => {
                   const isExpanded = expandedDocs.has(i);
                   const paid = parseFloat(doc.amount_paid || '0');
 
-                  // Determine High Level Status
                   let primaryStatus = <span className="px-2.5 py-1 bg-slate-100 text-slate-600 font-bold text-[10px] uppercase tracking-wider rounded-md border border-slate-200">Voided</span>;
                   if (doc.status_at_void === 'error') {
                      primaryStatus = <span className="px-2.5 py-1 bg-red-50 text-red-700 font-bold text-[10px] uppercase tracking-wider rounded-md border border-red-200">Error</span>;
@@ -450,7 +461,7 @@ export default function CorrectionBatchDetailPage() {
                   }
 
                   return (
-                    <React.Fragment key={i}>
+                    <React.Fragment key={`${doc.invoice_number}-${i}`}>
                       {/* ── MAIN ROW ── */}
                       <tr onClick={() => toggleDoc(i)} className={`cursor-pointer transition-colors ${isExpanded ? 'bg-slate-50/50' : 'hover:bg-slate-50/70'}`}>
                         <td className="px-3 py-3.5 text-center text-slate-400">
@@ -587,6 +598,30 @@ export default function CorrectionBatchDetailPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Controls */}
+        <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+          <p className="text-xs font-semibold text-slate-500">
+            Page {page} of {totalPages} · {pagination?.count || 0} records
+          </p>
+          <div className="flex items-center gap-1.5">
+            <button
+              disabled={page === 1}
+              onClick={() => setPage(p => p - 1)}
+              className="px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-lg disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="text-xs font-bold text-slate-700">{page}</span>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => setPage(p => p + 1)}
+              className="px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-lg disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
     </div>
