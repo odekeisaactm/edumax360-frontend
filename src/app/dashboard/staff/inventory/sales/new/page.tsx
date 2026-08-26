@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
 import {
   studentsAPI, staffAPI, inventoryItemAPI, inventoryLocationAPI,
-  inventoryReportAPI, saleAPI, inventorySettingAPI, shopAccessAPI, schoolInfoAPI
+  inventoryReportAPI_v2, saleAPI, inventorySettingAPI, shopAccessAPI, schoolInfoAPI
 } from '@/lib/api';
 import { InventoryLocation, InventoryItemList, SalePayload, InventorySetting, SalePaymentMethod } from '@/lib/types';
 import {
@@ -261,10 +261,10 @@ export default function POSPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuperuser, assignedShop]);
 
-  // 3b. Load Top Items
+  // 3b. Load Top Items (ranked by sale frequency)
   useEffect(() => {
     if (!activeShop) return;
-    inventoryReportAPI.get({ type: 'top_selling', location: activeShop.id } as any).then(res => {
+    inventoryReportAPI_v2.topSelling({ location: activeShop.id, limit: 10 } as any).then(res => {
       const data = (res as any)?.data || res;
       if (Array.isArray(data) && data.length > 0 && data.some((d: any) => d.location_quantity != null)) {
         setTopItems(data);
@@ -437,6 +437,8 @@ export default function POSPage() {
   };
 
   const handleRemoveItem = (id: number) => setCart(prev => prev.filter(item => item.id !== id));
+
+  const handleClearCart = () => setCart([]);
 
   const selectCustomer = (c: Customer) => {
     setCustomer(c);
@@ -801,12 +803,12 @@ export default function POSPage() {
           </div>
 
           {/* Item Search & Cart */}
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm">
             <div className="p-4 border-b border-slate-50 relative">
               <Search className="absolute left-7 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input type="text" value={itemSearch} onChange={e => setItemSearch(e.target.value)} onFocus={() => itemResults.length > 0 && setShowItemResults(true)} onBlur={() => setTimeout(() => setShowItemResults(false), 200)} placeholder="Search item or scan barcode..." className={`${inputCls} pl-9 pr-8`} />
               {showItemResults && !isSearchingItems && (
-                <div className="absolute z-20 mt-1 left-4 right-4 bg-white rounded-lg border border-slate-100 shadow-xl overflow-hidden max-h-60 overflow-y-auto">
+                <div className="absolute z-20 mt-1 left-4 right-4 bg-white rounded-lg border border-slate-100 shadow-xl overflow-y-auto max-h-60">
                   {itemResults.map(item => (
                     <button key={item.id} type="button" onMouseDown={() => addToCart(item)} className="w-full flex justify-between p-2.5 hover:bg-slate-50 border-b border-slate-50">
                       <div className="text-left"><p className="font-semibold text-xs text-slate-800">{titleCase(item.name)}</p><p className="text-[10px] text-slate-400">{item.barcode || 'No barcode'}</p></div>
@@ -820,7 +822,19 @@ export default function POSPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b border-slate-100">
-                  <tr><th className="p-2 w-8"></th><th className="text-left p-2">Item</th><th className="text-right p-2 w-24">Price (₦)</th><th className="text-center p-2 w-20">Qty</th><th className="text-right p-2 w-28">Total (₦)</th></tr>
+                  <tr>
+                    <th className="p-2 w-8">
+                      {cart.length > 0 && (
+                        <button type="button" onClick={handleClearCart} title="Remove all items" className="p-1 text-red-500 hover:bg-red-50 rounded">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </th>
+                    <th className="text-left p-2">Item</th>
+                    <th className="text-right p-2 w-24">Price (₦)</th>
+                    <th className="text-center p-2 w-20">Qty</th>
+                    <th className="text-right p-2 w-28">Total (₦)</th>
+                  </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {cart.map(item => (

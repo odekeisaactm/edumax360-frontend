@@ -755,6 +755,22 @@ export interface StockLevelReportItem {
   }>;
 }
 
+interface TopSellingFilters {
+  location?: string | number;
+  limit?: number;
+  days?: number;
+}
+
+interface TopSellingItem {
+  id: number;
+  name: string;
+  barcode: string | null;
+  category: string;
+  unit: string;
+  current_selling_price: string;
+  location_quantity: string;
+}
+
 export interface StockLevelReportSummary {
   total_items: number;
   low_stock_count: number;

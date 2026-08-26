@@ -30,6 +30,29 @@ function extractError(err: any): string {
   return err?.message || 'An unexpected error occurred.';
 }
 
+// Formats an ISO 'YYYY-MM-DD' string as "August 26th, 2026"
+function fmtDateOrdinal(dateStr?: string | null): string {
+  if (!dateStr) return '—';
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (isNaN(d.getTime())) return dateStr;
+  const day = d.getDate();
+  const suffix = (day % 10 === 1 && day !== 11) ? 'st'
+    : (day % 10 === 2 && day !== 12) ? 'nd'
+    : (day % 10 === 3 && day !== 13) ? 'rd' : 'th';
+  const month = d.toLocaleString('en-US', { month: 'long' });
+  return `${month} ${day}${suffix}, ${d.getFullYear()}`;
+}
+
+// Current-month range, matching the backend's own default so the date
+// inputs visibly show what's actually being queried on first load.
+function getCurrentMonthRange(): { start: string; end: string } {
+  const now = new Date();
+  const startD = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endD = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  return { start: fmt(startD), end: fmt(endD) };
+}
+
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
     <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
@@ -69,11 +92,12 @@ export default function InventoryReportsPage() {
   const [schoolInfo, setSchoolInfo] = useState<any>(null);
   const [settings, setSettings] = useState<any>(null);
 
-  // Filter State
+  // Filter State — dates default to the current month so what's on screen
+  // matches what's actually being queried on first load (see fix #5).
   const [filterLocation, setFilterLocation] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('');
-  const [filterStartDate, setFilterStartDate] = useState<string>('');
-  const [filterEndDate, setFilterEndDate] = useState<string>('');
+  const [filterStartDate, setFilterStartDate] = useState<string>(() => getCurrentMonthRange().start);
+  const [filterEndDate, setFilterEndDate] = useState<string>(() => getCurrentMonthRange().end);
   const [filterPaymentMethod, setFilterPaymentMethod] = useState<string>('all');
   const [skipZero, setSkipZero] = useState<boolean>(false);
   const [showOptional, setShowOptional] = useState<boolean>(false);
@@ -138,6 +162,7 @@ export default function InventoryReportsPage() {
         if (filterStartDate) params.start_date = filterStartDate;
         if (filterEndDate) params.end_date = filterEndDate;
         if (filterLocation !== 'all') params.location = filterLocation;
+        if (filterCategory) params.category = filterCategory;
         if (filterPaymentMethod !== 'all') params.payment_method = filterPaymentMethod;
         data = await inventoryReportAPI_v2.salesAnalysis(params);
       } else if (activeTab === 'staff-sales') {
@@ -145,12 +170,14 @@ export default function InventoryReportsPage() {
         if (filterStartDate) params.start_date = filterStartDate;
         if (filterEndDate) params.end_date = filterEndDate;
         if (filterLocation !== 'all') params.location = filterLocation;
+        if (filterCategory) params.category = filterCategory;
         data = await inventoryReportAPI_v2.staffSales(params);
       } else if (activeTab === 'inventory-level') {
         const params: any = {};
         if (filterStartDate) params.date_from = filterStartDate;
         if (filterEndDate) params.date_to = filterEndDate;
         if (filterLocation !== 'all') params.location = filterLocation;
+        if (filterCategory) params.category = filterCategory;
         params.skip_zero = skipZero;
         params.show_optional = showOptional;
         data = await inventoryReportAPI_v2.stockMovement(params);
@@ -170,7 +197,8 @@ export default function InventoryReportsPage() {
     if (!loading) fetchReport();
   }, [fetchReport, loading]);
 
-  const reportTitle = useMemo(() => {
+  // Auto-generated default title — recomputes as filters change.
+  const defaultReportTitle = useMemo(() => {
     const base = activeTab === 'stock-level' ? 'Stock Level Report'
       : activeTab === 'sales-profit' ? 'Sales & Profit Analysis'
       : activeTab === 'staff-sales' ? 'Staff Sales Report'
@@ -180,11 +208,30 @@ export default function InventoryReportsPage() {
       const loc = locations.find(l => l.id.toString() === filterLocation);
       if (loc) parts.push(loc.name);
     }
+    if (filterCategory) {
+      const cat = categories.find(c => c.id.toString() === filterCategory);
+      if (cat) parts.push(cat.name);
+    }
     if ((filterStartDate && filterEndDate) && (activeTab !== 'stock-level')) {
-      parts.push(`${filterStartDate} to ${filterEndDate}`);
+      parts.push(`${fmtDateOrdinal(filterStartDate)} to ${fmtDateOrdinal(filterEndDate)}`);
     }
     return parts.join(' — ');
-  }, [activeTab, filterLocation, filterStartDate, filterEndDate, locations]);
+  }, [activeTab, filterLocation, filterCategory, filterStartDate, filterEndDate, locations, categories]);
+
+  // Editable report title (fix #7). Only resets to the computed default when
+  // the report *type* changes — filter tweaks never silently overwrite a
+  // name the user has already typed.
+  const [reportTitle, setReportTitle] = useState(defaultReportTitle);
+  useEffect(() => {
+    setReportTitle(defaultReportTitle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Used as the suggested filename when exporting/printing to PDF, so it
+  // reflects the actual report instead of the app's generic page title.
+  useEffect(() => {
+    if (reportTitle) document.title = reportTitle;
+  }, [reportTitle]);
 
   const handleExportPdf = () => window.print();
 
@@ -221,6 +268,20 @@ export default function InventoryReportsPage() {
         </div>
       </div>
 
+      {/* Report Title — editable (fix #7). Pre-filled from the current tab
+          and filters, but never silently overwritten once you edit it. */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 print:hidden">
+        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Report Title</label>
+        <input
+          type="text"
+          value={reportTitle}
+          onChange={e => setReportTitle(e.target.value)}
+          placeholder={defaultReportTitle}
+          className="w-full px-3 py-2 text-sm font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-cyan-500"
+        />
+        <p className="text-[10px] text-slate-400 mt-1.5">Used as the print/export title and PDF filename.</p>
+      </div>
+
       {/* Filter Bar */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4 print:hidden">
         <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-1">
@@ -240,16 +301,14 @@ export default function InventoryReportsPage() {
             </select>
           </div>
 
-          {/* Category only for stock-level */}
-          {activeTab === 'stock-level' && (
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Category</label>
-              <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-cyan-500">
-                <option value="">All Categories</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-          )}
+          {/* Category filter — now applies to every tab, not just Stock Level */}
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Category</label>
+            <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-cyan-500">
+              <option value="">All Categories</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
 
           {/* Date range for sales/profit, staff-sales, and inventory-level */}
           {activeTab !== 'stock-level' && (

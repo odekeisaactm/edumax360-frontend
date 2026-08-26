@@ -33,7 +33,8 @@ import type {
   InventoryAssignment,
   InventoryAssignmentPayload,
   CollectionGenerationJob,
-  AssignmentJobStartPayload,
+  AssignmentJobStartPayload, StockLevelReportItem,
+  StockLevelReport, TopSellingFilters, TopSellingItem,
   PaginatedResponse
 } from '@/lib/types';
 
@@ -466,5 +467,9 @@ export const inventoryReportAPI_v2 = {
   stockMovement: async (params?: StockMovementFilters): Promise<StockMovementReport> => {
       const r = await api.get('/api/inventory/reports/stock-movement/', { params });
       return unwrap(r);
+  },
+   topSelling: async (params?: TopSellingFilters): Promise<TopSellingItem[]> => {
+    const r = await api.get('/api/inventory/reports/top-selling/', { params });
+    return unwrap(r);
   },
 };
