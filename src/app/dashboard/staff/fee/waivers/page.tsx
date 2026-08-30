@@ -4,9 +4,10 @@ import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { feeAPI, studentsAPI, academicCalendarAPI } from '@/lib/api';
+import WaiverCopyWizard from '@/components/fee/WaiverCopy';
 import {
   Award, Clock, CheckCircle2, XCircle, Eye, X, Loader2, RotateCcw, Edit3,
-  AlertCircle, Search, Check, Plus, GraduationCap, ArrowLeft, ExternalLink
+  AlertCircle, Search, Check, Plus, GraduationCap, ArrowLeft, ExternalLink, Copy
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -78,9 +79,9 @@ function getUniqueInvoiceLinks(items: any[] = []): { id: number; type: 'student'
 // ─── Toast Stack ──────────────────────────────────────────────────────────────
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
-    <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none" aria-live="polite">
+    <div className="fixed top-4 right-4 left-4 sm:left-auto z-[200] flex flex-col gap-2 pointer-events-none" aria-live="polite">
       {toasts.map(t => (
-        <div key={t.id} role="status" className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border max-w-sm
+        <div key={t.id} role="status" className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border sm:max-w-sm
           ${t.type === 'success' ? 'bg-green-50 border-green-200 text-green-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
           {t.type === 'success'
             ? <Check className="h-4 w-4 flex-shrink-0 mt-0.5 text-green-600" />
@@ -232,6 +233,9 @@ function WaiversContent() {
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [includeInactiveStudents, setIncludeInactiveStudents] = useState(false);
 
+  // Bulk Waiver Copy Wizard
+  const [isCopyWizardOpen, setIsCopyWizardOpen] = useState(false);
+
   const [waivableItems, setWaivableItems] = useState<any[]>([]);
   const [loadingWaivables, setLoadingWaivables] = useState(false);
   const [deepLinkLoading, setDeepLinkLoading] = useState(false);
@@ -261,14 +265,14 @@ function WaiversContent() {
   }, [returnTo, returnStudentId, router]);
 
   useEffect(() => {
-    const anyOverlayOpen = isNewWaiverOpen || isDrawerOpen || confirmBulkModal || approveModal.open || rejectModal.open || reverseModal.open;
+    const anyOverlayOpen = isNewWaiverOpen || isDrawerOpen || confirmBulkModal || approveModal.open || rejectModal.open || reverseModal.open || isCopyWizardOpen;
     if (anyOverlayOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
     }
     return () => { document.body.style.overflow = ''; };
-  }, [isNewWaiverOpen, isDrawerOpen, confirmBulkModal, approveModal.open, rejectModal.open, reverseModal.open]);
+  }, [isNewWaiverOpen, isDrawerOpen, confirmBulkModal, approveModal.open, rejectModal.open, reverseModal.open, isCopyWizardOpen]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -623,7 +627,7 @@ function WaiversContent() {
   }, []);
 
   return (
-    <div className="pb-28 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+    <div className="pb-28 max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-6">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
       {/* CONFIRMATION & REASON MODALS */}
@@ -694,52 +698,61 @@ function WaiversContent() {
       )}
 
       {/* HEADER */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center shadow-md shadow-amber-200">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-3">
+            <div className="w-9 h-9 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center shadow-md shadow-amber-200 shrink-0">
               <Award className="h-5 w-5 text-white" />
             </div>
             Fee Waivers & Concessions
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5 pl-12">Manage institutional student fee waivers and balance concessions.</p>
+          <p className="text-xs sm:text-sm text-slate-400 mt-0.5 pl-12">Manage institutional student fee waivers and balance concessions.</p>
         </div>
         {canManageWaivers && (
-          <button
-            onClick={() => setIsNewWaiverOpen(true)}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold transition-colors shadow-md shadow-emerald-200 text-sm"
-          >
-            <Plus className="h-4 w-4" />
-            New Waiver Request
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <button
+              onClick={() => setIsCopyWizardOpen(true)}
+              className="flex items-center justify-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-xl font-bold transition-colors shadow-sm text-sm w-full sm:w-auto whitespace-nowrap"
+            >
+              <Copy className="h-4 w-4" />
+              Bulk Copy
+            </button>
+            <button
+              onClick={() => setIsNewWaiverOpen(true)}
+              className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold transition-colors shadow-md shadow-emerald-200 text-sm w-full sm:w-auto whitespace-nowrap"
+            >
+              <Plus className="h-4 w-4" />
+              New Waiver
+            </button>
+          </div>
         )}
       </div>
 
       {/* KPI CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-6">
+        <div className="bg-white border border-slate-100 rounded-2xl p-4 sm:p-5 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl shrink-0">
             <Award className="h-6 w-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Approved Value</p>
-            <p className="text-2xl font-black text-slate-900">{fmtMoney(stats.total_approved_amount)}</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 truncate">{fmtMoney(stats.total_approved_amount)}</p>
           </div>
         </div>
 
         <div
           onClick={() => setStatusFilter(statusFilter === 'pending' ? '' : 'pending')}
-          className={`bg-white border cursor-pointer rounded-2xl p-5 shadow-sm flex items-center gap-4 transition-all ${
+          className={`bg-white border cursor-pointer rounded-2xl p-4 sm:p-5 shadow-sm flex items-center gap-4 transition-all ${
             statusFilter === 'pending' ? 'border-amber-400 ring-4 ring-amber-50' : 'border-slate-100 hover:border-amber-300'
           }`}
         >
-          <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
+          <div className="p-3 bg-amber-50 text-amber-600 rounded-xl shrink-0">
             <Clock className="h-6 w-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pending Approvals</p>
-            <div className="flex items-end gap-2">
-              <p className="text-2xl font-black text-slate-900">{stats.pending_count}</p>
+            <div className="flex items-end gap-2 flex-wrap">
+              <p className="text-xl sm:text-2xl font-black text-slate-900">{stats.pending_count}</p>
               <span className="text-xs font-semibold text-amber-600 mb-1">
                 {statusFilter === 'pending' ? 'Viewing pending' : 'Click to filter & review'}
               </span>
@@ -753,7 +766,7 @@ function WaiversContent() {
         <select
           value={sessionFilter}
           onChange={(e) => setSessionFilter(e.target.value)}
-          className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full md:w-auto bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500"
         >
           <option value="">All Academic Sessions</option>
           {sessions.map((s: any) => (
@@ -764,7 +777,7 @@ function WaiversContent() {
           value={periodFilter}
           onChange={(e) => setPeriodFilter(e.target.value)}
           disabled={!sessionFilter}
-          className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-50 disabled:opacity-50"
+          className="w-full md:w-auto bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-50 disabled:opacity-50"
         >
           <option value="">All Terms / Periods</option>
           {periods.map((p: any) => (
@@ -774,7 +787,7 @@ function WaiversContent() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full md:w-auto bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500"
         >
           <option value="">All Statuses</option>
           <option value="approved">Approved</option>
@@ -790,11 +803,11 @@ function WaiversContent() {
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
               <tr>
-                <th className="px-5 py-4">Student</th>
-                <th className="px-5 py-4 min-w-[220px]">Items</th>
-                <th className="px-5 py-4 text-right">Total Waived</th>
-                <th className="px-5 py-4 text-center">Status</th>
-                <th className="px-5 py-4 text-right">Actions</th>
+                <th className="px-3 sm:px-5 py-3 sm:py-4">Student</th>
+                <th className="px-3 sm:px-5 py-3 sm:py-4 min-w-[180px] sm:min-w-[220px]">Items</th>
+                <th className="px-3 sm:px-5 py-3 sm:py-4 text-right">Total Waived</th>
+                <th className="px-3 sm:px-5 py-3 sm:py-4 text-center hidden sm:table-cell">Status</th>
+                <th className="px-3 sm:px-5 py-3 sm:py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -817,7 +830,7 @@ function WaiversContent() {
 
                   return (
                     <tr key={group.reference} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="px-5 py-4">
+                      <td className="px-3 sm:px-5 py-3 sm:py-4">
                         <div className="flex items-center gap-3">
                           {group.student_image_url ? (
                             <img src={getImageUrl(group.student_image_url)} alt="" className="w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0" />
@@ -832,25 +845,28 @@ function WaiversContent() {
                             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 whitespace-nowrap">
                               {group.student_class}
                             </span>
+                            <div className="sm:hidden mt-1">
+                              <StatusBadge status={group.status} />
+                            </div>
                           </div>
                         </div>
                       </td>
 
-                      <td className="px-5 py-4">
-                        <p className="font-bold text-slate-800">{summarizeItems(group.items)}</p>
-                        <p className="text-xs text-slate-400 truncate max-w-xs">{group.reason || 'No reason provided'}</p>
+                      <td className="px-3 sm:px-5 py-3 sm:py-4">
+                        <p className="font-bold text-slate-800 truncate max-w-[140px] sm:max-w-none">{summarizeItems(group.items)}</p>
+                        <p className="text-xs text-slate-400 truncate max-w-[140px] sm:max-w-xs">{group.reason || 'No reason provided'}</p>
                       </td>
 
-                      <td className="px-5 py-4 text-right font-black text-slate-900 whitespace-nowrap">
+                      <td className="px-3 sm:px-5 py-3 sm:py-4 text-right font-black text-slate-900 whitespace-nowrap">
                         {fmtMoney(totalGroupAmount)}
                       </td>
 
-                      <td className="px-5 py-4 text-center">
+                      <td className="px-3 sm:px-5 py-3 sm:py-4 text-center hidden sm:table-cell">
                         <StatusBadge status={group.status} />
                       </td>
 
-                      <td className="px-5 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className="px-3 sm:px-5 py-3 sm:py-4 text-right">
+                        <div className="flex items-center justify-end gap-1 sm:gap-1.5">
                           {isPending && canManageWaivers && (
                             <>
                               <button onClick={() => setApproveModal({ open: true, item: group })} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors" title="Approve">
@@ -876,7 +892,7 @@ function WaiversContent() {
 
         {/* FIXED PAGINATION */}
         {!loading && totalPages > 1 && (
-          <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+          <div className="px-3 sm:px-5 py-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-2">
             <span className="text-xs font-semibold text-slate-500">
               Page {currentPage} of {totalPages} · {totalCount} total records
             </span>
@@ -1089,14 +1105,14 @@ function WaiversContent() {
               )}
             </div>
 
-            <div className="p-5 border-t border-slate-100 bg-slate-50 flex items-center justify-between flex-shrink-0">
+            <div className="p-5 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 flex-shrink-0">
               <div>
                 {validSelections.length > 0 && <p className="text-xs font-bold text-slate-600">Total Waived: <span className="text-sm font-black text-emerald-700">{fmtMoney(validSelections.reduce((s, x) => s + parseFloat(x.amount || 0), 0))}</span></p>}
                 {hasInvalidSelections && <p className="text-[10px] font-bold text-rose-500 mt-0.5">Some selected items are missing an amount.</p>}
               </div>
-              <div className="flex gap-2">
-                <button onClick={closeNewWaiverDrawer} className="px-4 py-2 text-xs font-semibold border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">{returnTo ? 'Cancel & Return' : 'Cancel'}</button>
-                <button disabled={validSelections.length === 0 || hasInvalidSelections || !globalReason.trim() || actionLoading} onClick={() => setConfirmModal(true)} className="px-5 py-2.5 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-emerald-200 transition-colors flex items-center gap-1.5"><Award className="w-4 h-4" /> Submit Waiver Request</button>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <button onClick={closeNewWaiverDrawer} className="flex-1 sm:flex-none px-4 py-2 text-xs font-semibold border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">{returnTo ? 'Cancel & Return' : 'Cancel'}</button>
+                <button disabled={validSelections.length === 0 || hasInvalidSelections || !globalReason.trim() || actionLoading} onClick={() => setConfirmModal(true)} className="flex-1 sm:flex-none px-5 py-2.5 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-emerald-200 transition-colors flex items-center justify-center gap-1.5"><Award className="w-4 h-4" /> Submit Waiver Request</button>
               </div>
             </div>
           </div>
@@ -1213,7 +1229,7 @@ function WaiversContent() {
 
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Administrative Governance</h4>
-                <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
                     <span className="text-slate-400 block mb-1">Requested By:</span>
                     <strong className="text-slate-800">{selectedGroup.requested_by_name || 'System / Admin'}</strong>
@@ -1228,11 +1244,11 @@ function WaiversContent() {
               </div>
             </div>
 
-            <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-end gap-2 flex-shrink-0">
+            <div className="p-5 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row justify-end gap-2 flex-shrink-0">
               {isEditingWaiver ? (
                 <>
                   <button onClick={() => setIsEditingWaiver(false)} disabled={actionLoading} className="px-4 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-bold rounded-xl transition-colors">Cancel Edits</button>
-                  <button onClick={handleSaveCorrections} disabled={actionLoading} className="px-5 py-2.5 bg-blue-600 text-white hover:bg-blue-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-md shadow-blue-200">
+                  <button onClick={handleSaveCorrections} disabled={actionLoading} className="px-5 py-2.5 bg-blue-600 text-white hover:bg-blue-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 shadow-md shadow-blue-200">
                     {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save Corrections
                   </button>
                 </>
@@ -1240,12 +1256,12 @@ function WaiversContent() {
                 <>
                   {selectedGroup.status === 'pending' && canManageWaivers && (
                     <>
-                      <button disabled={actionLoading} onClick={() => setRejectModal({ open: true, item: selectedGroup })} className="px-4 py-2.5 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5"><XCircle className="w-4 h-4" /> Reject</button>
-                      <button disabled={actionLoading} onClick={() => setApproveModal({ open: true, item: selectedGroup })} className="px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-200"><CheckCircle2 className="w-4 h-4" /> Approve</button>
+                      <button disabled={actionLoading} onClick={() => setRejectModal({ open: true, item: selectedGroup })} className="px-4 py-2.5 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5"><XCircle className="w-4 h-4" /> Reject</button>
+                      <button disabled={actionLoading} onClick={() => setApproveModal({ open: true, item: selectedGroup })} className="px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 shadow-md shadow-emerald-200"><CheckCircle2 className="w-4 h-4" /> Approve</button>
                     </>
                   )}
                   {selectedGroup.status === 'approved' && canManageWaivers && (
-                    <button disabled={actionLoading} onClick={() => setReverseModal({ open: true, item: selectedGroup })} className="px-4 py-2.5 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5">
+                    <button disabled={actionLoading} onClick={() => setReverseModal({ open: true, item: selectedGroup })} className="px-4 py-2.5 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5">
                       <RotateCcw className="w-4 h-4" /> Reverse Waiver
                     </button>
                   )}
@@ -1255,6 +1271,14 @@ function WaiversContent() {
           </div>
         </div>
       )}
+
+      {/* ─── BULK WAIVER COPY WIZARD ───────────────────────────────────── */}
+      <WaiverCopyWizard
+        isOpen={isCopyWizardOpen}
+        onClose={() => setIsCopyWizardOpen(false)}
+        onSuccess={fetchWaiversAndStats}
+        showToast={showToast}
+      />
     </div>
   );
 }

@@ -2466,6 +2466,10 @@ export const feeAPI = {
   bulkRejectWaivers: newFeeAPI.waivers.bulkReject,
   bulkAdjustWaivers: newFeeAPI.waivers.bulkAdjust,
   bulkReverseWaivers: newFeeAPI.waivers.bulkReverse,
+  previewWaiverCopy: newFeeAPI.waiverCopy.preview,
+  executeWaiverCopy: newFeeAPI.waiverCopy.execute,
+  getWaiverCopyStatus: newFeeAPI.waiverCopy.getStatus,
+
   // Master Checkouts & Receipts
   getPosTerms: newFeeAPI.receipts.getPosTerms,
   checkout: newFeeAPI.receipts.checkout,

@@ -17,7 +17,6 @@ export type FundingStatus = 'pending' | 'confirmed' | 'failed' | 'reverted' | 'd
 export type WalletType = 'canteen' | 'fee';
 export type FinancePaymentMode = 'offline' | 'online';
 export type SupplierPaymentStatus = 'completed' | 'reverted';
-export type AdvanceSettlementType = 'refund' | 'payment';
 export type BankPurpose = 'fee_payment' | 'wallet_funding' | 'both';
 export type GatewayProvider = 'paystack' | 'flutterwave' | 'custom';
 export type GatewayPurpose = 'fee_payment' | 'wallet_funding' | 'both';
@@ -25,6 +24,7 @@ export type GatewayStatus = 'initiated' | 'pending' | 'success' | 'failed' | 'ab
 export type BankTransactionDirection = 'credit' | 'debit';
 export type AccountType = 'bank' | 'cash_vault';
 export type AdjustmentType = 'add' | 'subtract' | 'set';
+export type PurchaseAdvanceDirection = 'to_staff' | 'from_staff';
 export type BankTransactionType =
   | 'opening_balance'
   | 'fee_payment'
@@ -482,7 +482,8 @@ export interface SupplierPayment {
   id: number;
   supplier: number;
   supplier_name?: string;
-  purchase_orders: number[]; // many‑to‑many IDs
+  purchase_order: number | null;
+  purchase_order_number?: string;
   amount: string;
   foreign_currency: string | null;
   foreign_amount: string | null;
@@ -502,8 +503,8 @@ export interface SupplierPayment {
 }
 
 export interface SupplierPaymentFormValues {
-  supplier: number;
-  purchase_orders?: number[];
+  supplier?: number;
+  purchase_order: number;
   amount: string;
   foreign_currency?: string;
   foreign_amount?: string;
@@ -542,6 +543,10 @@ export interface PurchaseAdvancePayment {
   payment_method: GeneralPaymentMethod;
   reference: string | null;
   voucher_number: string;
+  direction: PurchaseAdvanceDirection;
+direction_display?: string;
+status: 'completed' | 'reverted';
+status_display?: string;
   notes: string | null;
   academic_period: number | null;
   created_at: string;
@@ -551,6 +556,7 @@ export interface PurchaseAdvancePayment {
 
 export interface PurchaseAdvancePaymentFormValues {
   advance: number;
+  direction?: PurchaseAdvanceDirection;
   amount: string;
   foreign_currency?: string;
   foreign_amount?: string;
@@ -572,53 +578,7 @@ export interface PurchaseAdvancePaymentListFilters {
   page_size?: number;
 }
 
-// ==================== ADVANCE SETTLEMENT ====================
-
-export interface AdvanceSettlement {
-  id: number;
-  advance: number;
-  advance_number?: string;
-  staff_name?: string;
-  settlement_type: AdvanceSettlementType;
-  amount: string;
-  foreign_currency: string | null;
-  foreign_amount: string | null;
-  exchange_rate: string | null;
-  bank_account: number | null;
-  bank_account_name?: string;
-  settlement_date: string;
-  payment_method: GeneralPaymentMethod;
-  reference: string | null;
-  notes: string | null;
-  academic_period: number | null;
-  created_at: string;
-  created_by: number | null;
-  created_by_name?: string;
-}
-
-export interface AdvanceSettlementFormValues {
-  advance: number;
-  settlement_type: AdvanceSettlementType;
-  amount: string;
-  foreign_currency?: string;
-  foreign_amount?: string;
-  exchange_rate?: string;
-  bank_account?: number | null;
-  settlement_date: string;
-  payment_method: GeneralPaymentMethod;
-  reference?: string;
-  notes?: string;
-}
-
-export interface AdvanceSettlementListFilters {
-  advance?: number;
-  settlement_type?: AdvanceSettlementType;
-  start_date?: string;
-  end_date?: string;
-  search?: string;
-  page?: number;
-  page_size?: number;
-}
+/
 
 // ==================== BANK & WALLET LEDGER ====================
 
@@ -758,6 +718,81 @@ export interface StaffWalletTransaction {
 }
 
 
+// ==================== FINANCE REPORTS ====================
+
+export interface FinanceReportQueryParams {
+  session_id?: string;
+  period_id?: string;
+  date_from?: string;   // YYYY-MM-DD
+  date_to?: string;     // YYYY-MM-DD
+  currency?: string;    // e.g. 'NGN', 'USD'
+}
+
+export interface DashboardKPIResponse {
+  total_income: string;
+  total_expenses: string;
+  net_cash_position: string;
+  bank_balances_total: string;
+  outstanding_purchase_advances: string;
+  monthly_trend: Array<{
+    month: string;      // e.g. "Jan 2026"
+    income: string;
+    expense: string;
+    net: string;
+  }>;
+  currency: string;
+}
+
+export interface IncomeSummaryGroup {
+  name: string;
+  amount: string;
+  percentage: number;   // 0-100, can be decimal
+}
+
+export interface IncomeSummaryResponse {
+  currency: string;
+  total_income: string;
+  groups: IncomeSummaryGroup[];
+}
+
+export interface ExpenseSummaryGroup {
+  name: string;
+  amount: string;
+  percentage: number;
+}
+
+export interface ExpenseSummaryResponse {
+  currency: string;
+  total_expenses: string;
+  groups: ExpenseSummaryGroup[];
+}
+
+export interface StatementLine {
+  name: string;
+  amount: string;
+}
+
+export interface IncomeExpenseStatementResponse {
+  currency: string;
+  revenue: StatementLine[];
+  total_revenue: string;
+  expenses: StatementLine[];
+  total_expenses: string;
+  net_income: string;
+}
+
+export interface CashFlowMonth {
+  month: string;        // "YYYY-MM"
+  inflow: string;
+  outflow: string;
+  net: string;
+}
+
+export interface CashFlowResponse {
+  currency: string;
+  months: CashFlowMonth[];
+}
+
 // ==================== API RESPONSE TYPES ====================
 
 export type StudentFundingListResponse = PaginatedResponse<StudentFunding>;
@@ -766,7 +801,6 @@ export type IncomeListResponse = PaginatedResponse<Income>;
 export type ExpenseListResponse = PaginatedResponse<Expense>;
 export type SupplierPaymentListResponse = PaginatedResponse<SupplierPayment>;
 export type PurchaseAdvancePaymentListResponse = PaginatedResponse<PurchaseAdvancePayment>;
-export type AdvanceSettlementListResponse = PaginatedResponse<AdvanceSettlement>;
 export type BankTransactionListResponse = PaginatedResponse<BankTransaction>;
 export type WalletTransactionListResponse = PaginatedResponse<WalletTransaction>;
 export type OnlinePaymentTransactionListResponse = PaginatedResponse<OnlinePaymentTransaction>;

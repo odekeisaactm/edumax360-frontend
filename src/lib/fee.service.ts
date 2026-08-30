@@ -512,6 +512,25 @@ bulkReverse: async (payload: { ids: number[]; reason: string }): Promise<any> =>
   },
 };
 
+export const waiverCopyAPI = {
+  listBatches: async (params?: any): Promise<any> => {
+    const response = await api.get(`${FEE_API_BASE}/waiver-copy-batches/`, { params });
+    return response.data;
+  },
+  preview: async (data: { source_period_id: number; target_period_id: number; rules: any }) => {
+    const response = await api.post(`${FEE_API_BASE}/waiver-copy-batches/preview/`, data);
+    return response.data;
+  },
+  execute: async (data: { title: string; source_period_id: number; target_period_id: number; rules: any }) => {
+    const response = await api.post(`${FEE_API_BASE}/waiver-copy-batches/execute/`, data);
+    return response.data;
+  },
+  getStatus: async (id: number) => {
+    const response = await api.get(`${FEE_API_BASE}/waiver-copy-batches/${id}/job_status/`);
+    return response.data;
+  }
+};
+
 // ============================================================
 // 7. INVOICES (STUDENT & FAMILY)
 // ============================================================
@@ -894,6 +913,7 @@ export const feeAPI = {
   discountApplications: discountApplicationsAPI,
   appliedDiscounts: appliedDiscountsAPI,
   waivers: feeWaiversAPI,
+  waiverCopy: waiverCopyAPI,
   invoices: invoicesAPI,
   familyInvoices: familyInvoicesAPI,
   receipts: receiptsAPI,

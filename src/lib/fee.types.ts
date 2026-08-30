@@ -178,6 +178,23 @@ export interface FeeWaiver {
   created_at?: string;
 }
 
+export interface WaiverCopyRules {
+  conflict_resolution: 'use_first' | 'use_last' | 'use_lowest' | 'use_highest' | 'sum_all' | '';
+  price_change_action: 'apply_same_amount' | 'apply_proportion' | 'ignore' | '';
+  exceeds_balance_action: 'cap_at_balance' | 'ignore' | '';
+  existing_waiver_action: 'skip' | 'overwrite' | 'merge' | '';
+}
+
+export interface WaiverCopyPreviewItem {
+  target_type: 'invoice_item' | 'family_invoice_item';
+  target_item_id: number;
+  entity_name: string;
+  fee_name: string;
+  projected_amount: string;
+  will_overwrite: boolean;
+}
+
+
 // ==================== INVOICING ====================
 
 export interface InvoiceCorrectionBatch {

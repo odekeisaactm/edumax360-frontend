@@ -33,15 +33,18 @@ import type {
   PurchaseAdvancePayment,
   PurchaseAdvancePaymentFormValues,
   PurchaseAdvancePaymentListFilters,
-  AdvanceSettlement,
-  AdvanceSettlementFormValues,
-  AdvanceSettlementListFilters,
   FinanceDashboardStats,
   PaymentGatewayConfig,
   WalletTransfer,
   WalletTransferFormValues,
   WalletTransferListFilters,
   WalletTransferListResponse,
+  FinanceReportQueryParams,
+  DashboardKPIResponse,
+  IncomeSummaryResponse,
+  ExpenseSummaryResponse,
+  IncomeExpenseStatementResponse,
+  CashFlowResponse,
   PaginatedResponse,
 
 } from '@/lib/finance.types';
@@ -309,8 +312,19 @@ export const auditLedgersAPI = {
     const response = await api.get(`${FINANCE_API_BASE}/staff-wallet-ledger/`, { params });
     return response.data;
   },
+  getStudentWalletTransaction: async (id: number | string) => {
+  const response = await api.get(`${FINANCE_API_BASE}/student-wallet-ledger/${id}/`);
+  return response.data;
+},
+  getStaffWalletTransaction: async (id: number | string) => {
+    const response = await api.get(`${FINANCE_API_BASE}/staff-wallet-ledger/${id}/`);
+    return response.data;
+  },
+getBankTransaction: async (id: number | string) => {
+  const response = await api.get(`${FINANCE_API_BASE}/bank-ledger/${id}/`);
+  return response.data;
+},
 };
-
 
 // ==================== SELF-SERVICE MY FUNDING API ====================
 
@@ -592,7 +606,9 @@ export const supplierPaymentsAPI = {
    */
   list: async (filters?: SupplierPaymentListFilters): Promise<PaginatedResponse<SupplierPayment>> => {
     const response = await api.get(`${FINANCE_API_BASE}/supplier-payments/`, { params: filters });
-    return response.data.results || { count: 0, next: null, previous: null, results: [] };
+    // response.data IS the paginated envelope: { count, next, previous, results }.
+    // There is no extra nesting — don't reach into `.results` here, return the envelope itself.
+    return response.data || { count: 0, next: null, previous: null, results: [] };
   },
 
   /**
@@ -600,7 +616,8 @@ export const supplierPaymentsAPI = {
    */
   create: async (data: SupplierPaymentFormValues): Promise<SupplierPayment> => {
     const response = await api.post(`${FINANCE_API_BASE}/supplier-payments/`, data);
-    return response.data.data;
+    // DRF's Response(serializer.data) puts the object directly on response.data — no nested .data.
+    return response.data;
   },
 
   /**
@@ -608,7 +625,33 @@ export const supplierPaymentsAPI = {
    */
   get: async (id: number): Promise<SupplierPayment> => {
     const response = await api.get(`${FINANCE_API_BASE}/supplier-payments/${id}/`);
-    return response.data.data;
+    return response.data;
+  },
+
+  /**
+   * Update an existing supplier payment (partial update).
+   * Note: the backend rejects changing `purchase_order` after creation —
+   * only metadata (amount, bank_account, payment_method, reference, notes, etc.) can change.
+   */
+  update: async (id: number, data: Partial<SupplierPaymentFormValues>): Promise<SupplierPayment> => {
+    const response = await api.patch(`${FINANCE_API_BASE}/supplier-payments/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete (reverse) a supplier payment. Backend enforces the reversal grace window.
+   */
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`${FINANCE_API_BASE}/supplier-payments/${id}/`);
+  },
+
+  /**
+   * Revert a completed payment without deleting the record.
+   * Hits the ViewSet's @action(detail=True, methods=['post']) revert endpoint.
+   */
+  revert: async (id: number): Promise<SupplierPayment> => {
+    const response = await api.post(`${FINANCE_API_BASE}/supplier-payments/${id}/revert/`);
+    return response.data;
   },
 };
 
@@ -622,68 +665,46 @@ export const advancePaymentsAPI = {
    */
   list: async (filters?: PurchaseAdvancePaymentListFilters): Promise<PaginatedResponse<PurchaseAdvancePayment>> => {
     const response = await api.get(`${FINANCE_API_BASE}/advance-payments/`, { params: filters });
-    return response.data.results || { count: 0, next: null, previous: null, results: [] };
+    return response.data || { count: 0, next: null, previous: null, results: [] };
   },
 
   /**
-   * Create a new purchase advance payment
+   * Create a new purchase advance payment (direction determines debit/credit)
    */
   create: async (data: PurchaseAdvancePaymentFormValues): Promise<PurchaseAdvancePayment> => {
     const response = await api.post(`${FINANCE_API_BASE}/advance-payments/`, data);
-    return response.data.data;
+    return response.data;
   },
 
   /**
-   * Get purchase advance payment by ID
+   * Get a single advance payment by ID
    */
   get: async (id: number): Promise<PurchaseAdvancePayment> => {
     const response = await api.get(`${FINANCE_API_BASE}/advance-payments/${id}/`);
-    return response.data.data;
+    return response.data;
   },
-};
 
-// ============================================================
-// 11. ADVANCE SETTLEMENTS
-// ============================================================
-
-export const advanceSettlementsAPI = {
   /**
-   * List advance settlements with pagination and filters
+   * Partial update (amount, payment_method, bank_account, reference, notes)
    */
-  list: async (filters?: AdvanceSettlementListFilters): Promise<PaginatedResponse<AdvanceSettlement>> => {
-    const response = await api.get(`${FINANCE_API_BASE}/advance-settlements/`, { params: filters });
-    return response.data.results || { count: 0, next: null, previous: null, results: [] };
+  update: async (id: number, data: Partial<PurchaseAdvancePaymentFormValues>): Promise<PurchaseAdvancePayment> => {
+    const response = await api.patch(`${FINANCE_API_BASE}/advance-payments/${id}/`, data);
+    return response.data;
   },
 
   /**
-   * Create a new advance settlement
-   */
-  create: async (data: AdvanceSettlementFormValues): Promise<AdvanceSettlement> => {
-    const response = await api.post(`${FINANCE_API_BASE}/advance-settlements/`, data);
-    return response.data.data;
-  },
-
-  /**
-   * Get advance settlement by ID
-   */
-  get: async (id: number): Promise<AdvanceSettlement> => {
-    const response = await api.get(`${FINANCE_API_BASE}/advance-settlements/${id}/`);
-    return response.data.data;
-  },
-
-  /**
-   * Update advance settlement
-   */
-  update: async (id: number, data: Partial<AdvanceSettlementFormValues>): Promise<AdvanceSettlement> => {
-    const response = await api.put(`${FINANCE_API_BASE}/advance-settlements/${id}/`, data);
-    return response.data.data;
-  },
-
-  /**
-   * Delete advance settlement
+   * Delete (reverse) an advance payment. Backend enforces reversal grace window.
    */
   delete: async (id: number): Promise<void> => {
-    await api.delete(`${FINANCE_API_BASE}/advance-settlements/${id}/`);
+    await api.delete(`${FINANCE_API_BASE}/advance-payments/${id}/`);
+  },
+
+  /**
+   * Revert a completed payment without deleting the record.
+   */
+  revert: async (id: number): Promise<PurchaseAdvancePayment> => {
+    const response = await api.post(`${FINANCE_API_BASE}/advance-payments/${id}/revert/`);
+    return response.data;
   },
 };
 
@@ -783,6 +804,10 @@ export const onlinePaymentAPI = {
     const response = await api.get(`${FINANCE_API_BASE}/online-transactions/`, { params });
     return response.data.results || response.data;
   },
+  get: async (id: number): Promise<OnlinePaymentTransaction> => {
+    const response = await api.get(`${FINANCE_API_BASE}/online-transactions/${id}/`);
+    return response.data;
+},
 
   /**
    * Initiate online checkout session
@@ -828,6 +853,58 @@ export const walletAdminAPI = {
 
 
 // ============================================================
+// 16. FINANCE REPORTS (Analytical Endpoints)
+// ============================================================
+
+export const financeReportsAPI = {
+  /**
+   * High‑level dashboard key performance indicators.
+   * GET /api/finance/reports/dashboard-kpi/
+   */
+  dashboardKPI: async (params?: FinanceReportQueryParams): Promise<DashboardKPIResponse> => {
+    const response = await api.get(`${FINANCE_API_BASE}/reports/dashboard-kpi/`, { params });
+    return response.data;
+  },
+
+  /**
+   * Income breakdown by source with percentages.
+   * GET /api/finance/reports/income-summary/
+   */
+  incomeSummary: async (params?: FinanceReportQueryParams): Promise<IncomeSummaryResponse> => {
+    const response = await api.get(`${FINANCE_API_BASE}/reports/income-summary/`, { params });
+    return response.data;
+  },
+
+  /**
+   * Expense breakdown by category with percentages.
+   * GET /api/finance/reports/expense-summary/
+   */
+  expenseSummary: async (params?: FinanceReportQueryParams): Promise<ExpenseSummaryResponse> => {
+    const response = await api.get(`${FINANCE_API_BASE}/reports/expense-summary/`, { params });
+    return response.data;
+  },
+
+  /**
+   * Full profit‑and‑loss statement.
+   * GET /api/finance/reports/income-expense-statement/
+   */
+  incomeExpenseStatement: async (params?: FinanceReportQueryParams): Promise<IncomeExpenseStatementResponse> => {
+    const response = await api.get(`${FINANCE_API_BASE}/reports/income-expense-statement/`, { params });
+    return response.data;
+  },
+
+  /**
+   * Monthly cash‑flow from the unified bank ledger.
+   * GET /api/finance/reports/cash-flow/
+   */
+  cashFlow: async (params?: FinanceReportQueryParams): Promise<CashFlowResponse> => {
+    const response = await api.get(`${FINANCE_API_BASE}/reports/cash-flow/`, { params });
+    return response.data;
+  },
+};
+
+
+// ============================================================
 // Export all finance APIs as a single object (optional)
 // ============================================================
 
@@ -842,13 +919,13 @@ export const financeAPI = {
   expense: expenseAPI,
   supplierPayments: supplierPaymentsAPI,
   advancePayments: advancePaymentsAPI,
-  advanceSettlements: advanceSettlementsAPI,
   dashboard: financeDashboardAPI,
   gateways: gatewayAPI,
   onlinePayments: onlinePaymentAPI,
   auditLedgers: auditLedgersAPI,
   walletTransfer: walletTransferAPI,
   myFunding: myFundingAPI,
+  reports: financeReportsAPI,
 };
 
 // ============================================================

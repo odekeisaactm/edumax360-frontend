@@ -786,49 +786,37 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
         },
 
         // ==================== PROCUREMENT ====================
+            {
+              name: 'Procurement',
+              href: '#',
+              icon: <Package className="h-5 w-5" />,
+              children: [
+                {
+                  name: 'Purchase Order Payments',
+                  href: '/dashboard/staff/finance/supplier-payments',
+                  icon: <CreditCard className="h-4 w-4" />,
+                  current: isCurrentPath('/dashboard/staff/finance/supplier-payments'),
+                  requiredPermissions: ['finance.view_supplierpaymentmodel'],
+                },
+                {
+                  name: 'Advance Payments & Settlements',
+                  href: '/dashboard/staff/finance/advance-payments',
+                  icon: <ArrowUpCircle className="h-4 w-4" />,
+                  current: isCurrentPath('/dashboard/staff/finance/advance-payments'),
+                  requiredPermissions: [
+                    'finance.view_purchaseadvancepaymentmodel',
+                    'finance.view_advancesettlementmodel',
+                  ],
+                },
+              ],
+            },
         {
-          name: 'Procurement',
-          href: '#',
-          icon: <Package className="h-5 w-5" />,
-          children: [
-            {
-              name: 'Supplier Payments',
-              href: '/dashboard/staff/finance/supplier-payments',
-              icon: <CreditCard className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/finance/supplier-payments'),
-              requiredPermissions: ['finance.view_supplierpaymentmodel'],
-            },
-            {
-              name: 'Record Supplier Payment',
-              href: '/dashboard/staff/finance/supplier-payments/create',
-              icon: <Plus className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/finance/supplier-payments/create'),
-              requiredPermissions: ['finance.add_supplierpaymentmodel'],
-            },
-            {
-              name: 'Advance Payments',
-              href: '/dashboard/staff/finance/advance-payments',
-              icon: <ArrowUpCircle className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/finance/advance-payments'),
-              requiredPermissions: ['finance.view_purchaseadvancepaymentmodel'],
-            },
-            {
-              name: 'Record Advance Payment',
-              href: '/dashboard/staff/finance/advance-payments/create',
-              icon: <Plus className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/finance/advance-payments/create'),
-              requiredPermissions: ['finance.add_purchaseadvancepaymentmodel'],
-            },
-            {
-              name: 'Advance Settlements',
-              href: '/dashboard/staff/finance/advance-settlements',
-              icon: <FileText className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/finance/advance-settlements'),
-              requiredPermissions: ['finance.view_advancesettlementmodel'],
-            },
-          ],
+          name: 'Reports',
+          href: '/dashboard/staff/finance/reports',
+          icon: <FileSpreadsheet className="h-5 w-5" />,
+          current: isCurrentPath('/dashboard/staff/finance/reports'),
+          requiredPermissions: ['finance.view_expensemodel'],
         },
-
         // ==================== LEDGER ====================
         {
           name: 'Ledger',
@@ -837,71 +825,31 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           children: [
             {
               name: 'Bank Transactions',
-              href: '/dashboard/staff/finance/bank-transactions',
+              href: '/dashboard/staff/finance/ledger/bank-transactions',
               icon: <Banknote className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/finance/bank-transactions'),
+              current: isCurrentPath('/dashboard/staff/finance/ledger/bank-transactions'),
               requiredPermissions: ['finance.view_banktransactionmodel'],
             },
             {
               name: 'Student Wallet Ledger',
-              href: '/dashboard/staff/finance/wallet-transactions',
+              href: '/dashboard/staff/finance/ledger/wallet-transactions',
               icon: <Wallet className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/finance/wallet-transactions'),
+              current: isCurrentPath('/dashboard/staff/finance/ledger/wallet-transactions'),
               requiredPermissions: ['finance.view_wallettransactionmodel'],
             },
             {
               name: 'Staff Wallet Ledger',
-              href: '/dashboard/staff/finance/staff-wallet-transactions',
+              href: '/dashboard/staff/finance/ledger/staff-wallet-transactions',
               icon: <Wallet className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/finance/staff-wallet-transactions'),
+              current: isCurrentPath('/dashboard/staff/finance/ledger/staff-wallet-transactions'),
               requiredPermissions: ['finance.view_staffwallettransactionmodel'],
             },
             {
               name: 'Online Transactions',
-              href: '/dashboard/staff/finance/online-payments',
+              href: '/dashboard/staff/finance/ledger/online-payments',
               icon: <Activity className="h-5 w-5" />,
-              current: isCurrentPath('/dashboard/staff/finance/online-payments'),
+              current: isCurrentPath('/dashboard/staff/finance/ledger/online-payments'),
               requiredPermissions: ['finance.view_onlinepaymenttransactionmodel'],
-            },
-          ],
-        },
-
-        // ==================== REPORTS ====================
-        {
-          name: 'Reports',
-          href: '#',
-          icon: <FileSpreadsheet className="h-5 w-5" />,
-          children: [
-            {
-              name: 'Income Report',
-              href: '/dashboard/staff/finance/income-report',
-              icon: <FileSpreadsheet className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/finance/income-report'),
-              requiredPermissions: ['finance.view_incomemodel'],
-            },
-            {
-              name: 'Expense Report',
-              href: '/dashboard/staff/finance/expense-report',
-              icon: <FileSpreadsheet className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/finance/expense-report'),
-              requiredPermissions: ['finance.view_expensemodel'],
-            },
-            {
-              name: 'Funding Report',
-              href: '/dashboard/staff/finance/funding-report',
-              icon: <FileSpreadsheet className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/finance/funding-report'),
-              requiredPermissions: [
-                'finance.view_studentfundingmodel',
-                'finance.view_stafffundingmodel',
-              ],
-            },
-            {
-              name: 'Finance Report',
-              href: '/dashboard/staff/finance/finance-report',
-              icon: <FileSpreadsheet className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/finance/finance-report'),
-              requiredPermissions: ['finance.view_expensemodel'],
             },
           ],
         },

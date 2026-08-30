@@ -125,13 +125,13 @@ function filterClassesByStudentKind(
 ): ClassConfiguration[] {
   return classes.filter(cls => {
     if (studentKind === 'normal') {
-      return cls.result_type === 'text';
+      return cls.result_type === 'text' || cls.result_type === 'combined';
     }
     if (studentKind === 'special') {
       return cls.can_have_special_student === true;
     }
     if (studentKind === 'combined') {
-      return cls.result_type === 'text' || cls.can_have_special_student === true;
+      return cls.result_type === 'text' || cls.result_type === 'combined' || cls.can_have_special_student === true;
     }
     return true;
   });

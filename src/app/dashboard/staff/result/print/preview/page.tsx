@@ -115,6 +115,10 @@ const templateComponents: Record<string, any> = {
     loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
     ssr: false,
   }),
+  'combined_1_default': nextDynamic(() => import('@/components/result/templates/combined/1_default/preview'), {
+    loading: () => <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" />Loading template...</div>,
+    ssr: false,
+  }),
 };
 
 type ReportMode = 'term' | 'cumulative' | 'both';
