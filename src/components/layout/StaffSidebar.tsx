@@ -132,7 +132,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           icon: <SquarePen className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/students/bulk-update'),
           requiredPermissions: [
-            'student_management.change_studentmodel'
+            'student_management.add_bulkstudentuploadmodel'
 
           ],
         },

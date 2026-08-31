@@ -504,8 +504,8 @@ export default function BulkUpdatePage() {
   const [result, setResult] = useState<any>(null);
   const [showSummary, setShowSummary] = useState(false);
 
-  const canEditStudents = user?.is_superuser || hasPermission('student_management.change_studentmodel');
-  const canEditParents = user?.is_superuser || hasPermission('student_management.change_parentmodel');
+  const canEditStudents = user?.is_superuser || hasPermission('student_management.add_bulkstudentuploadmodel');
+  const canEditParents = user?.is_superuser || hasPermission('student_management.add_bulkstudentuploadmodel');
   const canEdit = entityType === 'student' ? canEditStudents : canEditParents;
 
   const showToast = useCallback((type: 'success' | 'error', message: string) => {
