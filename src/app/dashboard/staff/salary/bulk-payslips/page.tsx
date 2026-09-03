@@ -33,8 +33,6 @@ interface StaffRowData {
   autoAllowances: { name: string; amount: number }[];
   monthlyTax: number;
   amount_paid: number;
-  // NEW: true once a real (>0) amount_paid has been saved to the DB for this record.
-  // While true, amount_paid is locked and will never be overwritten by recalculation.
   amount_paid_locked: boolean;
   is_paid: boolean;
   record_id: number | null;
@@ -62,7 +60,6 @@ function fmtMoney(amount: string | number): string {
   return '₦' + num.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// ─── Unwrap API response helper ───────────────────────────────────────────────
 function unwrapList(res: any): any[] {
   const data = res?.results?.data ?? res?.data?.results ?? res?.data ?? res?.results ?? res;
   return Array.isArray(data) ? data : [];
@@ -83,6 +80,8 @@ function calculateSalary(
   bonus: number = 0,
   additionalIncome: Record<string, number> = {},
   customDeductions: Record<string, number> = {},
+  allowanceOverrides: Record<string, number> = {},
+  deductionOverrides: Record<string, number> = {}
 ): CalculationResult {
   monthlySalary = Math.round(monthlySalary * 100) / 100;
 
@@ -102,12 +101,16 @@ function calculateSalary(
   let totalAutoAllowances = 0;
   (setting.allowances || []).forEach((a: any) => {
     if (a.is_active !== false && !a.annual_only) {
-      const base  = calcBase(a.based_on || 'TOTAL', a.based_on_type || 'component');
-      const pct   = parseFloat(a.percentage) || 0;
-      const fixed = parseFloat(a.fixed_amount) || 0;
-      if (a.calculation_type === 'fixed')           totalAutoAllowances += fixed;
-      else if (a.calculation_type === 'percentage') totalAutoAllowances += (base * pct) / 100;
-      else                                          totalAutoAllowances += (base * pct) / 100 + fixed;
+      if (allowanceOverrides[a.name] !== undefined) {
+        totalAutoAllowances += allowanceOverrides[a.name];
+      } else {
+        const base  = calcBase(a.based_on || 'TOTAL', a.based_on_type || 'component');
+        const pct   = parseFloat(a.percentage) || 0;
+        const fixed = parseFloat(a.fixed_amount) || 0;
+        if (a.calculation_type === 'fixed')           totalAutoAllowances += fixed;
+        else if (a.calculation_type === 'percentage') totalAutoAllowances += (base * pct) / 100;
+        else                                          totalAutoAllowances += (base * pct) / 100 + fixed;
+      }
     }
   });
 
@@ -117,12 +120,16 @@ function calculateSalary(
   let totalStatutoryDeductions = 0;
   (setting.statutory_deductions || []).forEach((d: any) => {
     if (d.is_active !== false) {
-      const base  = calcBase(d.based_on || 'B', d.based_on_type || 'component');
-      const pct   = parseFloat(d.percentage) || 0;
-      const fixed = parseFloat(d.fixed_amount) || 0;
-      if (d.calculation_type === 'fixed')           totalStatutoryDeductions += fixed;
-      else if (d.calculation_type === 'percentage') totalStatutoryDeductions += (base * pct) / 100;
-      else                                          totalStatutoryDeductions += (base * pct) / 100 + fixed;
+      if (deductionOverrides[d.name] !== undefined) {
+        totalStatutoryDeductions += deductionOverrides[d.name];
+      } else {
+        const base  = calcBase(d.based_on || 'B', d.based_on_type || 'component');
+        const pct   = parseFloat(d.percentage) || 0;
+        const fixed = parseFloat(d.fixed_amount) || 0;
+        if (d.calculation_type === 'fixed')           totalStatutoryDeductions += fixed;
+        else if (d.calculation_type === 'percentage') totalStatutoryDeductions += (base * pct) / 100;
+        else                                          totalStatutoryDeductions += (base * pct) / 100 + fixed;
+      }
     }
   });
 
@@ -369,7 +376,6 @@ function StaffRow({
             <MinusCircle className="h-3.5 w-3.5" /> Deduction
           </button>
 
-          {/* NEW: Amount Paid input — auto-syncs to take-home until a real payment is saved */}
           <div className="flex items-center gap-1.5">
             <span className="text-[10px] font-semibold text-slate-400 uppercase whitespace-nowrap">Pay</span>
             <div className="relative">
@@ -412,7 +418,6 @@ function StaffRow({
 export default function BulkPayslipsPage() {
   const router       = useRouter();
   const searchParams = useSearchParams();
-  const { hasPermission, user } = useAuth();
 
   const month = Number(searchParams.get('month')) || currentMonth;
   const year  = Number(searchParams.get('year'))  || currentYear;
@@ -445,7 +450,6 @@ export default function BulkPayslipsPage() {
   };
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  // ── Departments derived from structure staff_detail.department_name ──────────
   const departments = useMemo(() => {
     const names = new Set<string>();
     structures.forEach(s => {
@@ -467,7 +471,6 @@ export default function BulkPayslipsPage() {
     (settings?.other_deductions_config || []).filter((d: any) => !d.linked_to),
   [settings]);
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     setLoading(true);
     setPageError(null);
@@ -477,10 +480,8 @@ export default function BulkPayslipsPage() {
         salarySettingsAPI.list(),
       ]) as any[];
 
-      // FIX: unwrap nested results.data wrapper
       const structList: SalaryStructure[] = unwrapList(structsRes);
 
-      // FIX: unwrap setting — handle array or single object
       let setting: SalarySetting | null = null;
       const settingData = setRes?.results?.data ?? setRes?.data ?? setRes?.results ?? setRes;
       if (Array.isArray(settingData)) {
@@ -492,7 +493,6 @@ export default function BulkPayslipsPage() {
       setStructures(structList);
       setSettings(setting);
 
-      // Fetch existing payroll records
       try {
         const recordsRes = await payrollAPI.listRecords({ month, year, page_size: 1000 }) as any;
         const records: any[] = unwrapList(recordsRes);
@@ -504,7 +504,6 @@ export default function BulkPayslipsPage() {
         setPayrollMap(rMap);
       } catch (e) { console.error('Could not fetch payroll records:', e); }
 
-      // Fetch bank details
       try {
         const bankRes = await staffBankDetailsAPI.list({ page_size: 1000 }) as any;
         const bankList: any[] = unwrapList(bankRes);
@@ -522,7 +521,6 @@ export default function BulkPayslipsPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── Process structures into StaffRowData ──────────────────────────────────
   const processStructures = useCallback(() => {
     if (!settings || structures.length === 0) return;
 
@@ -539,7 +537,6 @@ export default function BulkPayslipsPage() {
     }
 
     if (deptFilter) {
-      // FIX: filter by department_name string directly (no ID available)
       filtered = filtered.filter(s => {
         const st = (s.staff_detail as any) || (s.staff as any);
         return st?.department_name === deptFilter;
@@ -574,7 +571,9 @@ export default function BulkPayslipsPage() {
         .filter(([, v]) => parseFloat(v as string) > 0)
         .map(([name, v]) => ({ id: genRowId(), name, amount: parseFloat(v as string) }));
 
-      // FIX: use backend stored values for processed records; local calc only for unprocessed
+      const allowOverrides = struct.allowance_overrides || {};
+      const dedOverrides = struct.deduction_overrides || {};
+
       const preview: CalculationResult = existing
         ? {
             grossIncomeMonthly:        parseFloat(existing.gross_salary)               || 0,
@@ -591,16 +590,14 @@ export default function BulkPayslipsPage() {
             0,
             Object.fromEntries(allowances.map(a => [a.name, a.amount])),
             Object.fromEntries(deductions.map(d => [d.name, d.amount])),
+            allowOverrides,
+            dedOverrides
           );
 
       const autoAllowances = Object.entries(existing?.allowances_breakdown || {})
         .map(([name, a]: [string, any]) => ({ name, amount: parseFloat(a?.amount ?? a) || 0 }))
         .filter(a => a.amount > 0);
 
-      // NEW: amount_paid logic.
-      // If a real (>0) amount_paid already exists on the saved record, lock it — never
-      // recalculate it again. Otherwise default it to the current take-home (net salary),
-      // which will keep re-syncing as allowances/deductions change until it's actually saved.
       const savedAmountPaid    = parseFloat(existing?.amount_paid) || 0;
       const amountPaidLocked   = savedAmountPaid > 0;
 
@@ -631,13 +628,15 @@ export default function BulkPayslipsPage() {
     return () => { if (searchDebounce.current) clearTimeout(searchDebounce.current); };
   }, [search]);
 
-  // ── Recalc helper (unprocessed staff only) ────────────────────────────────
   const recalc = useCallback((
     d: StaffRowData,
     allowances = d.allowances,
     deductions = d.deductions,
   ): CalculationResult => {
-    if (d.is_paid || !settings) return d.preview; // never recalc paid records
+    if (d.is_paid || !settings) return d.preview;
+    const allowOverrides = d.structure.allowance_overrides || {};
+    const dedOverrides = d.structure.deduction_overrides || {};
+
     return calculateSalary(
       parseFloat(d.structure.monthly_salary as any),
       settings,
@@ -645,23 +644,22 @@ export default function BulkPayslipsPage() {
       0,
       Object.fromEntries(allowances.map(a => [a.name, a.amount])),
       Object.fromEntries(deductions.map(x => [x.name, x.amount])),
+      allowOverrides,
+      dedOverrides
     );
   }, [settings]);
 
-  // ── Checkbox ──
   const handleCheckChange = (id: number) =>
     setStaffData(prev => prev.map(d => d.structure.id === id ? { ...d, checked: !d.checked } : d));
 
   const handleSelectAll = () =>
     setStaffData(prev => prev.map(d => ({ ...d, checked: d.is_paid ? false : true })));
 
-  // ── Amount Paid (manual override, only effective while unlocked) ──
   const handleAmountPaidChange = (structureId: number, value: number) =>
     setStaffData(prev => prev.map(d =>
       d.structure.id === structureId && !d.amount_paid_locked ? { ...d, amount_paid: value } : d
     ));
 
-  // ── Allowances ──
   const handleAddAllowance = (name: string, amount: number) => {
     setStaffData(prev => prev.map(d => {
       if (d.structure.id !== allwModal.structureId) return d;
@@ -672,7 +670,6 @@ export default function BulkPayslipsPage() {
         ...d,
         allowances,
         preview,
-        // NEW: resync amount_paid to the new take-home unless already locked by a saved payment
         amount_paid: d.amount_paid_locked ? d.amount_paid : preview.netSalary,
       };
     }));
@@ -691,7 +688,6 @@ export default function BulkPayslipsPage() {
       };
     }));
 
-  // ── Deductions ──
   const handleAddDeduction = (name: string, amount: number) => {
     setStaffData(prev => prev.map(d => {
       if (d.structure.id !== dedModal.structureId) return d;
@@ -720,7 +716,6 @@ export default function BulkPayslipsPage() {
       };
     }));
 
-  // ── Bulk Process (no payment) ──
   const handleBulkProcess = async () => {
     const selected = staffData.filter(d => d.checked && !d.is_paid);
     if (selected.length === 0) { showToast('error', 'Please select at least one unpaid staff member.'); return; }
@@ -734,15 +729,14 @@ export default function BulkPayslipsPage() {
         custom_deductions: Object.fromEntries(d.deductions.map(x => [x.name, x.amount])),
         amount_paid:       '0.00',
       }));
-      const res        = await payrollAPI.process(payload) as any;
-      const resultData = res?.data?.results ?? res?.results ?? [];
-      const failures   = resultData.filter((r: any) => !r.success);
-      const successes  = resultData.filter((r: any) => r.success);
-      if (failures.length > 0) {
-        showToast('error', `${failures.length} failed: ${failures.map((r: any) => r.error || 'Unknown').join('; ')}`);
+
+      const res = await payrollAPI.process(payload) as any;
+      if (res?.id && res?.status === 'pending') {
+        showToast('success', `Payroll for ${selected.length} staff queued for background processing!`);
+        // Redirect to the main list to monitor the pending batch
+        router.push('/dashboard/staff/salary/payroll');
       } else {
-        showToast('success', `Successfully processed ${successes.length} payslip${successes.length !== 1 ? 's' : ''}.`);
-        fetchData();
+        showToast('error', res?.error_message || 'Failed to queue payroll batch.');
       }
     } catch (err) {
       showToast('error', extractError(err));
@@ -751,7 +745,6 @@ export default function BulkPayslipsPage() {
     }
   };
 
-  // ── Bulk Save & Pay (NEW) ──
   const handleBulkSaveAndPay = async () => {
     const selected = staffData.filter(d => d.checked && !d.is_paid);
     if (selected.length === 0) { showToast('error', 'Please select at least one unpaid staff member.'); return; }
@@ -765,15 +758,14 @@ export default function BulkPayslipsPage() {
         custom_deductions: Object.fromEntries(d.deductions.map(x => [x.name, x.amount])),
         amount_paid:       d.amount_paid.toString(),
       }));
-      const res        = await payrollAPI.process(payload) as any;
-      const resultData = res?.data?.results ?? res?.results ?? [];
-      const failures   = resultData.filter((r: any) => !r.success);
-      const successes  = resultData.filter((r: any) => r.success);
-      if (failures.length > 0) {
-        showToast('error', `${failures.length} failed: ${failures.map((r: any) => r.error || 'Unknown').join('; ')}`);
+
+      const res = await payrollAPI.process(payload) as any;
+      if (res?.id && res?.status === 'pending') {
+        showToast('success', `Payment processing for ${selected.length} staff queued in the background!`);
+        // Redirect to the main list to monitor the pending batch
+        router.push('/dashboard/staff/salary/payroll');
       } else {
-        showToast('success', `Successfully paid ${successes.length} staff member${successes.length !== 1 ? 's' : ''}.`);
-        fetchData();
+        showToast('error', res?.error_message || 'Failed to queue payment batch.');
       }
     } catch (err) {
       showToast('error', extractError(err));
@@ -953,7 +945,6 @@ export default function BulkPayslipsPage() {
                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Processing… ({selectedCount})</>
                 : <><Play className="h-4 w-4" /> Process Selected ({selectedCount})</>}
             </button>
-            {/* NEW: Save & Pay Selected — processes AND marks paid using each row's amount_paid */}
             <button onClick={handleBulkSaveAndPay} disabled={selectedCount === 0 || saving}
               className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 rounded-xl shadow-sm transition-all disabled:opacity-50">
               {saving

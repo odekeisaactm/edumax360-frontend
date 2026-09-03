@@ -35,18 +35,12 @@ function fmtMoney(n: number) {
   return '₦' + n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// FIX: DRF DecimalField commonly serializes as a string (e.g. "12.50"). This
-// coerces any incoming API value (string | number | null | undefined) into a
-// safe JS number for local state, so seeded edit-mode values behave the same
-// as freshly-typed create-mode values.
 function toNum(value: any, fallback = 0): number {
   if (value === null || value === undefined || value === '') return fallback;
   const n = typeof value === 'string' ? parseFloat(value) : Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
 
-// Same idea, but preserves null (used for tax bracket "limit", where null
-// means "remaining income" and must NOT be coerced to 0).
 function toNumOrNull(value: any): number | null {
   if (value === null || value === undefined || value === '') return null;
   const n = typeof value === 'string' ? parseFloat(value) : Number(value);
@@ -99,10 +93,10 @@ function Section({ icon, iconBg, title, subtitle, required, open, onToggle, chil
 // ─── Item types ───────────────────────────────────────────────────────────────
 interface BasicComponent { id: string; name: string; code: string; percentage: number; }
 interface AdditionalField { id: string; name: string; code: string; }
-interface Allowance { id: string; name: string; is_active: boolean; calculation_type: 'percentage' | 'fixed' | 'combined'; annual_only: boolean; percentage?: number; fixed_amount?: number; based_on?: string; based_on_type?: 'component' | 'additional_field'; }
-interface Relief { id: string; name: string; is_active: boolean; calculation_type: 'percentage' | 'fixed' | 'combined'; percentage?: number; fixed_amount?: number; based_on?: string; based_on_type?: 'component' | 'additional_field'; }
+interface Allowance { id: string; name: string; is_active: boolean; calculation_type: 'percentage' | 'fixed' | 'combined'; annual_only: boolean; percentage?: number; fixed_amount?: number; based_on?: string; based_on_type?: 'component' | 'additional_field' | 'multiple_components'; }
+interface Relief { id: string; name: string; is_active: boolean; calculation_type: 'percentage' | 'fixed' | 'combined'; percentage?: number; fixed_amount?: number; based_on?: string; based_on_type?: 'component' | 'additional_field' | 'multiple_components'; }
 interface TaxBracket { id: string; limit: number | null; rate: number; }
-interface StatutoryDeduction { id: string; name: string; is_active: boolean; calculation_type: 'percentage' | 'fixed' | 'combined'; percentage?: number; fixed_amount?: number; based_on?: string; based_on_type?: 'component' | 'additional_field'; }
+interface StatutoryDeduction { id: string; name: string; is_active: boolean; calculation_type: 'percentage' | 'fixed' | 'combined'; percentage?: number; fixed_amount?: number; based_on?: string; based_on_type?: 'component' | 'additional_field' | 'multiple_components'; }
 interface OtherDeductionConfig { id: string; name: string; display_rule: 'show_if_filled' | 'always_show'; linked_to: '' | 'staff_loan' | 'salary_advance'; order: number; }
 interface IncomeItem { id: string; name: string; display_rule: 'show_if_filled' | 'always_show'; order: number; }
 
@@ -146,26 +140,60 @@ function BasedOnFields({ basedOnType, basedOn, onTypeChange, onValueChange, comp
   ];
   const additionalOptions = additionalFields.filter((f) => f.code && f.name).map((f) => ({ value: f.code, label: `${f.name} (${f.code})` }));
 
+  const selectedCodes = basedOn ? basedOn.split('+').filter(Boolean) : [];
+
+  const handleCheckboxChange = (code: string, checked: boolean) => {
+    const newCodes = checked ? [...selectedCodes, code] : selectedCodes.filter(c => c !== code);
+    onValueChange(newCodes.join('+'));
+  };
+
   return (
     <>
       <div>
         <label className={labelCls}>Based On Type</label>
-        <select className={inputCls} value={basedOnType} onChange={(e) => onTypeChange(e.target.value)}>
-          <option value="component">Salary Component</option>
+        <select className={inputCls} value={basedOnType} onChange={(e) => {
+          const newType = e.target.value;
+          onTypeChange(newType);
+          // Safely set the default value based on the new type to prevent falsy/residual state bugs
+          if (newType === 'component') onValueChange(defaultKeyword);
+          else onValueChange('');
+        }}>
+          <option value="component">Single Salary Component</option>
+          <option value="multiple_components">Multiple Components</option>
           <option value="additional_field">Additional Field</option>
         </select>
       </div>
-      <div>
+      <div className={basedOnType === 'multiple_components' ? 'sm:col-span-2' : ''}>
         <label className={labelCls}>Based On</label>
-        {basedOnType === 'additional_field' ? (
+
+        {basedOnType === 'additional_field' && (
           <select className={inputCls} value={basedOn || ''} onChange={(e) => onValueChange(e.target.value)}>
             <option value="">Select field</option>
             {additionalOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-        ) : (
+        )}
+
+        {basedOnType === 'component' && (
           <select className={inputCls} value={basedOn || defaultKeyword} onChange={(e) => onValueChange(e.target.value)}>
             {componentOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
+        )}
+
+        {basedOnType === 'multiple_components' && (
+          <div className="flex flex-wrap gap-2 mt-1 px-1">
+            {componentCodes.length === 0 && <span className="text-xs text-slate-400 italic">No basic components defined yet.</span>}
+            {componentCodes.map(code => (
+              <label key={code} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 cursor-pointer bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={selectedCodes.includes(code)}
+                  onChange={(e) => handleCheckboxChange(code, e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                {code}
+              </label>
+            ))}
+          </div>
         )}
       </div>
     </>
@@ -230,10 +258,10 @@ function AllowanceItem({ item, onChange, onRemove, additionalFields, componentCo
         <div className="flex items-end justify-end"><RemoveBtn onClick={() => onRemove(item.id)} /></div>
       </div>
       {(!isFixed || !isPercentage) && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-slate-200">
+        <div className={`grid grid-cols-1 gap-3 mt-3 pt-3 border-t border-slate-200 ${item.based_on_type === 'multiple_components' ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
           {!isFixed && <>
             <div><label className={labelCls}>Percentage (%)</label><input type="number" className={inputCls} step="0.01" min="0" placeholder="e.g. 10" value={item.percentage || ''} onChange={(e) => onChange(item.id, 'percentage', parseFloat(e.target.value) || 0)} /></div>
-            <BasedOnFields basedOnType={item.based_on_type || 'component'} basedOn={item.based_on || 'TOTAL'} onTypeChange={(v) => onChange(item.id, 'based_on_type', v)} onValueChange={(v) => onChange(item.id, 'based_on', v)} componentCodes={componentCodes} additionalFields={additionalFields} defaultKeyword="TOTAL" />
+            <BasedOnFields basedOnType={item.based_on_type || 'component'} basedOn={item.based_on ?? ''} onTypeChange={(v) => onChange(item.id, 'based_on_type', v)} onValueChange={(v) => onChange(item.id, 'based_on', v)} componentCodes={componentCodes} additionalFields={additionalFields} defaultKeyword="TOTAL" />
           </>}
           {!isPercentage && (
             <div className={!isFixed ? 'sm:col-span-1' : 'sm:col-span-3'}>
@@ -266,10 +294,10 @@ function ReliefItem({ item, onChange, onRemove, additionalFields, componentCodes
           <RemoveBtn onClick={() => onRemove(item.id)} />
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-slate-200">
+      <div className={`grid grid-cols-1 gap-3 mt-3 pt-3 border-t border-slate-200 ${item.based_on_type === 'multiple_components' ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
         {!isFixed && <>
           <div><label className={labelCls}>Percentage (%)</label><input type="number" className={inputCls} step="0.01" min="0" placeholder="e.g. 20" value={item.percentage || ''} onChange={(e) => onChange(item.id, 'percentage', parseFloat(e.target.value) || 0)} /></div>
-          <BasedOnFields basedOnType={item.based_on_type || 'component'} basedOn={item.based_on || 'GROSS_INCOME'} onTypeChange={(v) => onChange(item.id, 'based_on_type', v)} onValueChange={(v) => onChange(item.id, 'based_on', v)} componentCodes={componentCodes} additionalFields={additionalFields} defaultKeyword="GROSS_INCOME" />
+          <BasedOnFields basedOnType={item.based_on_type || 'component'} basedOn={item.based_on ?? ''} onTypeChange={(v) => onChange(item.id, 'based_on_type', v)} onValueChange={(v) => onChange(item.id, 'based_on', v)} componentCodes={componentCodes} additionalFields={additionalFields} defaultKeyword="GROSS_INCOME" />
         </>}
         {!isPercentage && (
           <div className={!isFixed ? '' : 'sm:col-span-3'}>
@@ -317,10 +345,10 @@ function StatutoryDeductionItem({ item, onChange, onRemove, additionalFields, co
           <RemoveBtn onClick={() => onRemove(item.id)} />
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-slate-200">
+      <div className={`grid grid-cols-1 gap-3 mt-3 pt-3 border-t border-slate-200 ${item.based_on_type === 'multiple_components' ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
         {!isFixed && <>
           <div><label className={labelCls}>Percentage (%)</label><input type="number" className={inputCls} step="0.01" min="0" placeholder="e.g. 8" value={item.percentage || ''} onChange={(e) => onChange(item.id, 'percentage', parseFloat(e.target.value) || 0)} /></div>
-          <BasedOnFields basedOnType={item.based_on_type || 'component'} basedOn={item.based_on || 'TOTAL'} onTypeChange={(v) => onChange(item.id, 'based_on_type', v)} onValueChange={(v) => onChange(item.id, 'based_on', v)} componentCodes={componentCodes} additionalFields={additionalFields} defaultKeyword="TOTAL" />
+          <BasedOnFields basedOnType={item.based_on_type || 'component'} basedOn={item.based_on ?? ''} onTypeChange={(v) => onChange(item.id, 'based_on_type', v)} onValueChange={(v) => onChange(item.id, 'based_on', v)} componentCodes={componentCodes} additionalFields={additionalFields} defaultKeyword="TOTAL" />
         </>}
         {!isPercentage && (
           <div className={!isFixed ? '' : 'sm:col-span-3'}>
@@ -377,8 +405,6 @@ function IncomeItemRow({ item, onChange, onRemove }: { item: IncomeItem; onChang
 }
 
 // ─── Seed helpers: convert API data → local state ─────────────────────────────
-// FIX: every numeric field coming from the API is run through toNum/toNumOrNull
-// in case DRF serializes DecimalFields as strings (e.g. "12.50").
 function seedBasicComponents(raw: Record<string, any>, genId: () => string): BasicComponent[] {
   return Object.values(raw || {}).map((c: any) => ({
     id: genId(),
@@ -398,7 +424,7 @@ function seedAllowances(raw: any[], genId: () => string): Allowance[] {
     percentage: a.percentage != null ? toNum(a.percentage, 0) : undefined,
     fixed_amount: a.fixed_amount != null ? toNum(a.fixed_amount, 0) : undefined,
     based_on: a.based_on || undefined,
-    based_on_type: a.based_on_type || 'component',
+    based_on_type: (a.based_on_type === 'component' && a.based_on?.includes('+')) ? 'multiple_components' : (a.based_on_type || 'component'),
   }));
 }
 
@@ -411,7 +437,7 @@ function seedReliefs(raw: any[], genId: () => string): Relief[] {
     percentage: r.percentage != null ? toNum(r.percentage, 0) : undefined,
     fixed_amount: r.fixed_amount != null ? toNum(r.fixed_amount, 0) : undefined,
     based_on: r.based_on || undefined,
-    based_on_type: r.based_on_type || 'component',
+    based_on_type: (r.based_on_type === 'component' && r.based_on?.includes('+')) ? 'multiple_components' : (r.based_on_type || 'component'),
   }));
 }
 
@@ -432,7 +458,7 @@ function seedStatutoryDeductions(raw: any[], genId: () => string): StatutoryDedu
     percentage: s.percentage != null ? toNum(s.percentage, 0) : undefined,
     fixed_amount: s.fixed_amount != null ? toNum(s.fixed_amount, 0) : undefined,
     based_on: s.based_on || undefined,
-    based_on_type: s.based_on_type || 'component',
+    based_on_type: (s.based_on_type === 'component' && s.based_on?.includes('+')) ? 'multiple_components' : (s.based_on_type || 'component'),
   }));
 }
 
@@ -462,11 +488,6 @@ function seedAdditionalFields(raw: any[], genId: () => string): AdditionalField[
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface SalarySettingFormProps {
   initialData?: SalarySetting;
-  // Duplicate flow: seed the structural fields (basic components, allowances,
-  // reliefs, tax brackets, statutory deductions, other deductions, income
-  // items, additional fields) from an existing setting, but this is still a
-  // CREATE — name/effective_from/effective_to are left for the user to set,
-  // and submit goes through the create endpoint, not update.
   duplicateFrom?: SalarySetting;
 }
 
@@ -475,8 +496,6 @@ export default function SalarySettingForm({ initialData, duplicateFrom }: Salary
   const router = useRouter();
   const { user, hasPermission } = useAuth();
   const isEdit = !!initialData;
-  // Structural seed source: edit uses the full record, duplicate uses the
-  // source record for structure only (name/dates are NOT pulled from here).
   const structureSeed = initialData || duplicateFrom;
 
   const idCounterRef = useRef(0);
@@ -514,13 +533,10 @@ export default function SalarySettingForm({ initialData, duplicateFrom }: Salary
   });
   const toggle = (k: string) => setOpen((p) => ({ ...p, [k]: !p[k] }));
 
-  // ── Seed from initialData (edit) or duplicateFrom (duplicate) ──
+  // ── Seed from initialData or duplicateFrom ──
   useEffect(() => {
     if (!structureSeed || seeded) return;
 
-    // Identity fields: only carried over for real edits. Duplicates start
-    // with a blank name/description and a fresh effective_from (today),
-    // leaving effective_to blank — same as a brand-new setting.
     if (initialData) {
       setName(initialData.name || '');
       setDescription(initialData.description || '');
@@ -531,10 +547,7 @@ export default function SalarySettingForm({ initialData, duplicateFrom }: Salary
     setLeaveAllowancePercentage(toNum(structureSeed.leave_allowance_percentage, 10));
     setIncludeLeaveInGross(structureSeed.include_leave_in_gross || false);
 
-    // Seed additional fields FIRST so based_on dropdowns are populated
-    // before allowances/reliefs/statutory deductions try to reference them.
     setAdditionalFields(seedAdditionalFields(structureSeed.additional_fields || [], genId));
-
     setBasicComponents(seedBasicComponents(structureSeed.basic_components || {}, genId));
     setAllowances(seedAllowances(structureSeed.allowances || [], genId));
     setReliefs(seedReliefs(structureSeed.reliefs_exemptions || [], genId));
@@ -610,19 +623,17 @@ export default function SalarySettingForm({ initialData, duplicateFrom }: Salary
       if (!c.name.trim()) return `Component "${c.code}" has no name.`;
     }
 
-    const validateBasedOn = (
-      items: any[],
-      typeField: string,
-      basedOnField: string,
-      itemType: string,
-    ): string | null => {
+    const validateBasedOn = (items: any[], typeField: string, basedOnField: string, itemType: string): string | null => {
       for (const item of items) {
         const basedOnType = item[typeField] || 'component';
         const basedOn = item[basedOnField] || '';
-        if (basedOnType === 'component' && basedOn) {
-          const upper = basedOn.toUpperCase();
-          if (!['TOTAL', 'GROSS_INCOME'].includes(upper) && !componentCodes.includes(upper)) {
-            return `"${itemType} ${item.name || 'unnamed'}": Based On "${basedOn}" is not a valid component code.`;
+
+        if (['component', 'multiple_components'].includes(basedOnType) && basedOn) {
+          const pieces = basedOn.toUpperCase().split('+');
+          for (const piece of pieces) {
+            if (!['TOTAL', 'GROSS_INCOME'].includes(piece) && !componentCodes.includes(piece)) {
+              return `"${itemType} ${item.name || 'unnamed'}": Based On "${piece}" is not a valid component code.`;
+            }
           }
         } else if (basedOnType === 'additional_field' && basedOn) {
           const addCodes = additionalFields.map((f) => f.code);
@@ -641,7 +652,6 @@ export default function SalarySettingForm({ initialData, duplicateFrom }: Salary
     const err3 = validateBasedOn(statutoryDeductions, 'based_on_type', 'based_on', 'Statutory deduction');
     if (err3) return err3;
 
-    // ▼▼▼ NEW CODE GOES HERE — right after err3, before addCodes ▼▼▼
     const validateAmount = (items: any[], itemType: string): string | null => {
       for (const item of items) {
         const label = item.name || 'unnamed';
@@ -650,15 +660,9 @@ export default function SalarySettingForm({ initialData, duplicateFrom }: Salary
         const hasPct = pct !== undefined && pct !== null && pct > 0;
         const hasFixed = fixed !== undefined && fixed !== null && fixed > 0;
 
-        if (item.calculation_type === 'percentage' && !hasPct) {
-          return `"${itemType} ${label}": Percentage must be greater than 0.`;
-        }
-        if (item.calculation_type === 'fixed' && !hasFixed) {
-          return `"${itemType} ${label}": Fixed amount must be greater than 0.`;
-        }
-        if (item.calculation_type === 'combined' && !hasPct && !hasFixed) {
-          return `"${itemType} ${label}": Combined type needs a percentage or a fixed amount (or both).`;
-        }
+        if (item.calculation_type === 'percentage' && !hasPct) return `"${itemType} ${label}": Percentage must be greater than 0.`;
+        if (item.calculation_type === 'fixed' && !hasFixed) return `"${itemType} ${label}": Fixed amount must be greater than 0.`;
+        if (item.calculation_type === 'combined' && !hasPct && !hasFixed) return `"${itemType} ${label}": Combined type needs a percentage or a fixed amount (or both).`;
       }
       return null;
     };
@@ -669,7 +673,6 @@ export default function SalarySettingForm({ initialData, duplicateFrom }: Salary
     if (err5) return err5;
     const err6 = validateAmount(statutoryDeductions, 'Statutory deduction');
     if (err6) return err6;
-    // ▲▲▲ END NEW CODE ▲▲▲
 
     const addCodes = additionalFields.map((f) => f.code).filter(Boolean);
     if (new Set(addCodes).size !== addCodes.length) return 'Additional field codes must be unique.';
@@ -708,10 +711,10 @@ export default function SalarySettingForm({ initialData, duplicateFrom }: Salary
           }
           return acc;
         }, {} as Record<string, any>),
-        allowances: allowances.map((a) => ({ name: a.name.trim(), is_active: a.is_active, calculation_type: a.calculation_type, annual_only: a.annual_only, ...(a.percentage != null && { percentage: a.percentage }), ...(a.fixed_amount != null && { fixed_amount: a.fixed_amount }), ...(a.based_on && { based_on: a.based_on }), based_on_type: a.based_on_type || 'component' })),
-        reliefs_exemptions: reliefs.map((r) => ({ name: r.name.trim(), is_active: r.is_active, calculation_type: r.calculation_type, ...(r.percentage != null && { percentage: r.percentage }), ...(r.fixed_amount != null && { fixed_amount: r.fixed_amount }), ...(r.based_on && { based_on: r.based_on }), based_on_type: r.based_on_type || 'component' })),
+        allowances: allowances.map((a) => ({ name: a.name.trim(), is_active: a.is_active, calculation_type: a.calculation_type, annual_only: a.annual_only, ...(a.percentage != null && { percentage: a.percentage }), ...(a.fixed_amount != null && { fixed_amount: a.fixed_amount }), ...(a.based_on && { based_on: a.based_on }), based_on_type: a.based_on_type === 'multiple_components' ? 'component' : (a.based_on_type || 'component') })),
+        reliefs_exemptions: reliefs.map((r) => ({ name: r.name.trim(), is_active: r.is_active, calculation_type: r.calculation_type, ...(r.percentage != null && { percentage: r.percentage }), ...(r.fixed_amount != null && { fixed_amount: r.fixed_amount }), ...(r.based_on && { based_on: r.based_on }), based_on_type: r.based_on_type === 'multiple_components' ? 'component' : (r.based_on_type || 'component') })),
         tax_brackets: taxBrackets.map((b) => ({ limit: b.limit, rate: b.rate })),
-        statutory_deductions: statutoryDeductions.map((s) => ({ name: s.name.trim(), is_active: s.is_active, calculation_type: s.calculation_type, ...(s.percentage != null && { percentage: s.percentage }), ...(s.fixed_amount != null && { fixed_amount: s.fixed_amount }), ...(s.based_on && { based_on: s.based_on }), based_on_type: s.based_on_type || 'component' })),
+        statutory_deductions: statutoryDeductions.map((s) => ({ name: s.name.trim(), is_active: s.is_active, calculation_type: s.calculation_type, ...(s.percentage != null && { percentage: s.percentage }), ...(s.fixed_amount != null && { fixed_amount: s.fixed_amount }), ...(s.based_on && { based_on: s.based_on }), based_on_type: s.based_on_type === 'multiple_components' ? 'component' : (s.based_on_type || 'component') })),
         other_deductions_config: otherDeductions.map((o) => ({ name: o.name.trim(), display_rule: o.display_rule, ...(o.linked_to && { linked_to: o.linked_to }), order: o.order })),
         income_items: incomeItems.map((i) => ({ name: i.name.trim(), display_rule: i.display_rule, order: i.order })),
         additional_fields: additionalFields.map((f) => ({ name: f.name.trim(), code: f.code.trim() })),
@@ -741,7 +744,7 @@ export default function SalarySettingForm({ initialData, duplicateFrom }: Salary
   };
   const dismissToast = (id: number) => setToasts((p) => p.filter((t) => t.id !== id));
 
-  const canManage = user?.is_superuser || hasPermission('salary_management.add_salaryrecordmodel');
+  const canManage = user?.is_superuser || hasPermission('salary_management.change_salarysettingmodel');
   if (!canManage) {
     return (
       <div className="min-h-[500px] flex items-center justify-center">

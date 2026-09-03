@@ -1,9 +1,10 @@
-
 // ============================================================
-// LEARNING RESOURCES
+// LEARNING RESOURCES — TYPES
 // ============================================================
 
-// --- Shared Mini Types ---
+// ------------------------------------------------------------
+// 1. Shared Mini Types
+// ------------------------------------------------------------
 
 export interface UserMini {
   id: number;
@@ -22,36 +23,115 @@ export interface ClassConfigMini {
   name: string;
 }
 
-// --- AI Settings ---
+// ------------------------------------------------------------
+// 2. Settings & AI Configuration
+// ------------------------------------------------------------
 
-export interface LearningResourcesAISettings {
+export interface LearningResourcesSettings {
   id: number;
   school_section: number | null;
   school_section_name: string;
-  ai_service: number;
+  ai_service: number | null;
   ai_service_name: string;
-  // Content generation
+  // Content Generation Flags
   enable_auto_note_generation: boolean;
   enable_auto_summary: boolean;
   enable_auto_flashcards: boolean;
   enable_auto_quiz_generation: boolean;
-  // Vetting
+  // Vetting & Approvals
   enable_ai_vetting: boolean;
   vetting_criteria: Record<string, boolean>;
   auto_approve_threshold: number;
-  // Summary
+  auto_approve_lesson_notes: boolean;
+  auto_approve_scheme_of_work: boolean;
+  // Summary Settings
   summary_length: 'short' | 'medium' | 'long';
   key_points_count: number;
-  // TTS
+  // TTS Settings
   enable_text_to_speech: boolean;
   tts_voice: string;
   tts_speed: number;
-  // Live class
+  // Recording
   enable_live_recording: boolean;
   updated_at: string;
 }
 
-// --- Lesson Notes ---
+// ------------------------------------------------------------
+// 3. Scheme of Work (MVP)
+// ------------------------------------------------------------
+
+export type SchemeOfWorkStatus = 'draft' | 'submitted' | 'approved' | 'declined';
+
+export interface SchemeOfWorkWeek {
+  id: number;
+  scheme_of_work: number;
+  week_number: number;
+  week_start_date: string;
+  week_end_date: string;
+  topic: string;
+  sub_topics: string | null;
+  planned_objectives: string | null;
+  planned_activities: string | null;
+  reference_materials: string | null;
+  lesson_note: number | null;
+  is_holiday_or_break: boolean;
+  has_note: boolean;
+  is_overdue: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SchemeOfWorkList {
+  id: number;
+  title: string;
+  subject_name: string;
+  status: SchemeOfWorkStatus;
+  session: number;
+  term: number;
+  week_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SchemeOfWorkDetail {
+  id: number;
+  title: string;
+  subject: SubjectMini;
+  subject_id: number;
+  class_configurations_detail: ClassConfigMini[];
+  class_configuration_ids: number[];
+  session: number;
+  term: number;
+  school_section: number | null;
+  status: SchemeOfWorkStatus;
+  approved_by: UserMini | null;
+  approved_at: string | null;
+  decline_reason: string | null;
+  declined_by: UserMini | null;
+  declined_at: string | null;
+  weeks: SchemeOfWorkWeek[];
+  created_by: UserMini | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SchemeOfWorkCreate {
+  title: string;
+  subject: number;
+  class_configuration_ids: number[];
+  session: number;
+  term: number;
+  school_section?: number | null;
+}
+
+export interface SchemeOfWorkApprovalPayload {
+  action: 'approve' | 'decline';
+  decline_reason?: string;
+}
+
+// ------------------------------------------------------------
+// 4. Lesson Notes (MVP)
+// ------------------------------------------------------------
 
 export type LessonNoteStatus =
   | 'draft'
@@ -60,10 +140,7 @@ export type LessonNoteStatus =
   | 'declined'
   | 'archived';
 
-export type LessonNoteCreationMethod =
-  | 'manual'
-  | 'ai_generated'
-  | 'uploaded';
+export type LessonNoteCreationMethod = 'manual' | 'ai_generated' | 'uploaded';
 
 export interface LessonNoteList {
   id: number;
@@ -87,13 +164,14 @@ export interface LessonNoteDetail {
   creation_method: LessonNoteCreationMethod;
   attachment: string | null;
   subject: SubjectMini;
-  subject_id: number;                       // write only
+  subject_id: number;
   class_configurations_detail: ClassConfigMini[];
-  class_configuration_ids: number[];        // write only
+  class_configuration_ids: number[];
   scheduled_date: string | null;
   scheduled_time: string | null;
   topic: string | null;
   learning_objectives: string | null;
+  instructional_materials: string | null;
   status: LessonNoteStatus;
   ai_vetting_score: number | null;
   ai_vetting_feedback: string | null;
@@ -130,6 +208,7 @@ export interface LessonNoteCreate {
   scheduled_time?: string | null;
   topic?: string | null;
   learning_objectives?: string | null;
+  instructional_materials?: string | null;
   session: number;
   term: number;
   school_section?: number | null;
@@ -144,7 +223,18 @@ export interface LessonNoteGrantAccessPayload {
   grant_student_access: boolean;
 }
 
-// --- Lesson Materials ---
+export interface LessonNotePreviewReviewResponse {
+  overall_score: number;
+  feedback: string;
+  suggestions: string[];
+  checks: Record<string, { score: number; comment: string }>;
+  passed: boolean;
+  threshold: number;
+}
+
+// ------------------------------------------------------------
+// 5. Lesson Materials (MVP)
+// ------------------------------------------------------------
 
 export type LessonMaterialType =
   | 'video'
@@ -189,19 +279,19 @@ export interface LessonMaterialDetail {
   file_size_bytes: number | null;
   duration_seconds: number | null;
   subject: SubjectMini;
-  subject_id: number;                       // write only
+  subject_id: number;
   class_configurations_detail: ClassConfigMini[];
-  class_configuration_ids: number[];        // write only
+  class_configuration_ids: number[];
   lesson_note: number | null;
   lesson_note_title: string | null;
   processing_status: MaterialProcessingStatus;
   summary_enabled: boolean;
   grant_student_access: boolean;
+  is_active: boolean;
   school_section: number | null;
   uploaded_by: UserMini | null;
   created_at: string;
   updated_at: string;
-  is_active: boolean;
   // Computed
   has_summary: boolean;
   has_flashcards: boolean;
@@ -218,10 +308,13 @@ export interface LessonMaterialCreate {
   class_configuration_ids: number[];
   lesson_note?: number | null;
   summary_enabled?: boolean;
+  is_active?: boolean;
   school_section?: number | null;
 }
 
-// --- Summaries ---
+// ------------------------------------------------------------
+// 6. Summaries, Flashcards & Quizzes (MVP AI Extensions)
+// ------------------------------------------------------------
 
 export type SummaryType = 'short' | 'medium' | 'long';
 
@@ -238,8 +331,6 @@ export interface MaterialSummary {
   confidence_score: number | null;
   generated_at: string;
 }
-
-// --- Flashcards ---
 
 export interface Flashcard {
   id: number;
@@ -275,8 +366,6 @@ export interface FlashcardSetDetail {
   updated_at: string;
 }
 
-// --- Quizzes ---
-
 export type QuizStrictness = 'easy' | 'moderate' | 'hard';
 
 export interface AutoGeneratedQuizList {
@@ -284,7 +373,7 @@ export interface AutoGeneratedQuizList {
   title: string;
   subject_name: string;
   total_questions: number;
-  passing_score: string;                    // DecimalField → string
+  passing_score: string;
   generation_strictness: QuizStrictness;
   ai_generated: boolean;
   is_active: boolean;
@@ -300,18 +389,65 @@ export interface AutoGeneratedQuizDetail {
   subject_name: string;
   classes: string[];
   total_questions: number;
-  passing_score: string;                    // DecimalField → string
+  passing_score: string;
   include_objective: boolean;
   include_subjective: boolean;
   include_theory: boolean;
   generation_strictness: QuizStrictness;
   ai_generated: boolean;
   is_active: boolean;
+  exam_schedule: number | null;
+  is_ready_for_attempts: boolean;
   created_at: string;
   updated_at: string;
 }
 
-// --- Learning Paths ---
+// ------------------------------------------------------------
+// 7. Pending Note Reminders (MVP)
+// ------------------------------------------------------------
+
+export interface PendingNoteReminder {
+  id: number;
+  teacher: number;
+  teacher_name: string;
+  subject: number;
+  subject_name: string;
+  class_configuration: number;
+  class_name: string;
+  scheduled_date: string;
+  scheme_week: number | null;
+  reminder_sent_at: string;
+  reminder_count: number;
+  is_acknowledged: boolean;
+  acknowledged_at: string | null;
+  lesson_note: number | null;
+}
+
+// ------------------------------------------------------------
+// 8. TTS Audio (MVP AI Extension)
+// ------------------------------------------------------------
+
+export type TTSStatus = 'queued' | 'processing' | 'completed' | 'failed';
+
+export interface TextToSpeechAudio {
+  id: number;
+  lesson_note: number | null;
+  material_summary: number | null;
+  source_title: string | null;
+  source_type: 'lesson_note' | 'material_summary' | null;
+  audio_file: string | null;
+  duration_seconds: number;
+  voice_used: string;
+  speed: number;
+  language: string;
+  status: TTSStatus;
+  error_message: string | null;
+  generated_at: string;
+}
+
+// ------------------------------------------------------------
+// 9. Learning Paths (Phase 2)
+// ------------------------------------------------------------
 
 export interface LearningPathList {
   id: number;
@@ -344,9 +480,9 @@ export interface LearningPathDetail {
   title: string;
   description: string | null;
   subject: SubjectMini;
-  subject_id: number;                       // write only
+  subject_id: number;
   class_configurations_detail: ClassConfigMini[];
-  class_configuration_ids: number[];        // write only
+  class_configuration_ids: number[];
   is_sequential: boolean;
   ai_organized: boolean;
   session: number;
@@ -381,7 +517,9 @@ export interface LearningPathSectionWrite {
   unlock_quiz?: number | null;
 }
 
-// --- Student Progress ---
+// ------------------------------------------------------------
+// 10. Student Progress & Annotations (Phase 2)
+// ------------------------------------------------------------
 
 export type MaterialProgressStatus = 'not_started' | 'in_progress' | 'completed';
 
@@ -391,7 +529,7 @@ export interface StudentMaterialProgress {
   material_title: string;
   material_type: LessonMaterialType;
   status: MaterialProgressStatus;
-  percentage_completed: string;             // DecimalField → string
+  percentage_completed: string;
   time_spent_seconds: number;
   last_position_seconds: number;
   started_at: string | null;
@@ -423,15 +561,13 @@ export interface StudentLearningPathProgress {
     ai_suggested: boolean;
   } | null;
   completed_section_ids: number[];
-  percentage_completed: string;             // DecimalField → string
+  percentage_completed: string;
   total_sections: number;
   is_complete: boolean;
   started_at: string;
   completed_at: string | null;
   last_accessed: string;
 }
-
-// --- Bookmarks & Highlights ---
 
 export interface StudentBookmark {
   id: number;
@@ -471,7 +607,9 @@ export interface StudentHighlightCreate {
   notes?: string;
 }
 
-// --- Peer Note Sharing ---
+// ------------------------------------------------------------
+// 11. Peer Note Sharing (Phase 2)
+// ------------------------------------------------------------
 
 export type SharedNoteStatus = 'pending' | 'approved' | 'rejected';
 
@@ -523,35 +661,105 @@ export interface SharedNoteModerationPayload {
   feedback?: string;
 }
 
-// --- TTS Audio ---
+// ------------------------------------------------------------
+// 12. Assignments & Submissions (Phase 2)
+// ------------------------------------------------------------
 
-export type TTSStatus = 'queued' | 'processing' | 'completed' | 'failed';
+export type AssignmentSubmissionStatus = 'submitted' | 'graded' | 'returned_for_revision';
 
-export interface TextToSpeechAudio {
+export interface LessonAssignmentList {
   id: number;
-  lesson_note: number | null;
-  material_summary: number | null;
-  source_title: string | null;
-  source_type: 'lesson_note' | 'material_summary' | null;
-  audio_file: string | null;
-  duration_seconds: number;
-  voice_used: string;
-  speed: number;
-  language: string;
-  status: TTSStatus;
-  error_message: string | null;
-  generated_at: string;
+  title: string;
+  subject_name: string;
+  due_date: string;
+  max_score: string;
+  is_active: boolean;
+  submissions_count: number;
+  created_at: string;
 }
 
-// --- Live Classes ---
+export interface LessonAssignmentDetail {
+  id: number;
+  title: string;
+  instructions: string;
+  subject: SubjectMini;
+  subject_id: number;
+  class_configurations_detail: ClassConfigMini[];
+  class_configuration_ids: number[];
+  lesson_note: number | null;
+  due_date: string;
+  max_score: string;
+  allow_late_submission: boolean;
+  late_penalty_percent: string;
+  attachment: string | null;
+  session: number;
+  term: number;
+  school_section: number | null;
+  is_active: boolean;
+  is_past_due: boolean;
+  created_by: UserMini | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LessonAssignmentCreate {
+  title: string;
+  instructions: string;
+  subject: number;
+  class_configuration_ids: number[];
+  lesson_note?: number | null;
+  due_date: string;
+  max_score?: string;
+  allow_late_submission?: boolean;
+  late_penalty_percent?: string;
+  attachment?: File | null;
+  session: number;
+  term: number;
+  school_section?: number | null;
+}
+
+export interface StudentAssignmentSubmission {
+  id: number;
+  assignment: number;
+  assignment_title: string;
+  student: number;
+  student_name: string;
+  submission_text: string | null;
+  submission_file: string | null;
+  submitted_at: string;
+  is_late: boolean;
+  status: AssignmentSubmissionStatus;
+  score_awarded: string | null;
+  feedback: string | null;
+  graded_by: UserMini | null;
+  graded_at: string | null;
+}
+
+export interface StudentAssignmentSubmissionCreate {
+  submission_text?: string;
+  submission_file?: File | null;
+}
+
+export interface SubmissionGradePayload {
+  score: number;
+  feedback?: string;
+}
+
+// ------------------------------------------------------------
+// 13. Live Classes & Agora (Phase 2)
+// ------------------------------------------------------------
 
 export type LiveClassSessionType = 'lesson' | 'meeting' | 'tutorial' | 'other';
+export type LiveClassSessionMode = 'remote' | 'in_classroom' | 'hybrid';
+export type LiveClassPenMode = 'none' | 'teacher_only' | 'all_students';
 export type LiveClassStatus = 'scheduled' | 'live' | 'ended' | 'cancelled';
+export type AttendanceStatus = 'present' | 'late' | 'left_early' | 'absent';
 
 export interface LiveClassSessionList {
   id: number;
   title: string;
   session_type: LiveClassSessionType;
+  session_mode: LiveClassSessionMode;
   subject_name: string | null;
   classes: string[];
   host_name: string | null;
@@ -562,6 +770,7 @@ export interface LiveClassSessionList {
   is_live: boolean;
   enable_whiteboard: boolean;
   enable_recording: boolean;
+  agora_channel_name: string;
 }
 
 export interface LiveClassSessionDetail {
@@ -569,14 +778,18 @@ export interface LiveClassSessionDetail {
   title: string;
   description: string | null;
   session_type: LiveClassSessionType;
+  session_mode: LiveClassSessionMode;
+  enable_student_screen_monitoring: boolean;
+  pen_mode: LiveClassPenMode;
   subject: number | null;
   subject_name: string | null;
   class_configurations_detail: ClassConfigMini[];
-  class_configuration_ids: number[];       // write only
+  class_configuration_ids: number[];
   scheduled_start: string;
   scheduled_end: string;
   agora_channel_name: string;
   agora_app_id: string;
+  agora_token: string;
   entrance_key: string | null;
   status: LiveClassStatus;
   actual_start_time: string | null;
@@ -599,6 +812,9 @@ export interface LiveClassSessionCreate {
   title: string;
   description?: string;
   session_type: LiveClassSessionType;
+  session_mode?: LiveClassSessionMode;
+  enable_student_screen_monitoring?: boolean;
+  pen_mode?: LiveClassPenMode;
   subject?: number | null;
   class_configuration_ids?: number[];
   scheduled_start: string;
@@ -618,7 +834,6 @@ export interface LiveClassJoinPayload {
   entrance_key?: string;
 }
 
-// Returned from join endpoint
 export interface LiveClassJoinResponse {
   agora_app_id: string;
   agora_channel: string;
@@ -629,8 +844,6 @@ export interface LiveClassJoinResponse {
   enable_recording: boolean;
   is_host: boolean;
 }
-
-export type AttendanceStatus = 'present' | 'late' | 'left_early' | 'absent';
 
 export interface LiveClassAttendance {
   id: number;
@@ -656,25 +869,73 @@ export interface LiveClassWhiteboard {
   timestamp: string;
 }
 
-// --- Reminders ---
-
-export interface PendingNoteReminder {
+export interface StudentScreenMonitor {
   id: number;
-  teacher: number;
-  teacher_name: string;
-  subject: number;
-  subject_name: string;
-  class_configuration: number;
-  class_name: string;
-  scheduled_date: string;
-  reminder_sent_at: string;
-  reminder_count: number;
-  is_acknowledged: boolean;
-  acknowledged_at: string | null;
-  lesson_note: number | null;
+  live_class: number;
+  student: number;
+  student_name: string;
+  device_identifier: string;
+  agora_screen_channel: string;
+  is_currently_sharing: boolean;
+  started_at: string;
+  ended_at: string | null;
+  flagged_by_teacher: boolean;
+  flag_note: string | null;
 }
 
-// --- AI Processing Queue ---
+export interface ScreenMonitorFlagPayload {
+  note?: string;
+}
+
+export interface LiveClassPenStream {
+  id: number;
+  live_class: number;
+  device: number | null;
+  staff: number | null;
+  student: number | null;
+  owner_name: string;
+  stream_target: 'shared_board' | 'individual_pad';
+  stroke_data: Record<string, unknown>;
+  page_number: number;
+  started_at: string;
+  ended_at: string | null;
+}
+
+// ------------------------------------------------------------
+// 14. Smart Hardware & OCR (Phase 2)
+// ------------------------------------------------------------
+
+export type SmartPenStatus = 'active' | 'lost' | 'damaged' | 'retired';
+export type HandwritingCaptureStatus = 'queued' | 'processing' | 'completed' | 'failed';
+
+export interface SmartPenDevice {
+  id: number;
+  device_serial: string;
+  school_section: number | null;
+  status: SmartPenStatus;
+  battery_level: number | null;
+  last_synced_at: string | null;
+  created_at: string;
+}
+
+export interface HandwritingCapture {
+  id: number;
+  content_type: number;
+  object_id: number;
+  target_object: { type: string; id: number; str: string } | null;
+  device: number | null;
+  raw_stroke_data: Record<string, unknown> | null;
+  scanned_image: string | null;
+  ocr_text: string | null;
+  ocr_confidence: number | null;
+  status: HandwritingCaptureStatus;
+  error_message: string | null;
+  created_at: string;
+}
+
+// ------------------------------------------------------------
+// 15. Queue & API Infrastructure
+// ------------------------------------------------------------
 
 export type AITaskType =
   | 'summary'
@@ -683,14 +944,10 @@ export type AITaskType =
   | 'tts'
   | 'vetting'
   | 'note_generation'
-  | 'ai_path_suggest';
+  | 'ai_path_suggest'
+  | 'handwriting_ocr';
 
-export type AITaskStatus =
-  | 'queued'
-  | 'processing'
-  | 'completed'
-  | 'failed'
-  | 'retry';
+export type AITaskStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'retry';
 
 export interface AIProcessingQueue {
   id: number;
@@ -711,18 +968,12 @@ export interface AIProcessingQueue {
   processed_at: string | null;
 }
 
-// --- API Response Wrapper ---
-// Matches the ok()/err() helpers in views.py
-
 export interface APIResponse<T = unknown> {
   success: boolean;
   message?: string;
   data?: T;
   errors?: Record<string, string[]>;
 }
-
-// --- Task Dispatch Response ---
-// Returned from generate-ai, generate-summary, generate-tts etc.
 
 export interface TaskDispatchResponse {
   task_id: string;

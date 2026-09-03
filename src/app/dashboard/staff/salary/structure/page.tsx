@@ -364,9 +364,14 @@ export default function SalaryStructureListPage() {
 
         const data = await salaryStructuresAPI.list(params) as any;
 
-        // Handle paginated response from backend
-        const results = data?.results?.data ?? data?.data ?? [];
-        setStructures(Array.isArray(results) ? results : []);
+        // Robustly extract the array no matter how the API wrapped it
+        let results = [];
+        if (Array.isArray(data)) results = data;
+        else if (Array.isArray(data?.results)) results = data.results; // Service already unwrapped it
+        else if (Array.isArray(data?.results?.data)) results = data.results.data; // Raw DRF + Custom Response
+        else if (Array.isArray(data?.data)) results = data.data; // Custom Response only
+
+        setStructures(results);
         setTotal(data?.count ?? results.length);
         setPage(pg);
       } catch (err) {

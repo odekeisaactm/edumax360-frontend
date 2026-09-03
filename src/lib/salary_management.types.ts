@@ -17,32 +17,48 @@ export type SalaryRecordPaymentStatus =
   | 'partially_paid';
 
 export type BonusType = 'staff' | 'volunteer';
-
 export type BonusStatus = 'paid' | 'unpaid';
 
-export type AdvanceStatus =
-  | 'pending'
-  | 'approved'
-  | 'disbursed'
-  | 'completed'
-  | 'rejected';
+export type AdvanceStatus = 'pending' | 'approved' | 'disbursed' | 'completed' | 'rejected';
+export type LoanStatus = 'pending' | 'approved' | 'disbursed' | 'completed' | 'rejected';
 
-export type LoanStatus =
-  | 'pending'
-  | 'approved'
-  | 'disbursed'
-  | 'completed'
-  | 'rejected';
+export type GlobalPasswordType = 'none' | 'staff_id' | 'mobile_last_4' | 'bank_account_last_4';
+export type BatchStatus = 'pending' | 'in_progress' | 'success' | 'partial' | 'failure';
+
 
 // ====================================================================
 // MODEL TYPES
 // ====================================================================
 
+// ---------- SalaryGlobalSetting (Singleton) ----------
+export interface SalaryGlobalSetting {
+  id: number;
+  allow_custom_overrides: boolean;
+  require_payroll_approval: boolean;
+  auto_deduct_loans: boolean;
+  send_payslip_via_email: boolean;
+  default_payslip_note?: string | null;
+  payslip_password_protection: boolean;
+  payslip_password_type: GlobalPasswordType;
+  updated_by?: number | User | null;
+  updated_at: string;
+}
+
+export interface SalaryGlobalSettingWrite {
+  allow_custom_overrides?: boolean;
+  require_payroll_approval?: boolean;
+  auto_deduct_loans?: boolean;
+  send_payslip_via_email?: boolean;
+  default_payslip_note?: string | null;
+  payslip_password_protection?: boolean;
+  payslip_password_type?: GlobalPasswordType;
+}
+
 // ---------- StaffBankDetail ----------
 export interface StaffBankDetail {
   id: number;
   staff: number | Staff;
-  staff_name?: string; // read-only from serializer
+  staff_name?: string;
   bank_name: string;
   account_name: string;
   bank_code?: string | null;
@@ -52,14 +68,12 @@ export interface StaffBankDetail {
   created_at: string;
   updated_at: string;
   account_number: string;
-
 }
 
-// write payload: account_number is required on creation/update
 export interface StaffBankDetailWrite {
   staff: number;
   bank_name: string;
-  account_number: string; // plain text, encrypted on backend
+  account_number: string;
   account_name: string;
   bank_code?: string | null;
   beneficiary_code?: string | null;
@@ -79,14 +93,14 @@ export interface AllowanceConfig {
   is_active?: boolean;
   calculation_type: 'percentage' | 'fixed' | 'combined';
   annual_only?: boolean;
-  based_on?: string; // e.g., 'TOTAL' or component code
+  based_on?: string;
   based_on_type?: 'component' | 'additional_field';
   percentage?: number;
   fixed_amount?: number;
 }
 
 export interface TaxBracket {
-  limit?: number | null; // null means unlimited
+  limit?: number | null;
   rate: number;
 }
 
@@ -116,26 +130,21 @@ export interface OtherDeductionConfig {
   display_rule?: 'show_if_filled' | 'always_show';
 }
 
-export interface AdditionalFieldConfig {
-  // Not fully defined in model, but likely a JSON with field definitions
-  [key: string]: any;
-}
-
 export interface SalarySetting {
   id: number;
   name: string;
   description?: string | null;
   is_active: boolean;
   is_locked: boolean;
-  effective_from: string; // date
+  effective_from: string;
   effective_to?: string | null;
-  leave_allowance_percentage: string; // decimal
-  basic_components: Record<string, BasicComponent>; // keyed by code
+  leave_allowance_percentage: string;
+  basic_components: Record<string, BasicComponent>;
   allowances: AllowanceConfig[];
   include_leave_in_gross: boolean;
   reliefs_exemptions: ReliefConfig[];
   tax_brackets: TaxBracket[];
-  income_items: any[]; // JSON list, maybe similar to allowances
+  income_items: any[];
   statutory_deductions: StatutoryDeductionConfig[];
   other_deductions_config: OtherDeductionConfig[];
   additional_fields: any[];
@@ -166,7 +175,7 @@ export interface SalarySettingWrite {
 export interface SalaryStructure {
   id: number;
   staff: number | Staff;
-  staff_name?: string; // read-only
+  staff_name?: string;
   staff_detail: {
     id: number;
     staff_id: string;
@@ -175,21 +184,25 @@ export interface SalaryStructure {
     position_name: string | null;
   } | null;
   salary_setting: number | SalarySetting;
-  salary_setting_name?: string; // read-only
-  monthly_salary: string; // decimal
+  salary_setting_name?: string;
+  monthly_salary: string;
+  allowance_overrides: Record<string, number | string>;
+  deduction_overrides: Record<string, number | string>;
   additional_field_values: Record<string, any>;
   effective_from: string;
   effective_to?: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
-  annual_salary?: string; // computed property
+  annual_salary?: string;
 }
 
 export interface SalaryStructureWrite {
   staff: number;
   salary_setting: number;
   monthly_salary: string | number;
+  allowance_overrides?: Record<string, number | string>;
+  deduction_overrides?: Record<string, number | string>;
   additional_field_values?: Record<string, any>;
   effective_from?: string;
   effective_to?: string | null;
@@ -212,7 +225,7 @@ export interface BulkChangeSettingResult {
 export interface BasicComponentBreakdown {
   name: string;
   percentage: number;
-  amount: string; // decimal
+  amount: string;
 }
 
 export interface AllowanceBreakdown {
@@ -237,7 +250,7 @@ export interface SalaryRecord {
   id: number;
   staff: number | Staff;
   staff_name?: string;
-  staff_id?: string; // read-only from serializer
+  staff_id?: string;
   staff_detail: {
     id: number;
     staff_id: string;
@@ -249,17 +262,17 @@ export interface SalaryRecord {
   salary_setting: number | SalarySetting;
   month: number;
   year: number;
-  month_name?: string; // read-only
+  month_name?: string;
   academic_period?: number | AcademicSessionPeriod | null;
   monthly_salary: string;
   annual_salary: string;
   basic_components_breakdown: Record<string, BasicComponentBreakdown>;
   allowances_breakdown: Record<string, AllowanceBreakdown>;
-  additional_income: Record<string, string>; // string decimal
+  additional_income: Record<string, string>;
   additional_field_values: Record<string, any>;
   bonus: string;
   total_income: string;
-  gross_salary: string; // mapped from total_income in service
+  gross_salary: string;
   statutory_deductions: Record<string, StatutoryDeductionBreakdown>;
   total_statutory_deductions: string;
   other_deductions: Record<string, OtherDeductionBreakdown>;
@@ -277,19 +290,37 @@ export interface SalaryRecord {
   amount_paid: string;
   paid_date?: string | null;
   paid_by?: number | User | null;
+  payslip_emailed_at?: string | null;
   notes?: string | null;
   created_at: string;
   updated_at: string;
   created_by?: number | User | null;
-  balance_due?: string; // computed property
+  balance_due?: string;
 }
 
-// Write payload – most fields are read-only, but some can be updated (e.g., notes, payment status via action)
-// For create/update via standard views, only some fields are writable (if any)
 export interface SalaryRecordWrite {
-  // Actually, most fields are read-only; only notes might be updatable
   notes?: string | null;
-  // For creating, typically you use the process endpoint, not direct POST
+}
+
+// ---------- SalaryProcessingBatch (Async Tracker) ----------
+export interface SalaryProcessingBatch {
+  id: number;
+  month: number;
+  year: number;
+  academic_period?: number | null;
+  academic_period_name?: string;
+  status: BatchStatus;
+  status_display: string;
+  total_targets: number;
+  processed_targets: number;
+  failed_targets: number;
+  execution_log: any[];
+  error_message?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_by?: number | null;
+  created_by_name?: string;
+  created_at: string;
 }
 
 // ---------- Bonus Category ----------
@@ -314,29 +345,11 @@ export interface BonusCategoryWrite {
   sort_order?: number;
 }
 
-
 // ---------- Bonus ----------
-export interface BonusListFilters {
-  month?: number;
-  year?: number;
-  from_month?: number;
-  from_year?: number;
-  to_month?: number;
-  to_year?: number;
-  status?: string;
-  search?: string;
-  academic_period?: number;
-  session?: number;
-  staff_id?: number;
-  category?: number;
-  page?: number;
-  page_size?: number;
-}
-
 export interface Bonus {
   id: number;
   type: 'staff' | 'volunteer';
-  category: number | BonusCategory; // Can be ID or Object depending on context
+  category: number | BonusCategory;
   staff?: number | any | null;
   staff_name?: string;
   staff_detail?: any;
@@ -369,7 +382,7 @@ export interface BonusWrite {
 export interface SalaryAdvance {
   id: number;
   staff: number | Staff;
-  staff_name?: string; // read-only
+  staff_name?: string;
   amount: string;
   reason: string;
   request_date: string;
@@ -379,7 +392,7 @@ export interface SalaryAdvance {
   approved_by?: number | User | null;
   approved_date?: string | null;
   created_at: string;
-  balance?: string; // computed
+  balance?: string;
 }
 
 export interface SalaryAdvanceWrite {
@@ -390,17 +403,11 @@ export interface SalaryAdvanceWrite {
   academic_period?: number | null;
 }
 
-// For action (approve/reject/disburse)
-export interface SalaryAdvanceActionPayload {
-  action: 'approve' | 'reject' | 'disburse';
-  // optionally add notes or amount adjustment?
-}
-
 // ---------- StaffLoan ----------
 export interface StaffLoan {
   id: number;
   staff: number | Staff;
-  staff_name?: string; // read-only
+  staff_name?: string;
   amount: string;
   reason: string;
   repayment_plan?: string | null;
@@ -411,7 +418,7 @@ export interface StaffLoan {
   approved_by?: number | User | null;
   approved_date?: string | null;
   created_at: string;
-  balance?: string; // computed
+  balance?: string;
 }
 
 export interface StaffLoanWrite {
@@ -423,16 +430,11 @@ export interface StaffLoanWrite {
   academic_period?: number | null;
 }
 
-// For action (approve/reject/disburse)
-export interface StaffLoanActionPayload {
-  action: 'approve' | 'reject' | 'disburse';
-}
-
 // ---------- StaffLoanRepayment ----------
 export interface StaffLoanRepayment {
   id: number;
   staff: number | Staff;
-  staff_name?: string; // read-only
+  staff_name?: string;
   amount_paid: string;
   payment_date: string;
   academic_period?: number | AcademicSessionPeriod | null;
@@ -441,7 +443,7 @@ export interface StaffLoanRepayment {
 }
 
 export interface StaffLoanRepaymentWrite {
-  staff: number; // path parameter? actually sent as staff_pk in URL
+  staff: number;
   amount_paid: string | number;
   payment_date?: string;
   academic_period?: number | null;
@@ -503,14 +505,26 @@ export interface StaffBankDetailListFilters {
   page_size?: number;
 }
 
+export interface BonusListFilters {
+  month?: number;
+  year?: number;
+  from_month?: number;
+  from_year?: number;
+  to_month?: number;
+  to_year?: number;
+  status?: string;
+  search?: string;
+  academic_period?: number;
+  session?: number;
+  staff_id?: number;
+  category?: number;
+  page?: number;
+  page_size?: number;
+}
+
 // ====================================================================
 // API REQUEST & RESPONSE TYPES
 // ====================================================================
-
-// Paginated responses (using common PaginatedResponse)
-// import { PaginatedResponse } from './common.types'; // adjust if needed
-
-// For the custom endpoints:
 
 export interface ProcessPayrollRecordPayload {
   structure_id: number;
@@ -523,48 +537,25 @@ export interface ProcessPayrollRecordPayload {
   academic_period?: number;
 }
 
-export type ProcessPayrollPayload = ProcessPayrollRecordPayload[];
-
-export interface ProcessPayrollResponse {
-  processed_count: number;
-  created_count: number;
-  updated_count: number;
-  failed_staff_ids?: number[];
-  message?: string;
-}
-
-// Mark Salary Paid
 export interface MarkSalaryPaidPayload {
-  amount_paid?: string | number; // if omitted, pays full net salary
-  paid_date?: string;
+  record_ids: number[];
+  amount_paid?: string | number;
   notes?: string;
 }
 
-export interface MarkSalaryPaidResponse {
-  id: number;
-  payment_status: SalaryRecordPaymentStatus;
-  amount_paid: string;
-  paid_date?: string;
-  balance_due?: string;
+export interface EmailPayslipsPayload {
+  record_ids: number[];
+  force_resend?: boolean;
 }
 
-// Mark Bonus Paid
-export interface MarkBonusPaidPayload {
-  // no extra fields, just POST to mark as paid
-}
-
-// Salary Advance Action
 export interface SalaryAdvanceActionPayload {
   action: 'approve' | 'reject' | 'disburse';
-  // maybe add notes? not in current view
 }
 
-// Staff Loan Action
 export interface StaffLoanActionPayload {
   action: 'approve' | 'reject' | 'disburse';
 }
 
-// Record Loan Repayment (uses staff_pk in URL)
 export interface RecordLoanRepaymentPayload {
   amount_paid: string | number;
   payment_date?: string;
@@ -574,6 +565,16 @@ export interface RecordLoanRepaymentPayload {
 // ====================================================================
 // FORM VALUES (for React Hook Form / Formik)
 // ====================================================================
+
+export interface SalaryGlobalSettingFormValues {
+  allow_custom_overrides: boolean;
+  require_payroll_approval: boolean;
+  auto_deduct_loans: boolean;
+  send_payslip_via_email: boolean;
+  default_payslip_note: string;
+  payslip_password_protection: boolean;
+  payslip_password_type: GlobalPasswordType;
+}
 
 export interface SalarySettingFormValues {
   name: string;
@@ -597,6 +598,8 @@ export interface SalaryStructureFormValues {
   staff: number;
   salary_setting: number;
   monthly_salary: string | number;
+  allowance_overrides?: Record<string, number | string>;
+  deduction_overrides?: Record<string, number | string>;
   additional_field_values?: Record<string, any>;
   effective_from?: string;
   effective_to?: string | null;
@@ -647,18 +650,4 @@ export interface StaffBankDetailFormValues {
   beneficiary_code?: string;
   branch_sort_code?: string;
   is_active?: boolean;
-}
-
-// ====================================================================
-// DASHBOARD / STATS (if needed)
-// ====================================================================
-
-export interface SalaryDashboardStats {
-  total_staff_with_active_structure: number;
-  pending_payroll_count: number;
-  unpaid_salary_records: number;
-  total_loan_balance: string;
-  total_advance_balance: string;
-  active_bonuses_unpaid: number;
-  // etc.
 }

@@ -14,8 +14,6 @@ import {
   DollarSign,
   Landmark,
   Calculator,
-  Calendar,
-  User,
   Building2,
   BadgeCheck,
   Lock,
@@ -23,6 +21,7 @@ import {
   Plus,
   ChevronDown,
   ChevronUp,
+  User,
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -96,8 +95,14 @@ function CollapsibleCard({ icon, iconBg, title, subtitle, defaultOpen = true, ch
   );
 }
 
-// ─── Salary Calculation Engine (same as create/edit) ─────────────────────────
-function calculateSalary(monthlySalary: number, setting: SalarySetting, additionalValues: Record<string, number>) {
+// ─── Salary Calculation Engine ─────────────────────────────────────────────────
+function calculateSalary(
+  monthlySalary: number,
+  setting: SalarySetting,
+  additionalValues: Record<string, number>,
+  allowanceOverrides: Record<string, number> = {},
+  deductionOverrides: Record<string, number> = {}
+) {
   monthlySalary = Math.round(monthlySalary * 100) / 100;
   const annualSalary = Math.round(monthlySalary * 12 * 100) / 100;
 
@@ -128,14 +133,22 @@ function calculateSalary(monthlySalary: number, setting: SalarySetting, addition
 
   const allowances: Array<{ name: string; monthly: number; annual: number }> = [];
   let totalOtherMonthly = 0, totalOtherAnnual = 0;
+
   if (setting.allowances) {
     setting.allowances.forEach((a: any) => {
       if (a.is_active === false) return;
-      const base = calculateBaseAmount(a.based_on || 'TOTAL', a.based_on_type || 'component');
       let monthly = 0;
-      if (a.calculation_type === 'fixed') monthly = parseFloat(a.fixed_amount) || 0;
-      else if (a.calculation_type === 'percentage') monthly = (base * (parseFloat(a.percentage) || 0)) / 100;
-      else if (a.calculation_type === 'combined') monthly = (base * (parseFloat(a.percentage) || 0)) / 100 + (parseFloat(a.fixed_amount) || 0);
+
+      // INTERCEPTOR: Custom Flat Override logic
+      if (allowanceOverrides[a.name] !== undefined) {
+        monthly = allowanceOverrides[a.name];
+      } else {
+        const base = calculateBaseAmount(a.based_on || 'TOTAL', a.based_on_type || 'component');
+        if (a.calculation_type === 'fixed') monthly = parseFloat(a.fixed_amount) || 0;
+        else if (a.calculation_type === 'percentage') monthly = (base * (parseFloat(a.percentage) || 0)) / 100;
+        else if (a.calculation_type === 'combined') monthly = (base * (parseFloat(a.percentage) || 0)) / 100 + (parseFloat(a.fixed_amount) || 0);
+      }
+
       monthly = Math.round(monthly * 100) / 100;
       const annual = Math.round(monthly * 12 * 100) / 100;
       allowances.push({ name: a.name, monthly, annual });
@@ -156,11 +169,18 @@ function calculateSalary(monthlySalary: number, setting: SalarySetting, addition
   if (setting.statutory_deductions) {
     setting.statutory_deductions.forEach((d: any) => {
       if (d.is_active === false) return;
-      const base = calculateBaseAmount(d.based_on || 'B', d.based_on_type || 'component');
       let amount = 0;
-      if (d.calculation_type === 'percentage') amount = (base * (parseFloat(d.percentage) || 0)) / 100;
-      else if (d.calculation_type === 'fixed') amount = parseFloat(d.fixed_amount) || 0;
-      else if (d.calculation_type === 'combined') amount = (base * (parseFloat(d.percentage) || 0)) / 100 + (parseFloat(d.fixed_amount) || 0);
+
+      // INTERCEPTOR: Custom Flat Override logic
+      if (deductionOverrides[d.name] !== undefined) {
+        amount = deductionOverrides[d.name];
+      } else {
+        const base = calculateBaseAmount(d.based_on || 'B', d.based_on_type || 'component');
+        if (d.calculation_type === 'percentage') amount = (base * (parseFloat(d.percentage) || 0)) / 100;
+        else if (d.calculation_type === 'fixed') amount = parseFloat(d.fixed_amount) || 0;
+        else if (d.calculation_type === 'combined') amount = (base * (parseFloat(d.percentage) || 0)) / 100 + (parseFloat(d.fixed_amount) || 0);
+      }
+
       amount = Math.round(amount * 100) / 100;
       statutoryDeductions.push({ name: d.name, monthly: amount, annual: Math.round(amount * 12 * 100) / 100, percentage: parseFloat(d.percentage) || null, basedOn: d.based_on, basedOnType: d.based_on_type, calcType: d.calculation_type });
       totalStatutoryDeductions += amount;
@@ -268,12 +288,15 @@ export default function SalaryStructureDetailPage() {
 
   useEffect(() => { load(); }, [structureId]);
 
+  // Feed overrides into the calculation engine
   const calculation = useMemo(() => {
     if (!structure || !setting) return null;
     return calculateSalary(
       parseFloat(structure.monthly_salary) || 0,
       setting,
       structure.additional_field_values || {},
+      structure.allowance_overrides || {},
+      structure.deduction_overrides || {}
     );
   }, [structure, setting]);
 
@@ -318,6 +341,7 @@ export default function SalaryStructureDetailPage() {
   const settingName = (structure as any).salary_setting_name || (setting?.name) || '—';
   const isLocked = setting?.is_locked;
   const isSettingActive = setting?.is_active;
+  const overridesExist = Object.keys(structure.allowance_overrides || {}).length > 0 || Object.keys(structure.deduction_overrides || {}).length > 0;
 
   return (
     <div className="space-y-4 pb-10">
@@ -490,7 +514,14 @@ export default function SalaryStructureDetailPage() {
             title="Complete Salary Calculation"
             subtitle={`Based on ${settingName}`}
             action={
-              <span className="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-semibold">Complete</span>
+              <div className="flex gap-2">
+                {overridesExist && (
+                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full font-semibold border border-indigo-200">
+                    Overrides Applied
+                  </span>
+                )}
+                <span className="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-semibold">Complete</span>
+              </div>
             }
           />
 
@@ -545,18 +576,24 @@ export default function SalaryStructureDetailPage() {
                       <td className="p-2.5 border border-slate-200 text-right">{comp.percentage.toFixed(2)}%</td>
                     </tr>
                   ))}
-                  {calculation.allowances.map((a) => (
-                    <tr key={a.name}>
-                      <td className="p-2.5 border border-slate-200">{a.name}</td>
-                      <td className="p-2.5 border border-slate-200 text-right">{fmtMoney(a.monthly)}</td>
-                      <td className="p-2.5 border border-slate-200 text-right">{fmtMoney(a.annual)}</td>
-                      <td className="p-2.5 border border-slate-200 text-right">
-                        {parseFloat(structure.monthly_salary) > 0
-                          ? ((a.monthly / parseFloat(structure.monthly_salary)) * 100).toFixed(2)
-                          : '0.00'}%
-                      </td>
-                    </tr>
-                  ))}
+                  {calculation.allowances.map((a) => {
+                    const isOverridden = (structure.allowance_overrides || {})[a.name] !== undefined;
+                    return (
+                      <tr key={a.name} className={isOverridden ? 'bg-indigo-50/30' : ''}>
+                        <td className="p-2.5 border border-slate-200 flex items-center gap-1">
+                          {a.name}
+                          {isOverridden && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded ml-1 font-semibold uppercase tracking-wider">Override</span>}
+                        </td>
+                        <td className="p-2.5 border border-slate-200 text-right">{fmtMoney(a.monthly)}</td>
+                        <td className="p-2.5 border border-slate-200 text-right">{fmtMoney(a.annual)}</td>
+                        <td className="p-2.5 border border-slate-200 text-right">
+                          {parseFloat(structure.monthly_salary) > 0
+                            ? ((a.monthly / parseFloat(structure.monthly_salary)) * 100).toFixed(2)
+                            : '0.00'}%
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -577,12 +614,18 @@ export default function SalaryStructureDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {calculation.statutoryDeductions.map((d) => (
-                    <tr key={d.name}>
-                      <td className="p-2.5 border border-slate-200">{d.name}</td>
-                      <td className="p-2.5 border border-slate-200 text-right">{fmtMoney(d.annual)}</td>
-                    </tr>
-                  ))}
+                  {calculation.statutoryDeductions.map((d) => {
+                    const isOverridden = (structure.deduction_overrides || {})[d.name] !== undefined;
+                    return (
+                      <tr key={d.name} className={isOverridden ? 'bg-indigo-50/30' : ''}>
+                        <td className="p-2.5 border border-slate-200 flex items-center gap-1">
+                          {d.name}
+                          {isOverridden && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded ml-1 font-semibold uppercase tracking-wider">Override</span>}
+                        </td>
+                        <td className="p-2.5 border border-slate-200 text-right">{fmtMoney(d.annual)}</td>
+                      </tr>
+                    );
+                  })}
                   {calculation.reliefs.map((r) => (
                     <tr key={r.name}>
                       <td className="p-2.5 border border-slate-200">{r.name}</td>
@@ -674,7 +717,7 @@ export default function SalaryStructureDetailPage() {
       )}
 
       {/* ── Bottom actions ── */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 mt-6">
         <button
           onClick={() => router.push('/dashboard/staff/salary/structure')}
           className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"

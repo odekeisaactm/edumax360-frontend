@@ -59,9 +59,7 @@ let rowIdCounter = 0;
 const genRowId = () => `row-${++rowIdCounter}`;
 
 // ─── Section Wrapper ──────────────────────────────────────────────────────────
-function Section({ icon, iconBg, title, children, badge }: {
-  icon: React.ReactNode; iconBg: string; title: string; children: React.ReactNode; badge?: React.ReactNode;
-}) {
+function Section({ icon, iconBg, title, children, badge }: { icon: React.ReactNode; iconBg: string; title: string; children: React.ReactNode; badge?: React.ReactNode; }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
       <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50/50">
@@ -131,11 +129,17 @@ export default function ProcessPayrollPage() {
 
         const staffId = typeof structData.staff === 'object' ? (structData.staff as any).id : structData.staff;
         const recordsRes = await payrollAPI.listRecords({ month, year, staff: staffId }) as any;
-        const records = recordsRes?.results ?? recordsRes?.data ?? recordsRes ?? [];
-        const existing = Array.isArray(records) ? records.find((r: any) => {
+
+        let recordsArray = [];
+        if (Array.isArray(recordsRes)) recordsArray = recordsRes;
+        else if (Array.isArray(recordsRes?.results)) recordsArray = recordsRes.results;
+        else if (Array.isArray(recordsRes?.results?.data)) recordsArray = recordsRes.results.data;
+        else if (Array.isArray(recordsRes?.data)) recordsArray = recordsRes.data;
+
+        const existing = recordsArray.find((r: any) => {
           const rStaffId = typeof r.staff === 'object' ? (r.staff as any).id : r.staff;
           return rStaffId === staffId;
-        }) : null;
+        }) || null;
 
         if (existing) {
           setExistingRecord(existing);
@@ -195,7 +199,19 @@ export default function ProcessPayrollPage() {
   // ── Live Preview Calculation ──
   const preview = useMemo(() => {
     if (!setting || !structure) return null;
-    return calculateSalary(parseFloat(structure.monthly_salary), setting, additionalFieldValues, bonus, additionalIncomeDict, customDeductionsDict);
+    const allowOverrides = structure.allowance_overrides || {};
+    const dedOverrides = structure.deduction_overrides || {};
+
+    return calculateSalary(
+      parseFloat(structure.monthly_salary),
+      setting,
+      additionalFieldValues,
+      bonus,
+      additionalIncomeDict,
+      customDeductionsDict,
+      allowOverrides,
+      dedOverrides
+    );
   }, [setting, structure, additionalFieldValues, bonus, additionalIncomeDict, customDeductionsDict]);
 
   // ── Submit Handler ──
@@ -212,19 +228,18 @@ export default function ProcessPayrollPage() {
         additional_income: additionalIncomeDict,
         custom_deductions: customDeductionsDict,
         amount_paid: "0.00",
+        notes: notes,
       }];
 
       const res = await payrollAPI.process(payload) as any;
 
-      // FIX: Safely unwrap the APIResponse wrapper
-      const resultData = res?.data?.results || res?.results || [];
-      const result = resultData[0];
-
-      if (result?.success) {
-        showToast('success', 'Payroll processed successfully!');
-        router.push(`/dashboard/staff/salary/payslips/${result.record_id}`);
+      // Since unwrapData strips the outer APIResponse,
+      // 'res' is directly the SalaryProcessingBatch object.
+      if (res?.id && res?.status === 'pending') {
+        showToast('success', 'Payroll queued successfully!');
+        router.push('/dashboard/staff/salary/payroll');
       } else {
-        showToast('error', result?.error || 'Failed to process payroll.');
+        showToast('error', 'Failed to queue payroll.');
       }
     } catch (err) {
       showToast('error', extractError(err));
@@ -498,7 +513,6 @@ export default function ProcessPayrollPage() {
   );
 }
 
-
 // ─── calculation engine ─────────────────────────────────────────────────────
 interface CalculationResult {
   grossIncomeMonthly: number;
@@ -511,7 +525,8 @@ interface CalculationResult {
 
 function calculateSalary(
   monthlySalary: number, setting: SalarySetting, additionalValues: Record<string, number>,
-  bonus: number = 0, additionalIncome: Record<string, number> = {}, customDeductions: Record<string, number> = {}
+  bonus: number = 0, additionalIncome: Record<string, number> = {}, customDeductions: Record<string, number> = {},
+  allowanceOverrides: Record<string, number> = {}, deductionOverrides: Record<string, number> = {}
 ): CalculationResult {
   monthlySalary = Math.round(monthlySalary * 100) / 100;
   const basicComponents: Record<string, any> = {};
@@ -535,12 +550,16 @@ function calculateSalary(
   if (setting.allowances) {
     setting.allowances.forEach((allowance: any) => {
       if (allowance.is_active !== false && !allowance.annual_only) {
-        const base = calculateBaseAmount(allowance.based_on || 'TOTAL', allowance.based_on_type || 'component');
-        const pct = parseFloat(allowance.percentage) || 0;
-        const fixed = parseFloat(allowance.fixed_amount) || 0;
-        if (allowance.calculation_type === 'fixed') totalAutoAllowances += fixed;
-        else if (allowance.calculation_type === 'percentage') totalAutoAllowances += (base * pct) / 100;
-        else totalAutoAllowances += (base * pct) / 100 + fixed;
+        if (allowanceOverrides[allowance.name] !== undefined) {
+          totalAutoAllowances += allowanceOverrides[allowance.name];
+        } else {
+          const base = calculateBaseAmount(allowance.based_on || 'TOTAL', allowance.based_on_type || 'component');
+          const pct = parseFloat(allowance.percentage) || 0;
+          const fixed = parseFloat(allowance.fixed_amount) || 0;
+          if (allowance.calculation_type === 'fixed') totalAutoAllowances += fixed;
+          else if (allowance.calculation_type === 'percentage') totalAutoAllowances += (base * pct) / 100;
+          else totalAutoAllowances += (base * pct) / 100 + fixed;
+        }
       }
     });
   }
@@ -552,12 +571,16 @@ function calculateSalary(
   if (setting.statutory_deductions) {
     setting.statutory_deductions.forEach((ded: any) => {
       if (ded.is_active !== false) {
-        const base = calculateBaseAmount(ded.based_on || 'B', ded.based_on_type || 'component');
-        const pct = parseFloat(ded.percentage) || 0;
-        const fixed = parseFloat(ded.fixed_amount) || 0;
-        if (ded.calculation_type === 'fixed') totalStatutoryDeductions += fixed;
-        else if (ded.calculation_type === 'percentage') totalStatutoryDeductions += (base * pct) / 100;
-        else totalStatutoryDeductions += (base * pct) / 100 + fixed;
+        if (deductionOverrides[ded.name] !== undefined) {
+          totalStatutoryDeductions += deductionOverrides[ded.name];
+        } else {
+          const base = calculateBaseAmount(ded.based_on || 'B', ded.based_on_type || 'component');
+          const pct = parseFloat(ded.percentage) || 0;
+          const fixed = parseFloat(ded.fixed_amount) || 0;
+          if (ded.calculation_type === 'fixed') totalStatutoryDeductions += fixed;
+          else if (ded.calculation_type === 'percentage') totalStatutoryDeductions += (base * pct) / 100;
+          else totalStatutoryDeductions += (base * pct) / 100 + fixed;
+        }
       }
     });
   }

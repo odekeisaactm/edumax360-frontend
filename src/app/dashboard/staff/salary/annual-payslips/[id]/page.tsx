@@ -7,7 +7,7 @@ import { payrollAPI } from '@/lib/salary_management.service';
 import {
   CalendarDays, ArrowLeft, AlertCircle, Loader2, Printer,
   UserCircle, Building2, TrendingUp, TrendingDown, DollarSign,
-  Shield, Percent, Gift, ChevronDown, ChevronUp, Info,
+  Shield, Percent, Gift, ChevronDown, ChevronUp, Info, X
 } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -33,142 +33,17 @@ function extractError(err: any): string {
   return err?.message || 'An unexpected error occurred.';
 }
 
+function getImageUrl(path: string | null | undefined): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith('http')) return path;
+  const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+  return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 const now          = new Date();
 const currentYear  = now.getFullYear();
 const YEARS        = Array.from({ length: currentYear - 2019 }, (_, i) => 2020 + i).reverse();
 const MONTH_NAMES  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
-// ─── Print HTML Builder ───────────────────────────────────────────────────────
-function buildAnnualPayslipHTML(data: AnnualData, year: number, schoolName: string): string {
-  const now = new Date().toLocaleString('en-NG', { dateStyle: 'long', timeStyle: 'short' });
-
-  const buildRows = (items: Record<string, number>) =>
-    Object.entries(items).map(([name, amt]) =>
-      `<tr><td style="padding:7px 12px;color:#64748b;">${name}</td><td style="padding:7px 12px;text-align:right;font-weight:600;color:#1e293b;">${fmtMoney(amt)}</td></tr>`
-    ).join('');
-
-  const totalDeductions = data.totalStatutoryDeductions + data.totalOtherDeductions + data.totalPaye + data.totalOtherTaxes;
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <title>Annual Payslip - ${data.fullName} - ${year}</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #1e293b; background: #fff; padding: 30px; max-width: 750px; margin: 0 auto; }
-    .close-btn { position: fixed; top: 16px; right: 16px; background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; z-index: 999; }
-    .close-btn:hover { background: #dc2626; }
-    .header { text-align: center; margin-bottom: 24px; border-bottom: 2px solid #4f46e5; padding-bottom: 16px; }
-    .school-name { font-size: 20px; font-weight: 800; color: #4f46e5; margin-bottom: 4px; }
-    .payslip-title { font-size: 13px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 2px; }
-    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
-    .meta-item { margin-bottom: 8px; }
-    .meta-label { font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; }
-    .meta-value { font-size: 13px; color: #1e293b; font-weight: 500; }
-    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #64748b; background: #f8fafc; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; }
-    table { width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 16px; }
-    th { background: #f1f5f9; padding: 8px 12px; text-align: left; font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; }
-    td { padding: 7px 12px; font-size: 12px; border-bottom: 1px solid #f1f5f9; }
-    tr:last-child td { border-bottom: none; }
-    .subtotal-row td { background: #f8fafc; font-weight: 700; color: #1e293b; padding: 9px 12px; }
-    .total-row td { background: #eff6ff; font-weight: 700; color: #4f46e5; padding: 10px 12px; font-size: 13px; }
-    .net-pay-box { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px; }
-    .net-label { font-size: 11px; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-    .net-sub { font-size: 12px; opacity: 0.7; margin-bottom: 8px; }
-    .net-amount { font-size: 32px; font-weight: 800; }
-    .footer { text-align: center; color: #94a3b8; font-size: 10px; margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 16px; }
-    @media print { .close-btn { display: none; } body { padding: 15px; } @page { margin: 15mm; size: A4 portrait; } }
-  </style>
-</head>
-<body>
-  <button class="close-btn" onclick="window.close()">✕ Close</button>
-
-  <div class="header">
-    <div class="school-name">${schoolName}</div>
-    <div class="payslip-title">Annual Payroll Summary</div>
-  </div>
-
-  <div class="meta-grid">
-    <div>
-      <div class="meta-item"><div class="meta-label">Name</div><div class="meta-value">${data.fullName}</div></div>
-      <div class="meta-item"><div class="meta-label">Staff ID</div><div class="meta-value">${data.staffId || 'N/A'}</div></div>
-      <div class="meta-item"><div class="meta-label">Department</div><div class="meta-value">${data.department}</div></div>
-    </div>
-    <div style="text-align:right;">
-      <div class="meta-item"><div class="meta-label">Year</div><div class="meta-value">${year}</div></div>
-      <div class="meta-item"><div class="meta-label">Months Covered</div><div class="meta-value">${data.monthsCount} month${data.monthsCount !== 1 ? 's' : ''}</div></div>
-      <div class="meta-item"><div class="meta-label">Periods</div><div class="meta-value">${data.monthsCovered.join(', ')}</div></div>
-    </div>
-  </div>
-
-  <!-- Income -->
-  <table>
-    <thead><tr><th>Income Component</th><th style="text-align:right">Amount (₦)</th></tr></thead>
-    <tbody>
-      ${Object.keys(data.basicComponents).length > 0 ? `
-        <tr><td colspan="2" class="section-title">Basic Components</td></tr>
-        ${buildRows(data.basicComponents)}
-      ` : ''}
-      ${Object.keys(data.allowances).length > 0 ? `
-        <tr><td colspan="2" class="section-title">Allowances</td></tr>
-        ${buildRows(data.allowances)}
-      ` : ''}
-      ${data.totalBonus > 0 ? `
-        <tr><td colspan="2" class="section-title">Bonus</td></tr>
-        <tr><td style="padding:7px 12px;color:#64748b;">Total Bonus</td><td style="padding:7px 12px;text-align:right;font-weight:600;color:#1e293b;">${fmtMoney(data.totalBonus)}</td></tr>
-      ` : ''}
-      ${Object.keys(data.additionalIncome).length > 0 ? `
-        <tr><td colspan="2" class="section-title">Additional Income</td></tr>
-        ${buildRows(data.additionalIncome)}
-      ` : ''}
-    </tbody>
-    <tfoot>
-      <tr class="total-row"><td>Total Gross Income (A)</td><td style="text-align:right;">${fmtMoney(data.totalGrossIncome)}</td></tr>
-    </tfoot>
-  </table>
-
-  <!-- Deductions -->
-  <table>
-    <thead><tr><th>Deductions</th><th style="text-align:right">Amount (₦)</th></tr></thead>
-    <tbody>
-      ${Object.keys(data.statutoryDeductions).length > 0 ? `
-        <tr><td colspan="2" class="section-title">Statutory Deductions (B)</td></tr>
-        ${buildRows(data.statutoryDeductions)}
-        <tr class="subtotal-row"><td>Sub-Total Statutory (B)</td><td style="text-align:right;">${fmtMoney(data.totalStatutoryDeductions)}</td></tr>
-      ` : ''}
-      ${Object.keys(data.otherDeductions).length > 0 ? `
-        <tr><td colspan="2" class="section-title">Other Deductions (C)</td></tr>
-        ${buildRows(data.otherDeductions)}
-        <tr class="subtotal-row"><td>Sub-Total Other (C)</td><td style="text-align:right;">${fmtMoney(data.totalOtherDeductions)}</td></tr>
-      ` : ''}
-      <tr><td colspan="2" class="section-title">Taxation (D)</td></tr>
-      <tr><td style="padding:7px 12px;color:#64748b;">Total PAYE Tax</td><td style="padding:7px 12px;text-align:right;font-weight:600;color:#1e293b;">${fmtMoney(data.totalPaye)}</td></tr>
-      ${data.totalOtherTaxes > 0 ? `<tr><td style="padding:7px 12px;color:#64748b;">Other Taxes</td><td style="padding:7px 12px;text-align:right;font-weight:600;color:#1e293b;">${fmtMoney(data.totalOtherTaxes)}</td></tr>` : ''}
-      <tr class="subtotal-row"><td>Sub-Total Tax (D)</td><td style="text-align:right;">${fmtMoney(data.totalPaye + data.totalOtherTaxes)}</td></tr>
-    </tbody>
-    <tfoot>
-      <tr class="total-row"><td>Total Deductions (B + C + D)</td><td style="text-align:right;">${fmtMoney(totalDeductions)}</td></tr>
-    </tfoot>
-  </table>
-
-  <!-- Net Pay -->
-  <div class="net-pay-box">
-    <div class="net-label">Total Annual Net Salary (A − B − C − D)</div>
-    <div class="net-sub">${data.monthsCovered.join(', ')} · ${year}</div>
-    <div class="net-amount">${fmtMoney(data.totalNetSalary)}</div>
-  </div>
-
-  <div class="footer">
-    <p><strong>Generated:</strong> ${now}</p>
-    <p style="margin-top:4px">This is a computer-generated annual payroll summary.</p>
-    <p style="margin-top:4px">${schoolName}</p>
-  </div>
-
-  <script>window.onload = function() { window.print(); };</script>
-</body>
-</html>`;
-}
 
 interface AnnualData {
   staffId: string;
@@ -262,22 +137,24 @@ export default function AnnualPayslipDetailPage() {
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [annualData, setAnnualData] = useState<AnnualData | null>(null);
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+
+  // Close print preview on Escape
+  useEffect(() => {
+    if (!showPrintPreview) return;
+    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowPrintPreview(false); };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showPrintPreview]);
 
   const fetchData = useCallback(async () => {
     if (!structureId) return;
     setLoading(true);
     setError(null);
     try {
-      // Fetch all records for this structure for the selected year
-      // Use salary_structure filter if available, otherwise filter client-side
-      const res = await payrollAPI.listRecords({
-        year,
-        page_size: 1000,
-      }) as any;
-
+      const res = await payrollAPI.listRecords({ year, page_size: 1000 }) as any;
       const allRecords = unwrapList(res);
 
-      // Filter to only this structure's records
       const records = allRecords.filter((r: any) => {
         const sid = typeof r.salary_structure === 'object' ? r.salary_structure?.id : r.salary_structure;
         return sid === structureId;
@@ -289,7 +166,6 @@ export default function AnnualPayslipDetailPage() {
         return;
       }
 
-      // Aggregate
       const data: AnnualData = {
         staffId:                  '',
         fullName:                 '',
@@ -325,26 +201,22 @@ export default function AnnualPayslipDetailPage() {
         data.totalOtherTaxes += parseFloat(r.other_taxes) || 0;
         data.totalNetSalary  += parseFloat(r.net_salary)  || 0;
 
-        // Basic components
         Object.entries(r.basic_components_breakdown || {}).forEach(([, comp]: [string, any]) => {
           const name   = comp?.name || '';
           const amount = parseFloat(comp?.amount) || 0;
           if (name && amount > 0) data.basicComponents[name] = (data.basicComponents[name] || 0) + amount;
         });
 
-        // Allowances
         Object.entries(r.allowances_breakdown || {}).forEach(([name, allow]: [string, any]) => {
           const amount = parseFloat(allow?.amount ?? allow) || 0;
           if (amount > 0) data.allowances[name] = (data.allowances[name] || 0) + amount;
         });
 
-        // Additional income
         Object.entries(r.additional_income || {}).forEach(([name, val]: [string, any]) => {
           const amount = parseFloat(val) || 0;
           if (amount > 0) data.additionalIncome[name] = (data.additionalIncome[name] || 0) + amount;
         });
 
-        // Statutory deductions
         Object.entries(r.statutory_deductions || {}).forEach(([name, ded]: [string, any]) => {
           const amount = parseFloat(typeof ded === 'object' ? ded?.amount : ded) || 0;
           if (amount > 0) {
@@ -353,7 +225,6 @@ export default function AnnualPayslipDetailPage() {
           }
         });
 
-        // Other deductions
         Object.entries(r.other_deductions || {}).forEach(([name, ded]: [string, any]) => {
           const amount = parseFloat(typeof ded === 'object' ? ded?.amount : ded) || 0;
           if (amount > 0) {
@@ -373,7 +244,6 @@ export default function AnnualPayslipDetailPage() {
 
   useEffect(() => { if (canView) fetchData(); }, [fetchData, canView]);
 
-  // Update URL when year changes
   const handleYearChange = (y: number) => {
     setYear(y);
     router.replace(`/dashboard/staff/salary/annual-payslips/${structureId}?year=${y}`);
@@ -386,7 +256,17 @@ export default function AnnualPayslipDetailPage() {
     : 0;
 
   return (
-    <div className="space-y-5 pb-10" id="printable-report">
+    <div className="space-y-5 pb-10">
+
+      {/* Print CSS constraints */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          body * { visibility: hidden; }
+          #receipt-print-area, #receipt-print-area * { visibility: visible; }
+          #receipt-print-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; box-shadow: none !important; border-radius: 0 !important; max-height: none !important; }
+          @page { margin: 15mm; size: A4 portrait; }
+        }
+      `}} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -410,11 +290,7 @@ export default function AnnualPayslipDetailPage() {
             {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
           {annualData && (
-            <button onClick={() => {
-              const html = buildAnnualPayslipHTML(annualData, year, schoolInfo?.name || 'School');
-              const win = window.open('', '_blank');
-              if (win) { win.document.write(html); win.document.close(); }
-            }}
+            <button onClick={() => setShowPrintPreview(true)}
               className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-50 transition-all shadow-sm">
               <Printer className="h-4 w-4" /> Print
             </button>
@@ -565,6 +441,218 @@ export default function AnnualPayslipDetailPage() {
         </>
       )}
 
+      {/* ── PRINTABLE OVERLAY (In-DOM approach) ── */}
+      {showPrintPreview && annualData && (
+        <div onClick={() => setShowPrintPreview(false)} className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-8 px-4 print:p-0 print:bg-white animate-in fade-in">
+          <div id="receipt-print-area" onClick={(e) => e.stopPropagation()} className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden print:shadow-none print:rounded-none print:max-w-none print:w-full">
+
+            {/* Action bar — hidden on print */}
+            <div className="print:hidden flex justify-between items-center px-6 py-3.5 bg-slate-50 border-b border-slate-100">
+              <button onClick={() => setShowPrintPreview(false)} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors">
+                <X className="w-4 h-4" /> Close
+              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => window.print()} className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-colors">
+                  <Printer className="w-3.5 h-3.5" /> Print
+                </button>
+              </div>
+            </div>
+
+            <div className="p-8 print:p-6 text-slate-900">
+
+              {/* Letterhead */}
+              <div className="flex items-center gap-4 pb-4 border-b-2 border-slate-900 mb-6">
+                {schoolInfo?.logo ? (
+                  <img src={getImageUrl(schoolInfo.logo)} alt="" className="h-14 w-14 rounded-lg object-contain shrink-0" />
+                ) : (
+                  <div className="h-14 w-14 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                    <Building2 className="h-7 w-7 text-slate-400" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-lg font-black uppercase tracking-wide text-slate-900 truncate">{schoolInfo?.name || 'School Name Not Set'}</h1>
+                  <p className="text-[11px] font-medium text-slate-500 truncate">{schoolInfo?.address || 'Address not configured'}</p>
+                  <p className="text-[11px] font-medium text-slate-500">{[schoolInfo?.email, schoolInfo?.mobile_1].filter(Boolean).join(' · ')}</p>
+                </div>
+                <span className="shrink-0 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">
+                  Annual Payslip
+                </span>
+              </div>
+
+              {/* Meta Grid */}
+              <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+                <div>
+                  <div className="mb-2"><span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider block">Name</span><span className="font-medium text-slate-900">{annualData.fullName}</span></div>
+                  <div className="mb-2"><span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider block">Staff ID</span><span className="font-medium text-slate-900">{annualData.staffId || 'N/A'}</span></div>
+                  <div><span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider block">Department</span><span className="font-medium text-slate-900">{annualData.department}</span></div>
+                </div>
+                <div className="text-right">
+                  <div className="mb-2"><span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider block">Year</span><span className="font-medium text-slate-900">{year}</span></div>
+                  <div className="mb-2"><span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider block">Months Covered</span><span className="font-medium text-slate-900">{annualData.monthsCount} month{annualData.monthsCount !== 1 ? 's' : ''}</span></div>
+                  <div><span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider block">Periods</span><span className="text-[11px] font-medium text-slate-600">{annualData.monthsCovered.join(', ')}</span></div>
+                </div>
+              </div>
+
+              {/* Earnings Table */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden mb-5">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-200">
+                      <th className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase">Income Component</th>
+                      <th className="px-4 py-2.5 text-right text-xs font-bold text-slate-600 uppercase">Amount (₦)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {/* Basic Components */}
+                    {Object.keys(annualData.basicComponents).length > 0 && (
+                      <tr className="bg-slate-50">
+                        <td colSpan={2} className="px-4 py-2 text-[11px] font-bold text-slate-500 uppercase tracking-wide">Basic Components</td>
+                      </tr>
+                    )}
+                    {Object.entries(annualData.basicComponents).map(([name, amt]) => (
+                      <tr key={name} className="bg-white">
+                        <td className="px-4 py-2.5 text-slate-600">{name}</td>
+                        <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(amt)}</td>
+                      </tr>
+                    ))}
+
+                    {/* Allowances */}
+                    {Object.keys(annualData.allowances).length > 0 && (
+                      <tr className="bg-slate-50">
+                        <td colSpan={2} className="px-4 py-2 text-[11px] font-bold text-slate-500 uppercase tracking-wide">Allowances</td>
+                      </tr>
+                    )}
+                    {Object.entries(annualData.allowances).map(([name, amt]) => (
+                      <tr key={name} className="bg-white">
+                        <td className="px-4 py-2.5 text-slate-600">{name}</td>
+                        <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(amt)}</td>
+                      </tr>
+                    ))}
+
+                    {/* Bonus */}
+                    {annualData.totalBonus > 0 && (
+                      <tr className="bg-white">
+                        <td className="px-4 py-2.5 text-slate-600 font-bold">Total Bonus</td>
+                        <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(annualData.totalBonus)}</td>
+                      </tr>
+                    )}
+
+                    {/* Additional Income */}
+                    {Object.keys(annualData.additionalIncome).length > 0 && (
+                      <tr className="bg-slate-50">
+                        <td colSpan={2} className="px-4 py-2 text-[11px] font-bold text-slate-500 uppercase tracking-wide">Additional Income</td>
+                      </tr>
+                    )}
+                    {Object.entries(annualData.additionalIncome).map(([name, amt]) => (
+                      <tr key={name} className="bg-white">
+                        <td className="px-4 py-2.5 text-slate-600">{name}</td>
+                        <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(amt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-indigo-50/50 border-t-2 border-indigo-100">
+                      <td className="px-4 py-3 text-indigo-700 font-bold">Total Gross Income (A)</td>
+                      <td className="px-4 py-3 text-right text-indigo-700 font-bold text-base">{fmtMoney(annualData.totalGrossIncome)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Deductions Table */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden mb-6">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-200">
+                      <th className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase">Deductions</th>
+                      <th className="px-4 py-2.5 text-right text-xs font-bold text-slate-600 uppercase">Amount (₦)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+
+                    {/* Statutory Block */}
+                    {Object.keys(annualData.statutoryDeductions).length > 0 && (
+                      <>
+                        <tr className="bg-slate-50">
+                          <td colSpan={2} className="px-4 py-2 text-[11px] font-bold text-slate-500 uppercase tracking-wide">Statutory Deductions (B)</td>
+                        </tr>
+                        {Object.entries(annualData.statutoryDeductions).map(([name, amt]) => (
+                          <tr key={name} className="bg-white">
+                            <td className="px-4 py-2.5 text-slate-600">{name}</td>
+                            <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(amt)}</td>
+                          </tr>
+                        ))}
+                        <tr className="bg-slate-50 border-y border-slate-200">
+                          <td className="px-4 py-2.5 font-bold text-slate-700">Sub-Total Statutory (B)</td>
+                          <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmtMoney(annualData.totalStatutoryDeductions)}</td>
+                        </tr>
+                      </>
+                    )}
+
+                    {/* Other Deductions Block */}
+                    {Object.keys(annualData.otherDeductions).length > 0 && (
+                      <>
+                        <tr className="bg-slate-50">
+                          <td colSpan={2} className="px-4 py-2 text-[11px] font-bold text-slate-500 uppercase tracking-wide">Other Deductions (C)</td>
+                        </tr>
+                        {Object.entries(annualData.otherDeductions).map(([name, amt]) => (
+                          <tr key={name} className="bg-white">
+                            <td className="px-4 py-2.5 text-slate-600">{name}</td>
+                            <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(amt)}</td>
+                          </tr>
+                        ))}
+                        <tr className="bg-slate-50 border-y border-slate-200">
+                          <td className="px-4 py-2.5 font-bold text-slate-700">Sub-Total Other (C)</td>
+                          <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmtMoney(annualData.totalOtherDeductions)}</td>
+                        </tr>
+                      </>
+                    )}
+
+                    {/* Tax Block */}
+                    <tr className="bg-slate-50">
+                      <td colSpan={2} className="px-4 py-2 text-[11px] font-bold text-slate-500 uppercase tracking-wide">Taxation (D)</td>
+                    </tr>
+                    <tr className="bg-white">
+                      <td className="px-4 py-2.5 text-slate-600">Total PAYE Tax</td>
+                      <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(annualData.totalPaye)}</td>
+                    </tr>
+                    {annualData.totalOtherTaxes > 0 && (
+                      <tr className="bg-white">
+                        <td className="px-4 py-2.5 text-slate-600">Other Taxes</td>
+                        <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(annualData.totalOtherTaxes)}</td>
+                      </tr>
+                    )}
+                    <tr className="bg-slate-50 border-y border-slate-200">
+                      <td className="px-4 py-2.5 font-bold text-slate-700">Sub-Total Tax (D)</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmtMoney(annualData.totalPaye + annualData.totalOtherTaxes)}</td>
+                    </tr>
+
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-rose-50/50 border-t-2 border-rose-100">
+                      <td className="px-4 py-3 text-rose-700 font-bold">Total Deductions (B + C + D)</td>
+                      <td className="px-4 py-3 text-right text-rose-700 font-bold text-base">{fmtMoney(totalDeductions)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Net Pay Box */}
+              <div className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-2xl p-6 text-center mb-8 shadow-md">
+                <p className="text-[11px] uppercase font-semibold tracking-widest text-indigo-100 mb-1.5">Total Annual Net Salary (A − B − C − D)</p>
+                <p className="text-[12px] opacity-80 mb-4">{annualData.monthsCovered.join(', ')} · {year}</p>
+                <p className="text-4xl font-extrabold">{fmtMoney(annualData.totalNetSalary)}</p>
+              </div>
+
+              {/* Footer text */}
+              <p className="text-center text-[9px] font-medium text-slate-400 uppercase tracking-widest mt-6 border-t border-slate-200 pt-6">
+                This is a computer-generated annual payroll summary. Contact Human Resources for any discrepancies.<br/>
+                <span className="mt-1 block font-bold text-slate-500">Generated: {now.toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

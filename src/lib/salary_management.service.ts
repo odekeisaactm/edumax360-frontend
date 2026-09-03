@@ -7,12 +7,15 @@ import api from './api';
 import type {
   // Core models
   PaginatedResponse,
+  SalaryGlobalSetting,
+  SalaryGlobalSettingWrite,
   SalarySetting,
   SalarySettingWrite,
   SalaryStructure,
   SalaryStructureWrite,
   SalaryRecord,
   SalaryRecordWrite,
+  SalaryProcessingBatch,
   BonusCategory,
   BonusCategoryWrite,
   Bonus,
@@ -34,15 +37,47 @@ import type {
   StaffBankDetailListFilters,
   // Request payloads
   ProcessPayrollPayload,
-  ProcessPayrollResponse,
   MarkSalaryPaidPayload,
-  MarkSalaryPaidResponse,
+  EmailPayslipsPayload,
   SalaryAdvanceActionPayload,
   StaffLoanActionPayload,
   RecordLoanRepaymentPayload,
+  BulkChangeSettingPayload,
+  BulkChangeSettingResult,
   // Dashboard
   SalaryDashboardStats,
 } from './salary_management.types';
+
+// ====================================================================
+// HELPER: Safe Unwrapper
+// ====================================================================
+// Handles both standard DRF pagination {count, results: []}
+// and our custom APIResponse {success, data: []} seamlessly.
+const unwrapData = (res: any) => res.data?.data ?? res.data;
+const unwrapPaginated = (res: any) => {
+  const data = res.data;
+  // If wrapped inside DRF's standard pagination results
+  if (data?.results?.data) {
+    return { ...data, results: data.results.data };
+  }
+  return data;
+};
+
+// ====================================================================
+// 0. GLOBAL SETTINGS (Singleton)
+// ====================================================================
+
+export const salaryGlobalSettingsAPI = {
+  get: async (): Promise<SalaryGlobalSetting> => {
+    const response = await api.get('/api/salary-management/global-settings/');
+    return unwrapData(response);
+  },
+
+  patch: async (data: SalaryGlobalSettingWrite): Promise<SalaryGlobalSetting> => {
+    const response = await api.patch('/api/salary-management/global-settings/', data);
+    return unwrapData(response);
+  },
+};
 
 // ====================================================================
 // 1. SALARY SETTINGS
@@ -51,27 +86,27 @@ import type {
 export const salarySettingsAPI = {
   list: async (): Promise<SalarySetting[]> => {
     const response = await api.get('/api/salary-management/settings/');
-    return response.data.data || [];
+    return unwrapData(response) || [];
   },
 
   create: async (data: SalarySettingWrite): Promise<SalarySetting> => {
     const response = await api.post('/api/salary-management/settings/', data);
-    return response.data.data;
+    return unwrapData(response);
   },
 
   get: async (id: number): Promise<SalarySetting> => {
     const response = await api.get(`/api/salary-management/settings/${id}/`);
-    return response.data.data;
+    return unwrapData(response);
   },
 
   update: async (id: number, data: SalarySettingWrite): Promise<SalarySetting> => {
     const response = await api.put(`/api/salary-management/settings/${id}/`, data);
-    return response.data.data;
+    return unwrapData(response);
   },
 
   patch: async (id: number, data: Partial<SalarySettingWrite>): Promise<SalarySetting> => {
     const response = await api.patch(`/api/salary-management/settings/${id}/`, data);
-    return response.data.data;
+    return unwrapData(response);
   },
 
   delete: async (id: number): Promise<void> => {
@@ -84,48 +119,38 @@ export const salarySettingsAPI = {
 // ====================================================================
 
 export const salaryStructuresAPI = {
-  /**
-   * List salary structures with optional filters
-   */
   list: async (filters?: SalaryStructureListFilters): Promise<PaginatedResponse<SalaryStructure>> => {
-      const response = await api.get('/api/salary-management/structures/', { params: filters });
-      return response.data;
-    },
+    const response = await api.get('/api/salary-management/structures/', { params: filters });
+    return unwrapPaginated(response);
+  },
 
-  /**
-   * Create a new salary structure
-   */
   create: async (data: SalaryStructureWrite): Promise<SalaryStructure> => {
-      const response = await api.post('/api/salary-management/structures/', data);
-      return response.data.data || response.data;
-    },
+    const response = await api.post('/api/salary-management/structures/', data);
+    return unwrapData(response);
+  },
 
-  /**
-   * Retrieve a salary structure by ID
-   */
   get: async (id: number): Promise<SalaryStructure> => {
-  const response = await api.get(`/api/salary-management/structures/${id}/`);
-  return response.data.data || response.data;
-},
+    const response = await api.get(`/api/salary-management/structures/${id}/`);
+    return unwrapData(response);
+  },
 
-update: async (id: number, data: SalaryStructureWrite): Promise<SalaryStructure> => {
-  const response = await api.put(`/api/salary-management/structures/${id}/`, data);
-  return response.data.data || response.data;
-},
+  update: async (id: number, data: SalaryStructureWrite): Promise<SalaryStructure> => {
+    const response = await api.put(`/api/salary-management/structures/${id}/`, data);
+    return unwrapData(response);
+  },
 
-patch: async (id: number, data: Partial<SalaryStructureWrite>): Promise<SalaryStructure> => {
-  const response = await api.patch(`/api/salary-management/structures/${id}/`, data);
-  return response.data.data || response.data;
-},
-  /**
-   * Delete a salary structure
-   */
+  patch: async (id: number, data: Partial<SalaryStructureWrite>): Promise<SalaryStructure> => {
+    const response = await api.patch(`/api/salary-management/structures/${id}/`, data);
+    return unwrapData(response);
+  },
+
   delete: async (id: number): Promise<void> => {
     await api.delete(`/api/salary-management/structures/${id}/`);
   },
-   bulkChangeSetting: async (payload: BulkChangeSettingPayload): Promise<BulkChangeSettingResult> => {
+
+  bulkChangeSetting: async (payload: BulkChangeSettingPayload): Promise<BulkChangeSettingResult> => {
     const response = await api.post('/api/salary-management/structures/bulk-change-setting/', payload);
-    return response.data.data || response.data;
+    return unwrapData(response);
   },
 };
 
@@ -135,153 +160,152 @@ patch: async (id: number, data: Partial<SalaryStructureWrite>): Promise<SalarySt
 
 export const payrollAPI = {
   /**
-   * Process payroll (generate payslips) for a given month/year
+   * Process payroll asynchronously (Returns a Batch Tracker)
    */
-  process: async (payload: ProcessPayrollPayload): Promise<ProcessPayrollResponse> => {
-  const response = await api.post('/api/salary-management/payroll/process/', payload);
-  return response.data;
-},
-  /**
-   * List salary records (payslips) with optional filters
-   */
-  listRecords: async (filters?: SalaryRecordListFilters): Promise<SalaryRecord[]> => {
-    const response = await api.get('/api/salary-management/payroll/records/', { params: filters });
-    return response.data.results || response.data;
+  process: async (payload: ProcessPayrollPayload): Promise<SalaryProcessingBatch> => {
+    const response = await api.post('/api/salary-management/payroll/process/', { records: payload });
+    return unwrapData(response);
   },
 
   /**
-   * Retrieve a single salary record by ID
+   * Poll this endpoint to update the frontend progress bar
    */
+  getBatchStatus: async (id: number): Promise<SalaryProcessingBatch> => {
+    const response = await api.get(`/api/salary-management/payroll/batches/${id}/`);
+    return unwrapData(response);
+  },
+
+  listRecords: async (filters?: SalaryRecordListFilters): Promise<PaginatedResponse<SalaryRecord> | SalaryRecord[]> => {
+    const response = await api.get('/api/salary-management/records/', { params: filters });
+    return unwrapPaginated(response);
+  },
+
+  myRecords: async (filters?: SalaryRecordListFilters): Promise<PaginatedResponse<SalaryRecord> | SalaryRecord[]> => {
+    const response = await api.get('/api/salary-management/records/my/', { params: filters });
+    return unwrapPaginated(response);
+  },
+
   getRecord: async (id: number): Promise<SalaryRecord> => {
-    const response = await api.get(`/api/salary-management/payroll/records/${id}/`);
-    return response.data;
+    const response = await api.get(`/api/salary-management/records/${id}/`);
+    return unwrapData(response);
   },
 
-  /**
-   * Update a salary record (e.g., notes) – most fields are read-only
-   */
   patchRecord: async (id: number, data: Partial<SalaryRecordWrite>): Promise<SalaryRecord> => {
-    const response = await api.patch(`/api/salary-management/payroll/records/${id}/`, data);
-    return response.data;
+    const response = await api.patch(`/api/salary-management/records/${id}/`, data);
+    return unwrapData(response);
   },
 
-  /**
-   * Delete a salary record
-   */
   deleteRecord: async (id: number): Promise<void> => {
-    await api.delete(`/api/salary-management/payroll/records/${id}/`);
+    await api.delete(`/api/salary-management/records/${id}/`);
   },
 
-  /**
-   * Mark a salary record as paid (or update payment details)
-   */
-  markPaid: async (id: number, payload?: MarkSalaryPaidPayload): Promise<MarkSalaryPaidResponse> => {
-    const response = await api.post(`/api/salary-management/payroll/records/${id}/mark-paid/`, payload || {});
-    return response.data;
+  markPaid: async (payload: MarkSalaryPaidPayload): Promise<any> => {
+    const response = await api.post('/api/salary-management/records/mark-paid/', payload);
+    return unwrapData(response);
   },
+
+  emailPayslips: async (payload: EmailPayslipsPayload): Promise<any> => {
+    const response = await api.post('/api/salary-management/records/email-payslips/', payload);
+    return unwrapData(response);
+  }
 };
-
-
 
 // ====================================================================
 // 4. BONUSES
 // ====================================================================
-export const bonusCategoriesAPI = {
-  /**
-   * List bonus categories with optional filters
-   */
-  list: async (filters?: { is_active?: boolean }): Promise<BonusCategory[]> => {
-    const response = await api.get('/api/salary-management/bonus-categories/', { params: filters });
-    const res = response.data;
 
-    // Unwrap: { count, next, previous, results: { success, data: [...] } }
-    if (res.results) {
-      return res.results.data || (Array.isArray(res.results) ? res.results : []);
-    }
-    // Unwrap: { success, data: [...] }
-    return res.data || (Array.isArray(res) ? res : []);
+export const bonusCategoriesAPI = {
+  list: async (filters?: { is_active?: boolean }): Promise<PaginatedResponse<BonusCategory> | BonusCategory[]> => {
+    const response = await api.get('/api/salary-management/bonus-categories/', { params: filters });
+    return unwrapPaginated(response);
   },
 
-  /**
-   * Create a new bonus category
-   */
   create: async (data: BonusCategoryWrite): Promise<BonusCategory> => {
     const response = await api.post('/api/salary-management/bonus-categories/', data);
-    return response.data.data || response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Retrieve a bonus category by ID
-   */
   get: async (id: number): Promise<BonusCategory> => {
     const response = await api.get(`/api/salary-management/bonus-categories/${id}/`);
-    return response.data.data || response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Update a bonus category (PUT)
-   */
   update: async (id: number, data: BonusCategoryWrite): Promise<BonusCategory> => {
     const response = await api.put(`/api/salary-management/bonus-categories/${id}/`, data);
-    return response.data.data || response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Partial update a bonus category (PATCH)
-   */
   patch: async (id: number, data: Partial<BonusCategoryWrite>): Promise<BonusCategory> => {
     const response = await api.patch(`/api/salary-management/bonus-categories/${id}/`, data);
-    return response.data.data || response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Delete a bonus category
-   */
   delete: async (id: number): Promise<void> => {
     await api.delete(`/api/salary-management/bonus-categories/${id}/`);
   },
 };
 
-
 export const bonusesAPI = {
-    list: async (filters?: BonusListFilters): Promise<any> => {
+  list: async (filters?: BonusListFilters): Promise<any> => {
     const response = await api.get('/api/salary-management/bonuses/', { params: filters });
     const d = response.data;
     if (d.results) {
       const data = d.results.data || d.results;
-      return { results: Array.isArray(data) ? data : [], count: d.count || 0, stats: d.results.stats || null }; // CHANGED d.stats to d.results.stats
+      return {
+        results: Array.isArray(data) ? data : [],
+        count: d.count || 0,
+        stats: d.results.stats || d.stats || null
+      };
     }
     const data = d.data || d;
-    return { results: Array.isArray(data) ? data : [], count: Array.isArray(data) ? data.length : 0, stats: d.stats || null };
+    return {
+      results: Array.isArray(data) ? data : [],
+      count: Array.isArray(data) ? data.length : 0,
+      stats: d.stats || null
+    };
   },
-   myList: async (filters?: Pick<BonusListFilters, 'month' | 'year' | 'status' | 'academic_period' | 'session' | 'page' | 'page_size'>): Promise<any> => {
+
+  myList: async (filters?: Pick<BonusListFilters, 'month' | 'year' | 'status' | 'academic_period' | 'session' | 'page' | 'page_size'>): Promise<any> => {
     const response = await api.get('/api/salary-management/bonuses/my/', { params: filters });
     const d = response.data;
     if (d.results) {
       const data = d.results.data || d.results;
-      return { results: Array.isArray(data) ? data : [], count: d.count || 0, stats: d.results.stats || null };
+      return {
+        results: Array.isArray(data) ? data : [],
+        count: d.count || 0,
+        stats: d.results.stats || d.stats || null
+      };
     }
     const data = d.data || d;
-    return { results: Array.isArray(data) ? data : [], count: Array.isArray(data) ? data.length : 0, stats: d.stats || null };
+    return {
+      results: Array.isArray(data) ? data : [],
+      count: Array.isArray(data) ? data.length : 0,
+      stats: d.stats || null
+    };
   },
+
   create: async (data: BonusWrite): Promise<Bonus> => {
     const response = await api.post('/api/salary-management/bonuses/', data);
-    return response.data.data || response.data;
+    return unwrapData(response);
   },
+
   get: async (id: number): Promise<Bonus> => {
     const response = await api.get(`/api/salary-management/bonuses/${id}/`);
-    return response.data.data || response.data;
+    return unwrapData(response);
   },
+
   update: async (id: number, data: BonusWrite): Promise<Bonus> => {
     const response = await api.put(`/api/salary-management/bonuses/${id}/`, data);
-    return response.data.data || response.data;
+    return unwrapData(response);
   },
+
   delete: async (id: number): Promise<void> => {
     await api.delete(`/api/salary-management/bonuses/${id}/`);
   },
+
   markPaid: async (id: number): Promise<Bonus> => {
     const response = await api.post(`/api/salary-management/bonuses/${id}/mark-paid/`);
-    return response.data.data || response.data;
+    return unwrapData(response);
   },
 };
 
@@ -290,59 +314,38 @@ export const bonusesAPI = {
 // ====================================================================
 
 export const salaryAdvancesAPI = {
-  /**
-   * List salary advances with optional filters
-   */
-  list: async (filters?: SalaryAdvanceListFilters): Promise<SalaryAdvance[]> => {
+  list: async (filters?: SalaryAdvanceListFilters): Promise<PaginatedResponse<SalaryAdvance> | SalaryAdvance[]> => {
     const response = await api.get('/api/salary-management/advances/', { params: filters });
-    return response.data.results || response.data;
+    return unwrapPaginated(response);
   },
 
-  /**
-   * Create a new salary advance request
-   */
   create: async (data: SalaryAdvanceWrite): Promise<SalaryAdvance> => {
     const response = await api.post('/api/salary-management/advances/', data);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Retrieve a salary advance by ID
-   */
   get: async (id: number): Promise<SalaryAdvance> => {
     const response = await api.get(`/api/salary-management/advances/${id}/`);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Update a salary advance (PUT)
-   */
   update: async (id: number, data: SalaryAdvanceWrite): Promise<SalaryAdvance> => {
     const response = await api.put(`/api/salary-management/advances/${id}/`, data);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Partial update a salary advance (PATCH)
-   */
   patch: async (id: number, data: Partial<SalaryAdvanceWrite>): Promise<SalaryAdvance> => {
     const response = await api.patch(`/api/salary-management/advances/${id}/`, data);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Delete a salary advance
-   */
   delete: async (id: number): Promise<void> => {
     await api.delete(`/api/salary-management/advances/${id}/`);
   },
 
-  /**
-   * Perform an action on a salary advance (approve/reject/disburse)
-   */
   action: async (id: number, payload: SalaryAdvanceActionPayload): Promise<SalaryAdvance> => {
     const response = await api.post(`/api/salary-management/advances/${id}/action/`, payload);
-    return response.data;
+    return unwrapData(response);
   },
 };
 
@@ -351,67 +354,43 @@ export const salaryAdvancesAPI = {
 // ====================================================================
 
 export const staffLoansAPI = {
-  /**
-   * List staff loans with optional filters
-   */
-  list: async (filters?: StaffLoanListFilters): Promise<StaffLoan[]> => {
+  list: async (filters?: StaffLoanListFilters): Promise<PaginatedResponse<StaffLoan> | StaffLoan[]> => {
     const response = await api.get('/api/salary-management/loans/', { params: filters });
-    return response.data.results || response.data;
+    return unwrapPaginated(response);
   },
 
-  /**
-   * Create a new staff loan request
-   */
   create: async (data: StaffLoanWrite): Promise<StaffLoan> => {
     const response = await api.post('/api/salary-management/loans/', data);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Retrieve a staff loan by ID
-   */
   get: async (id: number): Promise<StaffLoan> => {
     const response = await api.get(`/api/salary-management/loans/${id}/`);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Update a staff loan (PUT)
-   */
   update: async (id: number, data: StaffLoanWrite): Promise<StaffLoan> => {
     const response = await api.put(`/api/salary-management/loans/${id}/`, data);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Partial update a staff loan (PATCH)
-   */
   patch: async (id: number, data: Partial<StaffLoanWrite>): Promise<StaffLoan> => {
     const response = await api.patch(`/api/salary-management/loans/${id}/`, data);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Delete a staff loan
-   */
   delete: async (id: number): Promise<void> => {
     await api.delete(`/api/salary-management/loans/${id}/`);
   },
 
-  /**
-   * Perform an action on a staff loan (approve/reject/disburse)
-   */
   action: async (id: number, payload: StaffLoanActionPayload): Promise<StaffLoan> => {
     const response = await api.post(`/api/salary-management/loans/${id}/action/`, payload);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Record a loan repayment for a specific staff member
-   */
   recordRepayment: async (staffPk: number, payload: RecordLoanRepaymentPayload): Promise<StaffLoanRepayment> => {
     const response = await api.post(`/api/salary-management/loans/staff/${staffPk}/repay/`, payload);
-    return response.data;
+    return unwrapData(response);
   },
 };
 
@@ -420,65 +399,43 @@ export const staffLoansAPI = {
 // ====================================================================
 
 export const staffBankDetailsAPI = {
-  /**
-   * List staff bank details with optional filters
-   */
-  list: async (filters?: StaffBankDetailListFilters): Promise<StaffBankDetail[]> => {
+  list: async (filters?: StaffBankDetailListFilters): Promise<PaginatedResponse<StaffBankDetail> | StaffBankDetail[]> => {
     const response = await api.get('/api/salary-management/bank-details/', { params: filters });
-    return response.data.results || response.data;
+    return unwrapPaginated(response);
   },
 
-  /**
-   * Create a new staff bank detail entry
-   */
   create: async (data: StaffBankDetailWrite): Promise<StaffBankDetail> => {
     const response = await api.post('/api/salary-management/bank-details/', data);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Retrieve a staff bank detail by ID
-   */
   get: async (id: number): Promise<StaffBankDetail> => {
     const response = await api.get(`/api/salary-management/bank-details/${id}/`);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Update a staff bank detail (PUT)
-   */
   update: async (id: number, data: StaffBankDetailWrite): Promise<StaffBankDetail> => {
     const response = await api.put(`/api/salary-management/bank-details/${id}/`, data);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Partial update a staff bank detail (PATCH)
-   */
   patch: async (id: number, data: Partial<StaffBankDetailWrite>): Promise<StaffBankDetail> => {
     const response = await api.patch(`/api/salary-management/bank-details/${id}/`, data);
-    return response.data;
+    return unwrapData(response);
   },
 
-  /**
-   * Delete a staff bank detail
-   */
   delete: async (id: number): Promise<void> => {
     await api.delete(`/api/salary-management/bank-details/${id}/`);
   },
 };
 
 // ====================================================================
-// 8. DASHBOARD (Optional - if you implement a dashboard endpoint)
+// 8. DASHBOARD
 // ====================================================================
 
 export const salaryDashboardAPI = {
-  /**
-   * Get salary management dashboard statistics
-   * (This endpoint is not defined in the provided URLs, but you can add if needed)
-   */
   getStats: async (): Promise<SalaryDashboardStats> => {
     const response = await api.get('/api/salary-management/dashboard/stats/');
-    return response.data;
+    return unwrapData(response);
   },
 };

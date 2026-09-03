@@ -192,9 +192,9 @@ export default function SalarySettingsListPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canCreate = user?.is_superuser || hasPermission('salary_management.add_salaryrecordmodel');
-  const canEdit = user?.is_superuser || hasPermission('salary_management.change_salaryrecordmodel');
-  const canView = user?.is_superuser || hasPermission('salary_management.view_salaryrecordmodel');
+  const canCreate = user?.is_superuser || hasPermission('salary_management.change_salarysettingmodel');
+  const canEdit = user?.is_superuser || hasPermission('salary_management.change_salarysettingmodel');
+  const canView = user?.is_superuser || hasPermission('salary_management.view_salarysettingmodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;
@@ -223,8 +223,8 @@ export default function SalarySettingsListPage() {
   // ── Stats ──
   const total = settings.length;
   const activeCount = settings.filter((s) => s.is_active).length;
+  const inactiveCount = settings.filter((s) => !s.is_active).length;
   const lockedCount = settings.filter((s) => s.is_locked).length;
-  const inactiveCount = total - activeCount - lockedCount;
 
   if (!canView) {
     return (

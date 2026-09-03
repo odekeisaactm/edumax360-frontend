@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { schoolSettingsAPI, aiConfigAPI } from '@/lib/api';
+import { whatsAppConfigAPI } from '@/lib/communication.service'; // Added WhatsApp API import
 import { useAuth, useRequireAuth } from '@/context/AuthContext';
-import { SchoolAIConfig, SchoolInfo, SchoolSettings } from '@/lib/types';
+import { SchoolAIConfig, SchoolSettings } from '@/lib/types';
 import {
   Settings, Edit3, X, Check, AlertCircle, Sparkles,
   Monitor, Building, Calendar, Loader2, Bot,
   Bell, Mail, MessageSquare, Database, Shield,
-  Users, Smartphone, ChevronRight,
+  Users, Smartphone, ChevronRight, Wallet, Key, Lock
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -29,6 +31,8 @@ interface SettingsForm {
   enable_automatic_backup: boolean;
   maintenance_mode: boolean;
   active_ai_config_id: number | null;
+  ai_billing_mode: 'disabled' | 'platform_wallet' | 'school_owns_key' | 'staff_pays' | 'parent_pays';
+  active_whatsapp_config_id: number | null; // Added field
 }
 
 const DEFAULT_FORM: SettingsForm = {
@@ -38,7 +42,9 @@ const DEFAULT_FORM: SettingsForm = {
   default_period_type: 'term', school_week_start_day: 'monday',
   items_per_page: 25, date_format: 'DD/MM/YYYY',
   delete_archived_data_after_years: 7, backup_frequency_days: 7,
-  enable_automatic_backup: true, maintenance_mode: false, active_ai_config_id: null,
+  enable_automatic_backup: true, maintenance_mode: false,
+  active_ai_config_id: null, ai_billing_mode: 'platform_wallet',
+  active_whatsapp_config_id: null,
 };
 
 function settingsToForm(s: any): SettingsForm {
@@ -59,6 +65,8 @@ function settingsToForm(s: any): SettingsForm {
     enable_automatic_backup: s.enable_automatic_backup ?? true,
     maintenance_mode: s.maintenance_mode ?? false,
     active_ai_config_id: s.active_ai_config ?? null,
+    ai_billing_mode: s.ai_billing_mode ?? 'platform_wallet',
+    active_whatsapp_config_id: s.active_whatsapp_config ?? null,
   };
 }
 
@@ -68,7 +76,7 @@ function Toggle({ checked, onChange, label, description }: {
 }) {
   return (
     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-slate-200 transition-colors">
-      <div>
+      <div className="flex-1 pr-4">
         <p className="text-sm font-medium text-slate-800">{label}</p>
         {description && <p className="text-xs text-slate-400 mt-0.5">{description}</p>}
       </div>
@@ -95,7 +103,6 @@ function StatusBadge({ value, activeLabel = 'Enabled', inactiveLabel = 'Disabled
   );
 }
 
-// ─── Settings Row ──────────────────────────────────────────────────────────────
 function SettingRow({ icon: Icon, iconBg, label, value, description }: {
   icon: any; iconBg: string; label: string; value: React.ReactNode; description: string;
 }) {
@@ -113,19 +120,303 @@ function SettingRow({ icon: Icon, iconBg, label, value, description }: {
   );
 }
 
-// ─── Main Page ─────────────────────────────────────────────────────────────────
+const inputCls = "w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white";
+const labelCls = "block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5";
+
+// ─── Settings Modal ────────────────────────────────────────────────────────────
+function SettingsModal({ settings, aiConfigs, waConfigs, isSaving, onSave, onClose, canManageWhatsApp }: {
+  settings: any;
+  aiConfigs: SchoolAIConfig[];
+  waConfigs: any[]; // Added WhatsApp Configs
+  isSaving: boolean;
+  onSave: (f: SettingsForm) => Promise<void>;
+  onClose: () => void;
+  canManageWhatsApp: boolean;
+}) {
+  const [activeTab, setActiveTab] = useState<'general' | 'academic' | 'system' | 'integrations'>('general');
+  const [form, setForm] = useState<SettingsForm>(settings ? settingsToForm(settings) : DEFAULT_FORM);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const set = <K extends keyof SettingsForm>(key: K, value: SettingsForm[K]) =>
+    setForm(prev => ({ ...prev, [key]: value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault(); setSaveError(null);
+    try { await onSave(form); }
+    catch (err: any) {
+      const data = err?.response?.data;
+      setSaveError(data?.detail || data?.message || err?.message || 'Failed to save settings.');
+    }
+  };
+
+  const tabs = [
+    { id: 'general', label: 'General' },
+    { id: 'academic', label: 'Academic' },
+    { id: 'system', label: 'System' },
+    { id: 'integrations', label: 'Integrations' },
+  ] as const;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col h-[85vh]">
+
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            {settings ? 'Edit School Settings' : 'Create School Settings'}
+          </h3>
+          <button onClick={onClose} disabled={isSaving}
+            className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Error */}
+        {saveError && (
+          <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 flex items-start gap-2 flex-shrink-0">
+            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" /><span>{saveError}</span>
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div className="flex border-b border-slate-100 px-6 flex-shrink-0 gap-1 overflow-x-auto">
+          {tabs.map(t => (
+            <button key={t.id} type="button" onClick={() => setActiveTab(t.id)}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${activeTab === t.id ? 'text-blue-600 border-blue-600' : 'text-slate-400 border-transparent hover:text-slate-600'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Scrollable form */}
+        <form id="school-settings-form" onSubmit={handleSubmit} className="overflow-y-auto flex-1 min-h-0">
+          <div className="p-6 space-y-5">
+
+            {/* General */}
+            {activeTab === 'general' && (
+              <>
+                <div>
+                  <label className={labelCls}>School Type</label>
+                  <select value={form.school_type} onChange={e => set('school_type', e.target.value as 'day' | 'boarding' | 'mixed')} className={inputCls}>
+                    <option value="day">Day School</option>
+                    <option value="boarding">Boarding School</option>
+                    <option value="mixed">Mixed (Day & Boarding)</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Toggle checked={form.enable_notifications} onChange={v => set('enable_notifications', v)} label="Notifications" description="System-wide notifications" />
+                  <Toggle checked={form.parent_portal_enabled} onChange={v => set('parent_portal_enabled', v)} label="Parent Portal" description="Allow parents to access portal" />
+                  <Toggle checked={form.student_portal_enabled} onChange={v => set('student_portal_enabled', v)} label="Student Portal" description="Allow students to access portal" />
+                  <Toggle checked={form.separate_school_sections_data} onChange={v => set('separate_school_sections_data', v)} label="Separate Sections" description="Isolate section data" />
+                  <Toggle checked={form.enable_sms_notifications} onChange={v => set('enable_sms_notifications', v)} label="SMS Notifications" description="Enable SMS system-wide" />
+                  <Toggle checked={form.enable_email_notifications} onChange={v => set('enable_email_notifications', v)} label="Email Notifications" description="Enable email system-wide" />
+                </div>
+              </>
+            )}
+
+            {/* Academic */}
+            {activeTab === 'academic' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Default Period Type</label>
+                  <select value={form.default_period_type} onChange={e => set('default_period_type', e.target.value as 'term' | 'semester' | 'quarter' | 'trimester')} className={inputCls}>
+                    <option value="term">Term</option>
+                    <option value="semester">Semester</option>
+                    <option value="quarter">Quarter</option>
+                    <option value="trimester">Trimester</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Week Start Day</label>
+                  <select value={form.school_week_start_day} onChange={e => set('school_week_start_day', e.target.value as 'monday' | 'sunday' | 'saturday')} className={inputCls}>
+                    <option value="monday">Monday</option>
+                    <option value="sunday">Sunday</option>
+                    <option value="saturday">Saturday</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* System */}
+            {activeTab === 'system' && (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelCls}>Items Per Page</label>
+                    <select value={form.items_per_page} onChange={e => set('items_per_page', Number(e.target.value) as 10 | 25 | 50 | 100)} className={inputCls}>
+                      {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Date Format</label>
+                    <select value={form.date_format} onChange={e => set('date_format', e.target.value as 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD')} className={inputCls}>
+                      <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                      <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                      <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Archive Data After (Years)</label>
+                    <input type="number" min={0} max={50} value={form.delete_archived_data_after_years}
+                      onChange={e => set('delete_archived_data_after_years', Number(e.target.value))} className={inputCls} />
+                    <p className="text-xs text-slate-400 mt-1">0 = never delete</p>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Backup Frequency (Days)</label>
+                    <input type="number" min={1} max={365} value={form.backup_frequency_days}
+                      onChange={e => set('backup_frequency_days', Number(e.target.value))} className={inputCls} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                  <Toggle checked={form.enable_automatic_backup} onChange={v => set('enable_automatic_backup', v)} label="Automatic Backup" description="Enable scheduled backups" />
+                  <Toggle checked={form.maintenance_mode} onChange={v => set('maintenance_mode', v)} label="Maintenance Mode" description="Blocks non-admin access" />
+                </div>
+              </>
+            )}
+
+            {/* Integrations */}
+            {activeTab === 'integrations' && (
+              <div className="space-y-6">
+
+                {/* AI Billing & Setup */}
+                <div className="space-y-4">
+                  <div>
+                    <label className={labelCls}>AI Billing Mode</label>
+                    <select value={form.ai_billing_mode} onChange={e => set('ai_billing_mode', e.target.value as any)} className={inputCls}>
+                      <option value="disabled">Disabled (No AI)</option>
+                      <option value="platform_wallet">Platform Credits (School Wallet)</option>
+                      <option value="school_owns_key">Bring Your Own Key (School API Key)</option>
+                      <option value="staff_pays">Staff Pays (Personal Wallet)</option>
+                      <option value="parent_pays">Parent Pays (Personal Wallet)</option>
+                    </select>
+                    <p className="text-xs text-slate-400 mt-1.5">Determines how AI token usage is billed across the system.</p>
+                  </div>
+
+                  {form.ai_billing_mode === 'school_owns_key' && (
+                    <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Key className="h-4 w-4 text-indigo-600" />
+                        <h4 className="text-sm font-semibold text-indigo-900">Select School API Key</h4>
+                      </div>
+                      <p className="text-xs text-indigo-600 mb-3">Because you chose 'Bring Your Own Key', you must select an active configuration below.</p>
+
+                      {aiConfigs.length === 0 ? (
+                        <div className="p-3 bg-white rounded-lg border border-indigo-200 text-xs text-slate-500 text-center">
+                          No active AI configurations found. Create one in Settings → AI Configs first.
+                        </div>
+                      ) : (
+                        <select value={form.active_ai_config_id ?? ''}
+                          onChange={e => set('active_ai_config_id', e.target.value ? Number(e.target.value) : null)}
+                          className={inputCls}>
+                          <option value="">— Select an AI Provider —</option>
+                          {aiConfigs.map(c => (
+                            <option key={c.id} value={c.id}>{c.name} ({c.provider} / {c.model_name})</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+
+                  {form.ai_billing_mode === 'platform_wallet' && (
+                    <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 flex items-start gap-3">
+                      <Wallet className="h-5 w-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-sm font-semibold text-emerald-900">Platform Wallet Active</h4>
+                        <p className="text-xs text-emerald-700 mt-1 leading-relaxed">
+                          You are using the platform's central AI models. AI tasks will be deducted directly from your school's credit balance. No API keys are required.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <hr className="border-slate-100" />
+
+                {/* WhatsApp Dropdown */}
+                <div className="p-5 rounded-xl border border-slate-200 bg-slate-50">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-full bg-[#25D366] flex items-center justify-center">
+                        <span className="text-white text-[10px] font-bold">W</span>
+                      </div>
+                      <h4 className="text-sm font-semibold text-slate-800">WhatsApp Integration</h4>
+                    </div>
+                    {canManageWhatsApp ? (
+                      <Link href="/dashboard/staff/communication/whatsapp-configs" onClick={onClose}
+                        className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors">
+                        Manage Providers <ChevronRight className="h-3 w-3" />
+                      </Link>
+                    ) : (
+                      <span className="text-[10px] font-medium text-slate-400 flex items-center gap-1 uppercase tracking-wider">
+                        <Lock className="h-3 w-3" /> Restricted
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className={labelCls}>Active WhatsApp Provider</label>
+                    {waConfigs.length === 0 ? (
+                      <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs text-slate-500 text-center">
+                        No WhatsApp configurations found. Please add one in Communication settings.
+                      </div>
+                    ) : (
+                      <select value={form.active_whatsapp_config_id ?? ''}
+                        onChange={e => set('active_whatsapp_config_id', e.target.value ? Number(e.target.value) : null)}
+                        className={inputCls}>
+                        <option value="">— None —</option>
+                        {waConfigs.map(c => (
+                          <option key={c.id} value={c.id}>{c.name} ({c.from_phone_number})</option>
+                        ))}
+                      </select>
+                    )}
+                    <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                      Select the default WhatsApp channel to use for automated school messages and the AI bot.
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+          </div>
+        </form>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex-shrink-0">
+          <button type="button" onClick={onClose} disabled={isSaving}
+            className="px-4 py-2 text-sm border border-slate-200 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
+            Cancel
+          </button>
+          <button type="submit" form="school-settings-form" disabled={isSaving}
+            className="px-5 py-2 text-sm bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-blue-200">
+            {isSaving
+              ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
+              : <><Check className="h-4 w-4" />{settings ? 'Save Changes' : 'Create Settings'}</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Page Component ───────────────────────────────────────────────────────
 export default function SchoolSettingsPage() {
   const { hasPermission, user } = useAuth();
   const { authReady } = useRequireAuth();
+
   const [schoolSettings, setSchoolSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<'not_found' | 'fetch_error' | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [aiConfigs, setAiConfigs] = useState<SchoolAIConfig[]>([]);
 
-  const canEdit = user?.is_superuser || hasPermission('school_configuration.changeschoolsettingsmodel');
+  const [aiConfigs, setAiConfigs] = useState<SchoolAIConfig[]>([]);
+  const [waConfigs, setWaConfigs] = useState<any[]>([]); // To hold WhatsApp configs
+
+  const canEdit = user?.is_superuser || hasPermission('school_configuration.change_schoolsettingsmodel');
+  const canManageWhatsApp = user?.is_superuser || hasPermission('communication.manage_communication_settings');
 
   useEffect(() => {
     if (authReady && user) fetchAll();
@@ -134,15 +425,29 @@ export default function SchoolSettingsPage() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [settingsData, aiData] = await Promise.all([
+      // Fetch Settings, AI Configs, and WhatsApp Configs concurrently
+      const [settingsData, aiData, waData] = await Promise.all([
         schoolSettingsAPI.get(),
         aiConfigAPI.list().catch(() => []),
+        whatsAppConfigAPI.list().catch(() => []),
       ]);
-      if (settingsData === null) { setPageError('not_found'); setSchoolSettings(null); }
-      else { setSchoolSettings(settingsData); setPageError(null); }
+
+      if (settingsData === null) {
+        setPageError('not_found');
+        setSchoolSettings(null);
+      } else {
+        setSchoolSettings(settingsData);
+        setPageError(null);
+      }
+
       setAiConfigs(Array.isArray(aiData) ? aiData.filter((c: SchoolAIConfig) => c.is_active) : []);
-    } catch { setPageError('fetch_error'); }
-    finally { setLoading(false); }
+      setWaConfigs(Array.isArray(waData) ? waData : []);
+
+    } catch {
+      setPageError('fetch_error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSave = async (form: SettingsForm) => {
@@ -190,7 +495,7 @@ export default function SchoolSettingsPage() {
 
   if (pageError === 'not_found' && !schoolSettings) return (
     <>
-      {isEditing && <SettingsModal settings={null} aiConfigs={aiConfigs} isSaving={isSaving} onSave={handleSave} onClose={() => setIsEditing(false)} />}
+      {isEditing && <SettingsModal settings={null} aiConfigs={aiConfigs} waConfigs={waConfigs} isSaving={isSaving} onSave={handleSave} onClose={() => setIsEditing(false)} canManageWhatsApp={canManageWhatsApp} />}
       <div className="min-h-[600px] flex items-center justify-center">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-100 p-10 text-center space-y-6">
           <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-2xl flex items-center justify-center mx-auto">
@@ -217,6 +522,8 @@ export default function SchoolSettingsPage() {
 
   const s = schoolSettings;
   const activeAI = aiConfigs.find(c => c.id === s?.active_ai_config) ?? s?.active_ai_config_details ?? null;
+  const activeWA = s?.active_whatsapp_config_details;
+  const hasWhatsApp = !!s?.active_whatsapp_config;
 
   return (
     <div className="space-y-6 pb-10">
@@ -232,7 +539,7 @@ export default function SchoolSettingsPage() {
         </div>
       )}
 
-      {isEditing && <SettingsModal settings={s} aiConfigs={aiConfigs} isSaving={isSaving} onSave={handleSave} onClose={() => setIsEditing(false)} />}
+      {isEditing && <SettingsModal settings={s} aiConfigs={aiConfigs} waConfigs={waConfigs} isSaving={isSaving} onSave={handleSave} onClose={() => setIsEditing(false)} canManageWhatsApp={canManageWhatsApp} />}
 
       {/* ── Page header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -324,67 +631,94 @@ export default function SchoolSettingsPage() {
           </div>
         </div>
 
-        {/* AI Integration */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        {/* AI & Integrations */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
           <div className="px-5 py-4 border-b border-slate-50 flex items-center gap-2">
             <div className="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center">
               <Bot className="h-3.5 w-3.5 text-indigo-600" />
             </div>
             <h3 className="text-sm font-semibold text-slate-800">AI & Integrations</h3>
           </div>
-          <div className="p-4 space-y-3">
-            {activeAI ? (
-              <div className="p-4 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl border border-indigo-100">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm border border-indigo-100">
-                      <Bot className="h-4 w-4 text-indigo-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800 truncate max-w-[140px]">{activeAI.name}</p>
-                      <p className="text-xs text-indigo-500 capitalize">{activeAI.provider}</p>
-                    </div>
-                  </div>
-                  <StatusBadge value={true} activeLabel="Active" />
-                </div>
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Model</span>
-                    <span className="font-mono font-medium text-slate-700 truncate max-w-[120px]">{activeAI.model_name}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Usage</span>
-                    <span className="font-medium text-slate-700">
-                      {activeAI.tokens_used_this_month?.toLocaleString() ?? 0} / {activeAI.monthly_token_limit?.toLocaleString() ?? '∞'}
-                    </span>
-                  </div>
-                </div>
+          <div className="p-4 space-y-4 flex-1">
+
+            {/* AI Billing Mode Info */}
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Billing Mode</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700 uppercase">
+                  {s?.ai_billing_mode?.replace(/_/g, ' ') || 'Platform Wallet'}
+                </span>
               </div>
-            ) : (
-              <div className="p-5 text-center rounded-xl border-2 border-dashed border-slate-200">
-                <Bot className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs font-medium text-slate-500">No AI config linked</p>
-                <p className="text-xs text-slate-400 mt-0.5">Configure an AI provider first</p>
-                {canEdit && (
-                  <button onClick={() => setIsEditing(true)}
-                    className="mt-3 text-xs text-blue-600 font-medium hover:underline inline-flex items-center gap-1">
-                    Configure <ChevronRight className="h-3 w-3" />
-                  </button>
+
+              {s?.ai_billing_mode === 'platform_wallet' ? (
+                <div className="flex items-start gap-2 mt-2">
+                  <Wallet className="h-4 w-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Using platform credits. Features deduct directly from the school's central wallet.
+                  </p>
+                </div>
+              ) : s?.ai_billing_mode === 'school_owns_key' ? (
+                 <div className="mt-3">
+                   {activeAI ? (
+                     <div className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg shadow-sm">
+                       <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center border border-indigo-100 flex-shrink-0">
+                         <Key className="h-4 w-4 text-indigo-600" />
+                       </div>
+                       <div className="min-w-0">
+                         <p className="text-xs font-bold text-slate-800 truncate">{activeAI.name}</p>
+                         <p className="text-[10px] text-slate-500 truncate">{activeAI.provider} • {activeAI.model_name}</p>
+                       </div>
+                     </div>
+                   ) : (
+                     <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-100 font-medium text-center">
+                       API Key Missing — AI Features Disabled
+                     </div>
+                   )}
+                 </div>
+              ) : s?.ai_billing_mode === 'disabled' ? (
+                 <p className="text-xs text-slate-500 mt-2">All AI features are disabled system-wide.</p>
+              ) : (
+                 <p className="text-xs text-slate-500 mt-2">Individual users pay for their own AI usage via personal wallets.</p>
+              )}
+            </div>
+
+            {/* WhatsApp Integration Display */}
+            <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col min-h-[104px]">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-full bg-[#25D366] flex items-center justify-center flex-shrink-0">
+                    <span className="text-white text-[10px] font-bold">W</span>
+                  </div>
+                  <h4 className="text-sm font-semibold text-slate-800">WhatsApp Config</h4>
+                </div>
+                {hasWhatsApp && (
+                  <span className="flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_2px_#d1fae5] flex-shrink-0"></span>
                 )}
               </div>
-            )}
 
-            {/* WhatsApp placeholder */}
-            <div className="p-4 rounded-xl border border-dashed border-slate-200 bg-slate-50">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
-                  <span className="text-white text-[9px] font-bold">W</span>
+              {activeWA ? (
+                <div className="mb-auto mt-1">
+                  <p className="text-xs font-bold text-slate-800 truncate">{activeWA.name}</p>
+                  <p className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">{activeWA.from_phone_number} • {activeWA.provider}</p>
                 </div>
-                <p className="text-xs font-semibold text-slate-500">WhatsApp</p>
-                <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-500 rounded-full ml-auto">Soon</span>
-              </div>
-              <p className="text-xs text-slate-400">WhatsApp integration coming soon.</p>
+              ) : (
+                <p className="text-xs text-slate-500 leading-relaxed mb-auto line-clamp-2 mt-1">
+                  No active WhatsApp configuration. Bots and automated messaging are currently disabled.
+                </p>
+              )}
+
+              {canManageWhatsApp ? (
+                <Link href="/dashboard/staff/communication/whatsapp-configs"
+                  className="mt-3 text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors w-fit">
+                  Manage in Communication <ChevronRight className="h-3 w-3" />
+                </Link>
+              ) : (
+                <span className="mt-3 text-[11px] font-medium text-slate-400 flex items-center gap-1 w-fit uppercase tracking-wider">
+                  <Lock className="h-3 w-3" /> Restricted Access
+                </span>
+              )}
             </div>
+
           </div>
         </div>
       </div>
@@ -421,9 +755,13 @@ export default function SchoolSettingsPage() {
                 { label: 'Automatic Backup', value: <StatusBadge value={s?.enable_automatic_backup} />, desc: 'Scheduled database backups' },
                 { label: 'Backup Frequency', value: <span className="text-sm text-slate-700">Every {s?.backup_frequency_days ?? 7} days</span>, desc: 'Days between automatic backups' },
                 { label: 'Maintenance Mode', value: <StatusBadge value={s?.maintenance_mode} activeLabel="Active" inactiveLabel="Inactive" danger />, desc: 'Blocks non-admin access when active' },
-                { label: 'Active AI Config', value: activeAI
+                { label: 'AI Billing Mode', value: <span className="capitalize text-sm font-semibold text-slate-700">{s?.ai_billing_mode?.replace(/_/g, ' ') || 'Platform Wallet'}</span>, desc: 'Determines who pays for AI usage across all modules' },
+                { label: 'Custom AI Provider', value: activeAI
                   ? <span className="text-sm font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg">{activeAI.name}</span>
-                  : <span className="text-xs text-slate-400">Not configured</span>, desc: 'School-wide AI configuration for bots and features' },
+                  : <span className="text-xs text-slate-400">Not configured</span>, desc: 'Custom API key used if billing mode is set to "School Owns Key"' },
+                { label: 'Active WhatsApp Config', value: activeWA
+                  ? <span className="text-sm font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg">{activeWA.name}</span>
+                  : <span className="text-xs text-slate-400">Not configured</span>, desc: 'Active WhatsApp channel used for bot replies and notifications' },
               ].map(({ label, value, desc }) => (
                 <tr key={label} className="hover:bg-slate-50/50 transition-colors">
                   <td className="py-3.5 px-5 text-sm font-medium text-slate-700 whitespace-nowrap">{label}</td>
@@ -433,213 +771,6 @@ export default function SchoolSettingsPage() {
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Settings Modal ────────────────────────────────────────────────────────────
-function SettingsModal({ settings, aiConfigs, isSaving, onSave, onClose }: {
-  settings: any; aiConfigs: SchoolAIConfig[]; isSaving: boolean;
-  onSave: (f: SettingsForm) => Promise<void>; onClose: () => void;
-}) {
-  const [activeTab, setActiveTab] = useState<'general' | 'academic' | 'system' | 'integrations'>('general');
-  const [form, setForm] = useState<SettingsForm>(settings ? settingsToForm(settings) : DEFAULT_FORM);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  const set = <K extends keyof SettingsForm>(key: K, value: SettingsForm[K]) =>
-    setForm(prev => ({ ...prev, [key]: value }));
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setSaveError(null);
-    try { await onSave(form); }
-    catch (err: any) {
-      const data = err?.response?.data;
-      setSaveError(data?.detail || data?.message || err?.message || 'Failed to save settings.');
-    }
-  };
-
-  const tabs = [
-    { id: 'general', label: 'General' },
-    { id: 'academic', label: 'Academic' },
-    { id: 'system', label: 'System' },
-    { id: 'integrations', label: 'Integrations' },
-  ] as const;
-
-  const inputCls = "w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white";
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
-
-        {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            {settings ? 'Edit School Settings' : 'Create School Settings'}
-          </h3>
-          <button onClick={onClose} disabled={isSaving}
-            className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Error — outside scroll */}
-        {saveError && (
-          <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 flex items-start gap-2 flex-shrink-0">
-            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" /><span>{saveError}</span>
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="flex border-b border-slate-100 px-6 flex-shrink-0 gap-1">
-          {tabs.map(t => (
-            <button key={t.id} type="button" onClick={() => setActiveTab(t.id)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === t.id ? 'text-blue-600 border-blue-600' : 'text-slate-400 border-transparent hover:text-slate-600'}`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Scrollable form */}
-        <form id="school-settings-form" onSubmit={handleSubmit} className="overflow-y-auto flex-1">
-          <div className="p-6 space-y-4">
-
-            {/* General */}
-            {activeTab === 'general' && (
-              <>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">School Type</label>
-                  <select value={form.school_type} onChange={e => set('school_type', e.target.value as 'day' | 'boarding' | 'mixed')} className={inputCls}>
-                    <option value="day">Day School</option>
-                    <option value="boarding">Boarding School</option>
-                    <option value="mixed">Mixed (Day & Boarding)</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Toggle checked={form.enable_notifications} onChange={v => set('enable_notifications', v)} label="Notifications" description="System-wide notifications" />
-                  <Toggle checked={form.parent_portal_enabled} onChange={v => set('parent_portal_enabled', v)} label="Parent Portal" description="Allow parents to access portal" />
-                  <Toggle checked={form.student_portal_enabled} onChange={v => set('student_portal_enabled', v)} label="Student Portal" description="Allow students to access portal" />
-                  <Toggle checked={form.separate_school_sections_data} onChange={v => set('separate_school_sections_data', v)} label="Separate Sections" description="Isolate section data" />
-                  <Toggle checked={form.enable_sms_notifications} onChange={v => set('enable_sms_notifications', v)} label="SMS Notifications" description="Enable SMS system-wide" />
-                  <Toggle checked={form.enable_email_notifications} onChange={v => set('enable_email_notifications', v)} label="Email Notifications" description="Enable email system-wide" />
-                </div>
-              </>
-            )}
-
-            {/* Academic */}
-            {activeTab === 'academic' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Default Period Type</label>
-                  <select value={form.default_period_type} onChange={e => set('default_period_type', e.target.value as 'term' | 'semester' | 'quarter' | 'trimester')} className={inputCls}>
-                    <option value="term">Term</option>
-                    <option value="semester">Semester</option>
-                    <option value="quarter">Quarter</option>
-                    <option value="trimester">Trimester</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Week Start Day</label>
-                  <select value={form.school_week_start_day} onChange={e => set('school_week_start_day', e.target.value as 'monday' | 'sunday' | 'saturday')} className={inputCls}>
-                    <option value="monday">Monday</option>
-                    <option value="sunday">Sunday</option>
-                    <option value="saturday">Saturday</option>
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {/* System */}
-            {activeTab === 'system' && (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Items Per Page</label>
-                    <select value={form.items_per_page} onChange={e => set('items_per_page', Number(e.target.value) as 10 | 25 | 50 | 100)} className={inputCls}>
-                      {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Date Format</label>
-                    <select value={form.date_format} onChange={e => set('date_format', e.target.value as 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD')} className={inputCls}>
-                      <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-                      <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-                      <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Archive Data After (Years)</label>
-                    <input type="number" min={0} max={50} value={form.delete_archived_data_after_years}
-                      onChange={e => set('delete_archived_data_after_years', Number(e.target.value))} className={inputCls} />
-                    <p className="text-xs text-slate-400 mt-1">0 = never delete</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Backup Frequency (Days)</label>
-                    <input type="number" min={1} max={365} value={form.backup_frequency_days}
-                      onChange={e => set('backup_frequency_days', Number(e.target.value))} className={inputCls} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
-                  <Toggle checked={form.enable_automatic_backup} onChange={v => set('enable_automatic_backup', v)} label="Automatic Backup" description="Enable scheduled backups" />
-                  <Toggle checked={form.maintenance_mode} onChange={v => set('maintenance_mode', v)} label="Maintenance Mode" description="Blocks non-admin access" />
-                </div>
-              </>
-            )}
-
-            {/* Integrations */}
-            {activeTab === 'integrations' && (
-              <div className="space-y-4">
-                <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Bot className="h-4 w-4 text-indigo-600" />
-                    <h4 className="text-sm font-semibold text-indigo-900">Active AI Configuration</h4>
-                  </div>
-                  <p className="text-xs text-indigo-500 mb-3">School-wide AI for the WhatsApp bot and other AI features.</p>
-                  {aiConfigs.length === 0 ? (
-                    <div className="p-3 bg-white rounded-lg border border-indigo-100 text-xs text-slate-500 text-center">
-                      No active AI configurations found. Create one in the AI Configurations page first.
-                    </div>
-                  ) : (
-                    <select value={form.active_ai_config_id ?? ''}
-                      onChange={e => set('active_ai_config_id', e.target.value ? Number(e.target.value) : null)}
-                      className="w-full px-3.5 py-2.5 text-sm border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white">
-                      <option value="">— None —</option>
-                      {aiConfigs.map(c => (
-                        <option key={c.id} value={c.id}>{c.name} ({c.provider} / {c.model_name})</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                <div className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
-                      <span className="text-white text-[9px] font-bold">W</span>
-                    </div>
-                    <h4 className="text-sm font-semibold text-slate-500">WhatsApp</h4>
-                    <span className="text-[10px] px-2 py-0.5 bg-slate-200 text-slate-500 rounded-full ml-auto">Coming soon</span>
-                  </div>
-                  <p className="text-xs text-slate-400">WhatsApp integration settings will appear here.</p>
-                </div>
-              </div>
-            )}
-
-          </div>
-        </form>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex-shrink-0">
-          <button type="button" onClick={onClose} disabled={isSaving}
-            className="px-4 py-2 text-sm border border-slate-200 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
-            Cancel
-          </button>
-          <button type="submit" form="school-settings-form" disabled={isSaving}
-            className="px-5 py-2 text-sm bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-blue-200">
-            {isSaving
-              ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
-              : <><Check className="h-4 w-4" />{settings ? 'Save Changes' : 'Create Settings'}</>}
-          </button>
         </div>
       </div>
     </div>

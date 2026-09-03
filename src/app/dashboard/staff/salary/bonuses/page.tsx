@@ -57,6 +57,11 @@ function fmtMoney(amount: string | number): string {
   return '₦' + num.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function unwrapList(res: any): any[] {
+  const data = res?.results?.data ?? res?.data?.results ?? res?.data ?? res?.results ?? res;
+  return Array.isArray(data) ? data : [];
+}
+
 // ─── Toast Stack ───────────────────────────────────────────────────────────────
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
@@ -335,7 +340,7 @@ function BonusFormModal({ editing, categories, currentPeriodId, isSaving, onSave
     const timer = setTimeout(async () => {
       try {
         const res = await staffAPI.list({ search: staffSearch, page_size: 10, is_active: true }) as any;
-        setStaffResults(res.results || res.data || res || []);
+        setStaffResults(unwrapList(res));
       } catch { setStaffResults([]); }
     }, 300);
     return () => clearTimeout(timer);
@@ -649,13 +654,13 @@ export default function BonusesPage() {
 
   // ── Lookups ──
   useEffect(() => {
-    bonusCategoriesAPI.list().then(setCategories).catch(() => {});
+    bonusCategoriesAPI.list().then(res => setCategories(unwrapList(res))).catch(() => {});
     academicCalendarAPI.listSessions()
-      .then((data: any) => setSessions(Array.isArray(data) ? data : []))
+      .then((data: any) => setSessions(unwrapList(data)))
       .catch(() => {});
     academicCalendarAPI.listSessionPeriods({ is_current: true, page_size: 1 } as any)
       .then((data: any) => {
-        const list = Array.isArray(data) ? data : (data?.results?.data || data?.data || []);
+        const list = unwrapList(data);
         if (list.length > 0) setCurrentPeriodId(list[0].id);
       })
       .catch(() => {});
@@ -664,7 +669,7 @@ export default function BonusesPage() {
   useEffect(() => {
     if (!selectedSession) { setPeriods([]); setSelectedPeriod(''); return; }
     academicCalendarAPI.listSessionPeriods({ session_id: Number(selectedSession) })
-      .then((data: any) => setPeriods(Array.isArray(data) ? data : (data?.results?.data || data?.data || [])))
+      .then((data: any) => setPeriods(unwrapList(data)))
       .catch(() => setPeriods([]));
   }, [selectedSession]);
 
@@ -683,10 +688,12 @@ export default function BonusesPage() {
       else if (selectedSession) params.session = selectedSession;
 
       const res = await bonusesAPI.list(params) as any;
-      setBonuses(res.results || []);
-      setTotal(res.count || 0);
+      setBonuses(unwrapList(res));
+      setTotal(res.count ?? res.data?.count ?? res.results?.count ?? 0);
       setPage(pg);
-      if (res.stats) setStats(res.stats);
+
+      const statsObj = res.stats || res.data?.stats || res.results?.stats;
+      if (statsObj) setStats(statsObj);
     } catch (err) {
       setPageError(extractError(err));
     } finally {
@@ -720,6 +727,7 @@ export default function BonusesPage() {
         showToast('success', 'Bonus created');
       }
       setShowForm(false);
+      fetchData(1); // Refresh stats
     } catch (err) {
       throw err;
     } finally {
@@ -736,6 +744,7 @@ export default function BonusesPage() {
       setTotal(prev => prev - 1);
       showToast('success', 'Bonus deleted');
       setDeletingBonus(null);
+      fetchData(1); // Refresh stats
     } catch (err) {
       showToast('error', extractError(err));
       setDeletingBonus(null);
@@ -754,6 +763,7 @@ export default function BonusesPage() {
       ));
       showToast('success', 'Marked as paid');
       setMarkingPaidBonus(null);
+      fetchData(1); // Refresh stats
     } catch (err) {
       showToast('error', extractError(err));
       setMarkingPaidBonus(null);
@@ -765,7 +775,7 @@ export default function BonusesPage() {
   const handleDownloadExcel = async (title: string) => {
     setIsDownloading(true);
     try {
-      const params: Record<string, any> = { page_size: 1000 };
+      const params: Record<string, any> = { page_size: 10000 };
       if (month) params.month = month;
       if (year) params.year = year;
       if (categoryFilter) params.category = categoryFilter;
@@ -775,8 +785,10 @@ export default function BonusesPage() {
       if (search) params.search = search;
 
       const res = await bonusesAPI.list(params) as any;
+      const allBonuses = unwrapList(res);
+
       const headers = ['Recipient', 'Type', 'Category', 'Amount', 'Due Date', 'Status'];
-      const rows = (res.results || []).map((b: any) => [
+      const rows = allBonuses.map((b: any) => [
         b.type === 'staff' ? (b.staff_detail?.full_name || b.staff_name || '') : b.volunteer_name,
         b.type,
         categories.find(c => c.id === b.category)?.name || '',

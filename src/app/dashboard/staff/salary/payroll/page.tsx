@@ -157,8 +157,14 @@ export default function PayslipListPage() {
           year,
           page_size: 1000, // fetch all at once; adjust if many staff
         }) as any;
-        const records = recordsResponse?.results ?? recordsResponse?.data ?? recordsResponse ?? [];
-        const recordsArray = Array.isArray(records) ? records : [];
+
+        // Robust unwrap for Records
+        let recordsArray = [];
+        if (Array.isArray(recordsResponse)) recordsArray = recordsResponse;
+        else if (Array.isArray(recordsResponse?.results)) recordsArray = recordsResponse.results;
+        else if (Array.isArray(recordsResponse?.results?.data)) recordsArray = recordsResponse.results.data;
+        else if (Array.isArray(recordsResponse?.data)) recordsArray = recordsResponse.data;
+
         const map: Record<number, SalaryRecord> = {};
         recordsArray.forEach((rec: SalaryRecord) => {
           const staffId = typeof rec.staff === 'object' ? (rec.staff as any).id : rec.staff;
@@ -175,9 +181,16 @@ export default function PayslipListPage() {
         if (search) params.search = search;
 
         const structuresResponse = await salaryStructuresAPI.list(params) as any;
-        const structuresData = structuresResponse?.results?.data ?? structuresResponse?.data ?? [];
-        setStructures(Array.isArray(structuresData) ? structuresData : []);
-        setTotal(structuresResponse?.count ?? structuresData.length);
+
+        // Robust unwrap for Structures
+        let structuresArray = [];
+        if (Array.isArray(structuresResponse)) structuresArray = structuresResponse;
+        else if (Array.isArray(structuresResponse?.results)) structuresArray = structuresResponse.results;
+        else if (Array.isArray(structuresResponse?.results?.data)) structuresArray = structuresResponse.results.data;
+        else if (Array.isArray(structuresResponse?.data)) structuresArray = structuresResponse.data;
+
+        setStructures(structuresArray);
+        setTotal(structuresResponse?.count ?? structuresArray.length);
         setPage(pg);
       } catch (err) {
         setPageError(extractError(err));
@@ -231,11 +244,13 @@ export default function PayslipListPage() {
   }, [combined, statusFilter]);
 
   // ── Stats ──
-  const totalStructures = total;
-  const processedCount = combined.filter((c) => c.status !== 'not_processed').length;
-  const paidCount = combined.filter((c) => c.status === 'paid').length;
-  const pendingCount = combined.filter((c) => c.status === 'pending').length;
-  const notProcessedCount = combined.filter((c) => c.status === 'not_processed').length;
+  const totalStructures = total; // Total active structures from the API count
+  const allRecords = Object.values(recordsMap); // Every record for the month
+
+  const processedCount = allRecords.length;
+  const paidCount = allRecords.filter((r) => r.payment_status === 'paid').length;
+  const pendingCount = allRecords.filter((r) => r.payment_status === 'pending').length;
+  const notProcessedCount = Math.max(0, totalStructures - processedCount);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 

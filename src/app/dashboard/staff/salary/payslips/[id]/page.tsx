@@ -8,7 +8,7 @@ import { SalaryRecord } from '@/lib/salary_management.types';
 import {
   FileText, ArrowLeft, CheckCircle, AlertCircle, Loader2,
   X, Wallet, Shield, Percent, Landmark, MinusCircle,
-  Check, UserCircle, Building2, Calendar, Info, Printer, Gift,
+  Check, UserCircle, Building2, Calendar, Info, Printer, Gift, Mail
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -32,12 +32,19 @@ function fmtMoney(amount: string | number | undefined | null): string {
   return '₦' + num.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function getImageUrl(path: string | null | undefined): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith('http')) return path;
+  const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+  return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
-    <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
+    <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none print:hidden">
       {toasts.map((t) => (
-        <div key={t.id} className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border max-w-sm ${t.type === 'success' ? 'bg-green-50 border-green-200 text-green-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
-          {t.type === 'success' ? <CheckCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-green-600" /> : <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-red-500" />}
+        <div key={t.id} className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border max-w-sm ${t.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900'}`}>
+          {t.type === 'success' ? <CheckCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-emerald-600" /> : <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-rose-500" />}
           <p className="text-sm font-medium flex-1 leading-snug">{t.message}</p>
           <button onClick={() => onDismiss(t.id)} className="opacity-50 hover:opacity-100 flex-shrink-0 ml-2"><X className="h-3.5 w-3.5" /></button>
         </div>
@@ -50,16 +57,16 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 function ConfirmModal({ open, onClose, onConfirm, loading }: { open: boolean; onClose: () => void; onConfirm: () => void; loading: boolean }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-        <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-          <Wallet className="h-6 w-6 text-green-600" />
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95">
+        <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+          <Wallet className="h-6 w-6 text-emerald-600" />
         </div>
         <h3 className="text-lg font-bold text-slate-900 text-center mb-1">Mark as Paid?</h3>
         <p className="text-sm text-slate-500 text-center mb-6">This will update the payment status to Paid and set the payment date to today.</p>
         <div className="flex gap-3">
           <button onClick={onClose} disabled={loading} className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50">Cancel</button>
-          <button onClick={onConfirm} disabled={loading} className="flex-1 px-4 py-2.5 rounded-xl font-semibold text-white bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+          <button onClick={onConfirm} disabled={loading} className="flex-1 px-4 py-2.5 rounded-xl font-semibold text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Updating...</> : <><Check className="h-4 w-4" /> Confirm</>}
           </button>
         </div>
@@ -78,129 +85,6 @@ function Row({ label, value, isTotal }: { label: string; value: string; isTotal?
   );
 }
 
-// ─── Print Payslip (Pure HTML Print Window) ───────────────────────────────
-function buildPayslipHTML(record: any, schoolName: string): string {
-  const staff = record.staff_detail || {};
-  const monthName = record.month_name || '';
-  const statusColors: Record<string, string> = {
-    paid: '#059669', pending: '#d97706', partially_paid: '#ea580c', not_processed: '#64748b',
-  };
-  const statusColor = statusColors[record.payment_status] || '#64748b';
-  const now = new Date().toLocaleString('en-NG', { dateStyle: 'long', timeStyle: 'short' });
-
-  const buildIncomeRows = () => {
-    let rows = '';
-    Object.entries(record.basic_components_breakdown || {}).forEach(([code, comp]: [string, any]) => {
-      rows += `<tr style="background:#f8fafc"><td style="padding:8px 12px;color:#64748b;">${comp.name}</td><td style="padding:8px 12px;color:#64748b;text-align:center">${comp.percentage}%</td><td style="padding:8px 12px;color:#1e293b;text-align:right;font-weight:600">${fmtMoney(comp.amount)}</td></tr>`;
-    });
-    Object.entries(record.allowances_breakdown || {}).forEach(([name, allow]: [string, any]) => {
-      if (parseFloat(allow.amount) > 0) {
-        rows += `<tr style="background:#f0fdf4"><td style="padding:8px 12px;color:#64748b;">${name} (Allowance)</td><td style="padding:8px 12px;"></td><td style="padding:8px 12px;color:#1e293b;text-align:right;font-weight:600">${fmtMoney(allow.amount)}</td></tr>`;
-      }
-    });
-    if (record.bonus > 0) {
-      rows += `<tr style="background:#ffffff"><td style="padding:8px 12px;color:#64748b;">Bonus</td><td style="padding:8px 12px;"></td><td style="padding:8px 12px;color:#1e293b;text-align:right;font-weight:600">${fmtMoney(record.bonus)}</td></tr>`;
-    }
-    Object.entries(record.additional_income || {}).forEach(([name, amount]: [string, any]) => {
-      if (parseFloat(amount) > 0) rows += `<tr style="background:#ffffff"><td style="padding:8px 12px;color:#64748b;">${name}</td><td style="padding:8px 12px;"></td><td style="padding:8px 12px;color:#1e293b;text-align:right;font-weight:600">${fmtMoney(amount)}</td></tr>`;
-    });
-    return rows;
-  };
-
-  const buildDeductionRows = (data: any, title: string) => {
-    let rows = `<tr style="background:#f8fafc"><td colspan="3" style="padding:8px 12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:1px;font-size:11px">${title}</td></tr>`;
-    Object.entries(data || {}).forEach(([name, ded]: [string, any]) => {
-      const amt = typeof ded === 'object' ? ded?.amount : ded;
-      if (parseFloat(amt || 0) > 0) {
-        rows += `<tr style="background:#ffffff"><td style="padding:8px 12px;color:#64748b;">${name} ${ded?.percentage ? `(${ded.percentage}% of ${ded.based_on})` : ''}</td><td style="padding:8px 12px;"></td><td style="padding:8px 12px;color:#1e293b;text-align:right;font-weight:600">${fmtMoney(amt)}</td></tr>`;
-      }
-    });
-    return rows;
-  };
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <title>Payslip - ${staff.full_name || 'Staff'}</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #1e293b; background: #fff; padding: 30px; max-width: 700px; margin: 0 auto; }
-    .header { text-align: center; margin-bottom: 24px; border-bottom: 2px solid #4f46e5; padding-bottom: 16px; }
-    .school-name { font-size: 20px; font-weight: 800; color: #4f46e5; margin-bottom: 4px; }
-    .payslip-title { font-size: 13px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 2px; }
-    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
-    .meta-item { margin-bottom: 8px; }
-    .meta-label { font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; }
-    .meta-value { font-size: 13px; color: #1e293b; font-weight: 500; }
-    .status-box { display: inline-block; padding: 4px 14px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: ${statusColor}; border: 1.5px solid ${statusColor}; background: ${statusColor}18; }
-    table { width: 100%; border-collapse: collapse; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8f0; margin-bottom: 16px; }
-    th { background: #f1f5f9; padding: 8px 12px; text-align: left; font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; }
-    td { padding: 8px 12px; font-size: 12px; }
-    .total-row { background: #f8fafc !important; font-weight: 700; }
-    .net-pay-box { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px; }
-    .net-label { font-size: 11px; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
-    .net-amount { font-size: 28px; font-weight: 800; }
-    .footer { text-align: center; color: #94a3b8; font-size: 10px; margin-top: 24px; }
-    @media print { body { padding: 15px; } @page { margin: 15mm; size: A4 portrait; } }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div class="school-name">${schoolName}</div>
-    <div class="payslip-title">Payslip</div>
-  </div>
-
-  <div class="meta-grid">
-    <div>
-      <div class="meta-item"><div class="meta-label">Name</div><div class="meta-value">${staff.full_name || 'N/A'}</div></div>
-      <div class="meta-item"><div class="meta-label">Staff ID</div><div class="meta-value">${staff.staff_id || 'N/A'}</div></div>
-      <div class="meta-item"><div class="meta-label">Department</div><div class="meta-value">${staff.department_name || 'N/A'}</div></div>
-    </div>
-    <div style="text-align: right;">
-      <div class="meta-item"><div class="meta-label">Period</div><div class="meta-value">${monthName} ${record.year}</div></div>
-      <div class="meta-item"><div class="meta-label">Payment Date</div><div class="meta-value">${record.paid_date ? new Date(record.paid_date).toLocaleDateString() : 'Pending'}</div></div>
-      <div class="meta-item" style="margin-top:8px"><span class="status-box">${record.payment_status.replace('_', ' ')}</span></div>
-    </div>
-  </div>
-
-  <table>
-    <thead><tr><th>Income Component</th><th style="text-align:center">%</th><th style="text-align:right">Amount (₦)</th></tr></thead>
-    <tbody>${buildIncomeRows()}</tbody>
-    <tfoot><tr class="total-row"><td colspan="2" style="padding:10px 12px;color:#4f46e5">Total Payable (A)</td><td style="padding:10px 12px;text-align:right;color:#4f46e5;font-size:14px">${fmtMoney(record.total_income)}</td></tr></tfoot>
-  </table>
-
-  <table>
-    <thead><tr><th>Deductions</th><th></th><th style="text-align:right">Amount (₦)</th></tr></thead>
-    <tbody>
-      ${buildDeductionRows(record.statutory_deductions, 'Statutory (B)')}
-      <tr class="total-row"><td colspan="2" style="padding:10px 12px;">Sub-Total Statutory (B)</td><td style="padding:10px 12px;text-align:right;">${fmtMoney(record.total_statutory_deductions)}</td></tr>
-
-      ${buildDeductionRows(record.other_deductions, 'Other Deductions (C)')}
-      <tr class="total-row"><td colspan="2" style="padding:10px 12px;">Sub-Total Other (C)</td><td style="padding:10px 12px;text-align:right;">${fmtMoney(record.total_other_deductions)}</td></tr>
-
-      <tr style="background:#ffffff"><td style="padding:8px 12px;color:#64748b;">PAYE Tax</td><td style="padding:8px 12px;"></td><td style="padding:8px 12px;color:#1e293b;text-align:right;font-weight:600">${fmtMoney(record.monthly_tax)}</td></tr>
-      <tr class="total-row"><td colspan="2" style="padding:10px 12px;">Sub-Total Tax (D)</td><td style="padding:10px 12px;text-align:right;">${fmtMoney(record.total_taxation)}</td></tr>
-    </tbody>
-  </table>
-
-  <div class="net-pay-box">
-    <div class="net-label">Take Home Pay (A - B - C - D)</div>
-    <div class="net-amount">${fmtMoney(record.net_salary)}</div>
-  </div>
-
-  <div class="footer">
-    <p><strong>Generated:</strong> ${now}</p>
-    <p style="margin-top:4px">This is a computer-generated payslip.</p>
-    <p style="margin-top:4px">${schoolName}</p>
-  </div>
-
-  <script>window.onload = function() { window.print(); };</script>
-</body>
-</html>`;
-}
-
-
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function PayslipDetailPage() {
   const router = useRouter();
@@ -212,7 +96,9 @@ export default function PayslipDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showMarkPaidModal, setShowMarkPaidModal] = useState(false);
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
+  const [emailing, setEmailing] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const canManage = user?.is_superuser || hasPermission('salary_management.change_salaryrecordmodel');
@@ -223,6 +109,13 @@ export default function PayslipDetailPage() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== tid)), 4500);
   };
   const dismissToast = (tid: number) => setToasts((prev) => prev.filter((t) => t.id !== tid));
+
+  useEffect(() => {
+    if (!showPrintPreview) return;
+    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowPrintPreview(false); };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showPrintPreview]);
 
   // ── Fetch Data ──
   useEffect(() => {
@@ -246,7 +139,7 @@ export default function PayslipDetailPage() {
     if (!record) return;
     setMarkingPaid(true);
     try {
-      await payrollAPI.markPaid(record.id);
+      await payrollAPI.markPaid({ record_ids: [record.id], amount_paid: record.net_salary });
       showToast('success', 'Payment status updated to Paid.');
       setShowMarkPaidModal(false);
       const res = await payrollAPI.getRecord(record.id) as any;
@@ -258,20 +151,21 @@ export default function PayslipDetailPage() {
     }
   };
 
-  // ── Print Payslip ──
-  const handlePrint = () => {
+  // ── Email Payslip ──
+  const handleEmailPayslip = async () => {
     if (!record) return;
-    const html = buildPayslipHTML(record, schoolInfo?.name || 'School');
-    const win = window.open('', '_blank');
-    if (!win) {
-      showToast('error', 'Pop-up blocked. Please allow pop-ups for this site.');
-      return;
+    setEmailing(true);
+    try {
+      await payrollAPI.emailPayslips({ record_ids: [record.id], force_resend: true });
+      showToast('success', 'Payslip queued for email dispatch.');
+      setRecord(prev => prev ? { ...prev, payslip_emailed_at: new Date().toISOString() } : prev);
+    } catch (err) {
+      showToast('error', extractError(err));
+    } finally {
+      setEmailing(false);
     }
-    win.document.write(html);
-    win.document.close();
   };
 
-  // ── UI States ──
   if (loading) return (
     <div className="min-h-[500px] flex items-center justify-center">
       <div className="flex items-center gap-2.5 text-slate-400"><Loader2 className="h-5 w-5 animate-spin" /><span className="text-sm font-medium">Loading payslip…</span></div>
@@ -281,8 +175,8 @@ export default function PayslipDetailPage() {
   if (error || !record) return (
     <div className="min-h-[500px] flex items-center justify-center">
       <div className="text-center max-w-sm">
-        <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-3" />
-        <p className="text-sm text-red-600 mb-4">{error || 'Payslip not found.'}</p>
+        <AlertCircle className="h-8 w-8 text-rose-400 mx-auto mb-3" />
+        <p className="text-sm text-rose-600 mb-4">{error || 'Payslip not found.'}</p>
         <button onClick={() => router.back()} className="text-sm text-blue-600 underline">Go Back</button>
       </div>
     </div>
@@ -307,8 +201,49 @@ export default function PayslipDetailPage() {
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <ConfirmModal open={showMarkPaidModal} onClose={() => setShowMarkPaidModal(false)} onConfirm={handleMarkPaid} loading={markingPaid} />
 
+      {/* Print CSS constraints */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          /* The overlay wrapper must NOT stay fixed on print — a fixed
+             containing block gets repeated on every printed page (that's
+             what caused the double-print). Screen-only content is hidden
+             with display:none (via print:hidden below) instead of
+             visibility:hidden, so it doesn't reserve blank page space. */
+          #print-overlay-root {
+            position: static !important;
+            inset: auto !important;
+            overflow: visible !important;
+            height: auto !important;
+            min-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background: none !important;
+            backdrop-filter: none !important;
+            display: block !important;
+          }
+
+          #receipt-print-area {
+            position: static !important;
+            left: auto;
+            top: auto;
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            max-height: none !important;
+          }
+
+          #receipt-print-area .print-body {
+            padding: 0 !important;
+          }
+
+          @page { margin: 10mm; size: A4 portrait; }
+        }
+      `}} />
+
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="print:hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
           <button onClick={() => router.back()} className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors flex-shrink-0">
             <ArrowLeft className="h-4 w-4 text-slate-600" />
@@ -317,8 +252,13 @@ export default function PayslipDetailPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={handlePrint} className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-50 transition-all shadow-sm">
-            <Printer className="h-4 w-4" /> Print Payslip
+          {canManage && (
+            <button onClick={handleEmailPayslip} disabled={emailing} className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50">
+              {emailing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />} Email
+            </button>
+          )}
+          <button onClick={() => setShowPrintPreview(true)} className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-50 transition-all shadow-sm">
+            <Printer className="h-4 w-4" /> Print
           </button>
           {canManage && record.payment_status !== 'paid' && (
             <button onClick={() => setShowMarkPaidModal(true)} className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 rounded-xl shadow-sm transition-all">
@@ -328,7 +268,7 @@ export default function PayslipDetailPage() {
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="print:hidden space-y-4">
 
         {/* Section 1: Staff Info */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
@@ -359,7 +299,6 @@ export default function PayslipDetailPage() {
             <h3 className="text-sm font-bold text-slate-800">Income & Allowances</h3>
           </div>
           <div className="p-6">
-            {/* Basic Components */}
             <table className="w-full text-sm">
               <thead><tr className="text-left text-xs font-semibold text-slate-500 uppercase border-b border-slate-100"><th className="py-2 pr-4">Component</th><th className="py-2 pr-4">%</th><th className="py-2 text-right">Amount (₦)</th></tr></thead>
               <tbody>
@@ -373,7 +312,6 @@ export default function PayslipDetailPage() {
               </tbody>
             </table>
 
-            {/* Allowances Breakdown — NEW */}
             {hasAllowances && (
               <div className="mt-4 pt-4 border-t border-dashed border-slate-200">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
@@ -391,15 +329,14 @@ export default function PayslipDetailPage() {
               </div>
             )}
 
-            {/* Additional Income */}
-            {(parseFloat(record.bonus) > 0 || Object.keys(record.additional_income || {}).length > 0) && (
+            {(parseFloat(record.bonus as string) > 0 || Object.keys(record.additional_income || {}).length > 0) && (
               <div className="mt-4 pt-4 border-t border-dashed border-slate-200">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Additional Income</p>
                 <table className="w-full text-sm">
                   <tbody>
-                    {parseFloat(record.bonus) > 0 && <Row label="Bonus" value={fmtMoney(record.bonus)} />}
+                    {parseFloat(record.bonus as string) > 0 && <Row label="Bonus" value={fmtMoney(record.bonus)} />}
                     {Object.entries(record.additional_income || {}).map(([name, amount]: [string, any]) => (
-                      parseFloat(amount) > 0 ? <Row key={name} label={name} value={fmtMoney(amount)} /> : null
+                      parseFloat(amount as string) > 0 ? <Row key={name} label={name} value={fmtMoney(amount as string)} /> : null
                     ))}
                   </tbody>
                 </table>
@@ -492,6 +429,7 @@ export default function PayslipDetailPage() {
             <div className="space-y-3 text-sm">
               <div className="flex justify-between"><span className="text-slate-400">Amount Paid</span><span className="font-medium text-slate-700">{fmtMoney(record.amount_paid)}</span></div>
               <div className="flex justify-between"><span className="text-slate-400">Balance Due</span><span className="font-medium text-slate-700">{fmtMoney(record.balance_due)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Emailed At</span><span className="font-medium text-slate-700">{record.payslip_emailed_at ? new Date(record.payslip_emailed_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' }) : 'Not sent yet'}</span></div>
             </div>
             {record.notes && (
               <div className="mt-4 pt-4 border-t border-slate-100">
@@ -503,6 +441,212 @@ export default function PayslipDetailPage() {
         </div>
 
       </div>
+
+      {/* ── PRINTABLE PAYSLIP OVERLAY (In-DOM approach with Original Tables & New Header) ── */}
+      {showPrintPreview && (
+        <div id="print-overlay-root" onClick={() => setShowPrintPreview(false)} className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-8 px-4 print:p-0 print:bg-white animate-in fade-in">
+          <div id="receipt-print-area" onClick={(e) => e.stopPropagation()} className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden print:shadow-none print:rounded-none print:max-w-none print:w-full">
+
+            {/* Action bar — hidden on print */}
+            <div className="print:hidden flex justify-between items-center px-6 py-3.5 bg-slate-50 border-b border-slate-100">
+              <button onClick={() => setShowPrintPreview(false)} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors">
+                <X className="w-4 h-4" /> Close
+              </button>
+              <div className="flex items-center gap-2">
+                {canManage && (
+                  <button onClick={handleEmailPayslip} disabled={emailing} className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-100 transition-colors disabled:opacity-50">
+                    {emailing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />} Email
+                  </button>
+                )}
+                <button onClick={() => window.print()} className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-colors">
+                  <Printer className="w-3.5 h-3.5" /> Print
+                </button>
+              </div>
+            </div>
+
+            <div className="print-body p-8 print:p-3 text-slate-900">
+
+              {/* New Letterhead */}
+              <div className="flex items-center gap-4 pb-4 border-b-2 border-slate-900 mb-6">
+                {schoolInfo?.logo ? (
+                  <img src={getImageUrl(schoolInfo.logo)} alt="" className="h-14 w-14 rounded-lg object-contain shrink-0" />
+                ) : (
+                  <div className="h-14 w-14 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                    <Building2 className="h-7 w-7 text-slate-400" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-lg font-black uppercase tracking-wide text-slate-900 truncate">{schoolInfo?.name || 'School Name Not Set'}</h1>
+                  <p className="text-[11px] font-medium text-slate-500 truncate">{schoolInfo?.address || 'Address not configured'}</p>
+                  <p className="text-[11px] font-medium text-slate-500">{[schoolInfo?.email, schoolInfo?.mobile_1].filter(Boolean).join(' · ')}</p>
+                </div>
+                <span className="shrink-0 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">
+                  Payslip
+                </span>
+              </div>
+
+              {/* Meta Grid (Old Structure, styled properly) */}
+              <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+                <div>
+                  <div className="mb-2"><span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider block">Name</span><span className="font-medium text-slate-900">{staff.full_name || 'N/A'}</span></div>
+                  <div className="mb-2"><span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider block">Staff ID</span><span className="font-medium text-slate-900">{staff.staff_id || 'N/A'}</span></div>
+                  <div><span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider block">Department</span><span className="font-medium text-slate-900">{staff.department_name || 'N/A'}</span></div>
+                </div>
+                <div className="text-right">
+                  <div className="mb-2"><span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider block">Period</span><span className="font-medium text-slate-900">{monthName} {record.year}</span></div>
+                  <div className="mb-2"><span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider block">Payment Date</span><span className="font-medium text-slate-900">{record.paid_date ? new Date(record.paid_date).toLocaleDateString() : 'Pending'}</span></div>
+                  <div className="mt-2"><span className={`inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${currentStatus.cls}`}>{currentStatus.label}</span></div>
+                </div>
+              </div>
+
+              {/* Earnings Table (Original Format) */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden mb-5">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-200">
+                      <th className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase">Income Component</th>
+                      <th className="px-4 py-2.5 text-center text-xs font-bold text-slate-600 uppercase">%</th>
+                      <th className="px-4 py-2.5 text-right text-xs font-bold text-slate-600 uppercase">Amount (₦)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {/* Basic Components */}
+                    {Object.entries(record.basic_components_breakdown || {}).map(([code, comp]: [string, any]) => (
+                      <tr key={code} className="bg-white">
+                        <td className="px-4 py-2.5 text-slate-600">{comp.name}</td>
+                        <td className="px-4 py-2.5 text-slate-600 text-center">{comp.percentage}%</td>
+                        <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(comp.amount)}</td>
+                      </tr>
+                    ))}
+
+                    {/* Allowances */}
+                    {Object.entries(allowancesBreakdown).map(([name, allow]: [string, any]) => (
+                      parseFloat(allow.amount) > 0 ? (
+                        <tr key={name} className="bg-emerald-50/30">
+                          <td className="px-4 py-2.5 text-slate-600">{name} (Allowance)</td>
+                          <td className="px-4 py-2.5"></td>
+                          <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(allow.amount)}</td>
+                        </tr>
+                      ) : null
+                    ))}
+
+                    {/* Bonus & Additional Income */}
+                    {parseFloat(record.bonus as string) > 0 && (
+                      <tr className="bg-white">
+                        <td className="px-4 py-2.5 text-slate-600">Bonus</td>
+                        <td className="px-4 py-2.5"></td>
+                        <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(record.bonus)}</td>
+                      </tr>
+                    )}
+                    {Object.entries(record.additional_income || {}).map(([name, amount]: [string, any]) => (
+                      parseFloat(amount as string) > 0 ? (
+                        <tr key={name} className="bg-white">
+                          <td className="px-4 py-2.5 text-slate-600">{name}</td>
+                          <td className="px-4 py-2.5"></td>
+                          <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(amount as string)}</td>
+                        </tr>
+                      ) : null
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-50 border-t-2 border-slate-200">
+                      <td colSpan={2} className="px-4 py-3 text-indigo-700 font-bold">Total Payable (A)</td>
+                      <td className="px-4 py-3 text-right text-indigo-700 font-bold text-base">{fmtMoney(record.total_income)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Deductions Table (Original Format) */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden mb-6">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-200">
+                      <th className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase">Deductions</th>
+                      <th className="px-4 py-2.5"></th>
+                      <th className="px-4 py-2.5 text-right text-xs font-bold text-slate-600 uppercase">Amount (₦)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+
+                    {/* Statutory Block */}
+                    <tr className="bg-slate-50">
+                      <td colSpan={3} className="px-4 py-2 text-[11px] font-bold text-slate-500 uppercase tracking-wide">Statutory (B)</td>
+                    </tr>
+                    {Object.entries(record.statutory_deductions || {}).map(([name, ded]: [string, any]) => {
+                      const amt = typeof ded === 'object' ? ded?.amount : ded;
+                      return parseFloat(amt) > 0 ? (
+                        <tr key={name} className="bg-white">
+                          <td className="px-4 py-2.5 text-slate-600">{name} {ded?.percentage ? `(${ded.percentage}% of ${ded.based_on})` : ''}</td>
+                          <td className="px-4 py-2.5"></td>
+                          <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(amt)}</td>
+                        </tr>
+                      ) : null;
+                    })}
+                    <tr className="bg-slate-50 border-y border-slate-200">
+                      <td colSpan={2} className="px-4 py-2.5 font-bold text-slate-700">Sub-Total Statutory (B)</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmtMoney(record.total_statutory_deductions)}</td>
+                    </tr>
+
+                    {/* Other Deductions Block */}
+                    <tr className="bg-slate-50">
+                      <td colSpan={3} className="px-4 py-2 text-[11px] font-bold text-slate-500 uppercase tracking-wide">Other Deductions (C)</td>
+                    </tr>
+                    {Object.entries(record.other_deductions || {}).map(([name, ded]: [string, any]) => {
+                      const amt = typeof ded === 'object' ? ded?.amount : ded;
+                      return parseFloat(amt) > 0 ? (
+                        <tr key={name} className="bg-white">
+                          <td className="px-4 py-2.5 text-slate-600">{name}</td>
+                          <td className="px-4 py-2.5"></td>
+                          <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(amt)}</td>
+                        </tr>
+                      ) : null;
+                    })}
+                    <tr className="bg-slate-50 border-y border-slate-200">
+                      <td colSpan={2} className="px-4 py-2.5 font-bold text-slate-700">Sub-Total Other (C)</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmtMoney(record.total_other_deductions)}</td>
+                    </tr>
+
+                    {/* Tax Block */}
+                    <tr className="bg-white">
+                      <td className="px-4 py-2.5 text-slate-600">PAYE Tax</td>
+                      <td className="px-4 py-2.5"></td>
+                      <td className="px-4 py-2.5 text-slate-900 font-semibold text-right">{fmtMoney(record.monthly_tax)}</td>
+                    </tr>
+                    <tr className="bg-slate-50 border-t-2 border-slate-200">
+                      <td colSpan={2} className="px-4 py-3 font-bold text-slate-700">Sub-Total Tax (D)</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-700">{fmtMoney(record.total_taxation)}</td>
+                    </tr>
+
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Net Pay Box (Original Gradient Format) */}
+              <div className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-2xl p-6 text-center mb-8 shadow-md">
+                <p className="text-[11px] uppercase font-semibold tracking-widest text-indigo-100 mb-1.5">Take Home Pay (A - B - C - D)</p>
+                <p className="text-4xl font-extrabold">{fmtMoney(record.net_salary)}</p>
+              </div>
+
+              {/* Signatures */}
+              <div className="grid grid-cols-2 gap-8 mt-12 text-[11px]">
+                <div className="text-center border-t border-slate-300 pt-2">
+                  <p className="font-bold text-slate-700">System Generated</p>
+                  <p className="text-slate-400 font-medium">Processed By</p>
+                </div>
+                <div className="text-center border-t border-slate-300 pt-2">
+                  <p className="font-bold text-slate-400">&nbsp;</p>
+                  <p className="text-slate-400 font-medium">Authorized Signature & Stamp</p>
+                </div>
+              </div>
+
+              <p className="text-center text-[9px] font-medium text-slate-400 uppercase tracking-widest mt-6">
+                This is a computer-generated payslip. Contact Human Resources for any discrepancies.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

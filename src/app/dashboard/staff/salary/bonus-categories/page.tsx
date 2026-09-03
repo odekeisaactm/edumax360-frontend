@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { bonusCategoriesAPI } from '@/lib/api';
-import { BonusCategory, BonusCategoryWrite } from '@/lib/types';
+import { bonusCategoriesAPI } from '@/lib/salary_management.service';
+import { BonusCategory, BonusCategoryWrite } from '@/lib/salary_management.types';
 import {
   Tags, Plus, Edit3, Trash2, Star, Search,
   X, Check, AlertCircle, AlertTriangle, Loader2,
@@ -31,6 +31,11 @@ function extractError(err: any): string {
     if (d.non_field_errors?.length) return d.non_field_errors[0];
   }
   return err?.message || 'An unexpected error occurred.';
+}
+
+function unwrapList(res: any): any[] {
+  const data = res?.results?.data ?? res?.data?.results ?? res?.data ?? res?.results ?? res;
+  return Array.isArray(data) ? data : [];
 }
 
 // ─── Toast Stack ───────────────────────────────────────────────────────────────
@@ -69,7 +74,7 @@ function ConfirmModal({ open, category, isDeleting, onConfirm, onCancel }: {
         <p className="text-sm text-slate-500 text-center mb-6">
           Are you sure you want to delete{' '}
           <span className="font-semibold text-slate-700">"{category.name}"</span>?
-          {category.bonus_count > 0 ? (
+          {(category.bonus_count ?? 0) > 0 ? (
             <span className="block mt-2 text-red-600 font-medium">
               Warning: This category is currently used by {category.bonus_count} bonus(es).
             </span>
@@ -82,9 +87,9 @@ function ConfirmModal({ open, category, isDeleting, onConfirm, onCancel }: {
             className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50">
             Cancel
           </button>
-          <button onClick={onConfirm} disabled={isDeleting || category.bonus_count > 0}
+          <button onClick={onConfirm} disabled={isDeleting || (category.bonus_count ?? 0) > 0}
             className={`flex-1 px-4 py-2.5 rounded-xl font-semibold text-white transition-colors disabled:opacity-50 flex items-center justify-center gap-2 ${
-              category.bonus_count > 0 ? 'bg-slate-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'
+              (category.bonus_count ?? 0) > 0 ? 'bg-slate-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'
             }`}>
             {isDeleting ? <><Loader2 className="h-4 w-4 animate-spin" /> Deleting...</> : <><Trash2 className="h-4 w-4" /> Delete</>}
           </button>
@@ -123,10 +128,7 @@ function CategoryModal({ editing, isSaving, onSave, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-      {/* FIX 1: Added max-h-[90vh] flex flex-col to cap height and allow internal structure */}
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
-
-        {/* Header - static */}
         <div className="bg-gradient-to-r from-violet-600 to-purple-600 px-6 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
             <Tags className="h-4 w-4" />
@@ -138,7 +140,6 @@ function CategoryModal({ editing, isSaving, onSave, onClose }: {
           </button>
         </div>
 
-        {/* Error - static */}
         {formError && (
           <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 flex items-start gap-2 flex-shrink-0">
             <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
@@ -149,7 +150,6 @@ function CategoryModal({ editing, isSaving, onSave, onClose }: {
           </div>
         )}
 
-        {/* FIX 2: Form - scrollable area */}
         <form id="cat-form" onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
@@ -161,7 +161,7 @@ function CategoryModal({ editing, isSaving, onSave, onClose }: {
               <label className={labelCls}>Category Code <span className="text-red-400 normal-case">*</span></label>
               <input required type="text" value={form.code ?? ''} onChange={e => set('code', e.target.value.toLowerCase().replace(/\s+/g, '_'))}
                 placeholder="e.g. 13th_month" className={inputCls} />
-              <p className="text-xs text-slate-400 mt-1">Unique identifier (auto-formatted)</p>
+              <p className="text-xs text-slate-400 mt-1">Unique identifier</p>
             </div>
             <div>
               <label className={labelCls}>Sort Order</label>
@@ -191,7 +191,6 @@ function CategoryModal({ editing, isSaving, onSave, onClose }: {
           </div>
         </form>
 
-        {/* Footer - static */}
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex-shrink-0">
           <button type="button" onClick={onClose} disabled={isSaving}
             className="px-4 py-2 text-sm border border-slate-200 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
@@ -230,9 +229,9 @@ export default function BonusCategoriesPage() {
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canCreate = user?.is_superuser || hasPermission('salary_management.add_salaryrecordmodel');
-  const canEdit   = user?.is_superuser || hasPermission('salary_management.change_salaryrecordmodel');
-  const canDelete = user?.is_superuser || hasPermission('salary_management.delete_salaryrecordmodel');
+  const canCreate = user?.is_superuser || hasPermission('salary_management.add_bonuscategorymodel');
+  const canEdit   = user?.is_superuser || hasPermission('salary_management.change_bonuscategorymodel');
+  const canDelete = user?.is_superuser || hasPermission('salary_management.delete_bonuscategorymodel');
 
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;
@@ -245,7 +244,7 @@ export default function BonusCategoriesPage() {
     setLoading(true); setPageError(null);
     try {
       const data = await bonusCategoriesAPI.list();
-      setCategories(Array.isArray(data) ? data : []);
+      setCategories(unwrapList(data));
     } catch (err) {
       setPageError(extractError(err));
     } finally { setLoading(false); }
@@ -354,7 +353,6 @@ export default function BonusCategoriesPage() {
       {/* ── List Card ── */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
 
-        {/* Search + filter bar */}
         <div className="px-5 py-4 border-b border-slate-50 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="relative flex-1 w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -412,18 +410,18 @@ export default function BonusCategoriesPage() {
         ) : (
           <>
             {/* Table header */}
-            <div className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-4 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
+            <div className="grid grid-cols-[1fr_140px_100px_100px_120px] items-center gap-4 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Category</span>
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-center">Used in Bonuses</span>
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-center">Sort Order</span>
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Actions</span>
             </div>
 
             <div className="divide-y divide-slate-50">
               {filtered.map(cat => (
                 <div key={cat.id}>
-                  <div className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
+                  <div className="grid grid-cols-[1fr_140px_100px_100px_120px] items-center gap-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${cat.is_active ? 'bg-violet-100' : 'bg-slate-100'}`}>
                         <Tags className={`h-4 w-4 ${cat.is_active ? 'text-violet-600' : 'text-slate-400'}`} />
@@ -445,17 +443,19 @@ export default function BonusCategoriesPage() {
                       </span>
                     </div>
 
-                    {cat.is_active ? (
-                      <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full whitespace-nowrap">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-semibold rounded-full whitespace-nowrap">
-                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> Inactive
-                      </span>
-                    )}
+                    <div>
+                      {cat.is_active ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-semibold rounded-full whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> Inactive
+                        </span>
+                      )}
+                    </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-end gap-1">
                       {canEdit && (
                         <button onClick={() => openEdit(cat)} title="Edit"
                           className="p-2 rounded-lg text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all">

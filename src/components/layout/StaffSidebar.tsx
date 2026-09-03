@@ -1,22 +1,22 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { SOFTWARE_NAME, SOFTWARE_TAGLINE } from '@/lib/constants';
 import {
-  Home, Users, BookOpen, Calendar, FileText, DollarSign, Settings,
+  Home, Users, BookOpen, Calendar, FileText, Settings,
   ChevronDown, ChevronRight, UserCheck, Eye, GraduationCap, ClipboardList,
   CreditCard, PieChart, Bot, Star, Layout, FileSpreadsheet, UserPlus, Activity,
   KeyRound, Clock, ArrowUpCircle, MessageSquare, Crown, Building, ArrowRightLeft,
-  TrendingUp, FolderOpen, Tag, Plus, Columns, Layers, RefreshCw, Ban, Banknote,
-  HelpCircle, Tags, Database, List, CheckSquare, Video, BarChart, Store, AlertCircle,Bell,
+  TrendingUp, FolderOpen, Tag, Plus, Layers, RefreshCw, Ban, Banknote,
+  HelpCircle, Tags, Database, List, CheckSquare, BarChart, Store, AlertCircle, Bell,
   BarChart2, Archive, Edit, Send, Info, Smartphone, Cpu, Sliders, SlidersHorizontal,
-  ArrowRight, Award, Printer, Shield, Upload, Download, CalendarDays, PlusCircle,
-  FileSearch, Package, User, Zap, MapPin, Gift, TrendingDown, Wallet, History,
-  ClipboardCheck, Radio, ListChecks, ScanLine, IdCard, Fingerprint,  Truck, ArrowDownCircle,
-  ShoppingCart, Monitor, PackageCheck, Cog, SquarePen
+  Award, Printer, Shield, Upload, Download, CalendarDays, PlusCircle,
+  Package, User, MapPin, Gift, TrendingDown, Wallet, History, Video, PenTool,
+  ClipboardCheck, Radio, ListChecks, ScanLine, IdCard, Fingerprint, Truck, ArrowDownCircle,
+  ShoppingCart, Monitor, PackageCheck, Cog, SquarePen, Briefcase, Coins
 } from 'lucide-react';
 
 interface NavItem {
@@ -34,54 +34,47 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
   const { hasPermission, user, activeModules, schoolInfo } = useAuth();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
-  const toggleExpanded = (name: string) => {
-    setExpandedItems(prev =>
-      prev.includes(name) ? prev.filter(i => i !== name) : [...prev, name]
-    );
-  };
-
+  // Strict match to prevent overlapping highlights (e.g. All Students vs Register Student)
   const isCurrentPath = (href: string) => {
     if (href === '#') return false;
-    if (href === pathname) return true;
-    if (pathname.startsWith(href + '/')) return true;
-    return false;
+    return pathname === href;
   };
 
   const hasAccess = (item: NavItem): boolean => {
-  if (user?.is_superuser) {
-    if (item.moduleCode) return activeModules.some(m => m.code === item.moduleCode);
+    if (user?.is_superuser) {
+      if (item.moduleCode) return activeModules.some(m => m.code === item.moduleCode);
+      return true;
+    }
+
+    // Check module first
+    if (item.moduleCode && !activeModules.some(m => m.code === item.moduleCode)) return false;
+
+    // If has children, show only if at least one child is accessible
+    if (item.children && item.children.length > 0) {
+      return item.children.some(child => hasAccess(child));
+    }
+
+    // Leaf item — check permission
+    if (item.requiredPermissions && item.requiredPermissions.length > 0) {
+      return hasPermission(item.requiredPermissions[0]);
+    }
+
+    // No permission required — always show
     return true;
-  }
-
-  // Check module first
-  if (item.moduleCode && !activeModules.some(m => m.code === item.moduleCode)) return false;
-
-  // If has children, show only if at least one child is accessible
-  if (item.children && item.children.length > 0) {
-    return item.children.some(child => hasAccess(child));
-  }
-
-  // Leaf item — check permission
-  if (item.requiredPermissions && item.requiredPermissions.length > 0) {
-    return hasPermission(item.requiredPermissions[0]);
-  }
-
-  // No permission required — always show (Dashboard etc)
-  return true;
-};
+  };
 
   const navItems: NavItem[] = [
     {
       name: 'Dashboard',
       href: '/dashboard/staff',
       icon: <Home className="h-5 w-5" />,
-      current: pathname === '/dashboard/staff',
+      current: isCurrentPath('/dashboard/staff'),
     },
     {
       name: 'Place Order',
       href: '/dashboard/staff/inventory/sales/new',
       icon: <CreditCard className="h-5 w-5" />,
-      current: pathname === '/dashboard/staff/inventory/sales/new',
+      current: isCurrentPath('/dashboard/staff/inventory/sales/new'),
       moduleCode: 'inventory',
       requiredPermissions: ['inventory.add_inventorysalemodel'],
     },
@@ -109,7 +102,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           name: 'All Students',
           href: '/dashboard/staff/students',
           icon: <Users className="h-4 w-4" />,
-          current: pathname === '/dashboard/staff/students',
+          current: isCurrentPath('/dashboard/staff/students'),
           requiredPermissions: ['student_management.view_studentmodel'],
         },
         {
@@ -131,10 +124,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           href: '/dashboard/staff/students/bulk-update',
           icon: <SquarePen className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/students/bulk-update'),
-          requiredPermissions: [
-            'student_management.add_bulkstudentuploadmodel'
-
-          ],
+          requiredPermissions: ['student_management.add_bulkstudentuploadmodel'],
         },
         {
           name: 'Alumni',
@@ -227,7 +217,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/academic/leadership-roles'),
           requiredPermissions: ['academic_structure.view_leadership_roles'],
         },
-         {
+        {
           name: 'Promotion Config',
           href: '/dashboard/staff/academic/promotion-mappings',
           icon: <Settings className="h-4 w-4" />,
@@ -260,22 +250,90 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
     {
       name: 'Learning Management',
       href: '#',
-      icon: <BookOpen className="h-5 w-5" />,
+      icon: <Monitor className="h-4 w-4" />,
       moduleCode: 'learning',
       children: [
+        // --- DAILY OPERATIONS ---
         {
-          name: 'Learning Notes',
+          name: 'Scheme of Work',
+          href: '/dashboard/staff/learning/schemes',
+          icon: <CalendarDays className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/learning/schemes'),
+          requiredPermissions: ['learning_resources.view_schemeofworkmodel'],
+        },
+        {
+          name: 'Lesson Notes',
           href: '/dashboard/staff/learning/notes',
           icon: <FileText className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/learning/notes'),
-          requiredPermissions: ['learning_resources.view_learningnotemodel'],
+          requiredPermissions: ['learning_resources.view_lessonnotemodel'],
         },
         {
-          name: 'AI Settings',
-          href: '/dashboard/staff/learning/ai-settings',
-          icon: <Bot className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/learning/ai-settings'),
-          requiredPermissions: ['learning_resources.view_learningnotemodel'],
+          name: 'Lesson Materials',
+          href: '/dashboard/staff/learning/materials',
+          icon: <FolderOpen className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/learning/materials'),
+          requiredPermissions: ['learning_resources.view_lessonnotemodel'],
+        },
+        {
+          name: 'Pending Reminders',
+          href: '/dashboard/staff/learning/reminders',
+          icon: <Bell className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/learning/reminders'),
+          requiredPermissions: ['learning_resources.view_pendingnoteremindermodel'],
+        },
+
+        // --- ADVANCED LEARNING (Phase 2) ---
+        {
+          name: 'Assignments',
+          href: '/dashboard/staff/learning/assignments',
+          icon: <ClipboardCheck className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/learning/assignments'),
+          requiredPermissions: ['learning_resources.view_lessonassignmentmodel'],
+        },
+        {
+          name: 'Learning Paths',
+          href: '/dashboard/staff/learning/paths',
+          icon: <MapPin className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/learning/paths'),
+          requiredPermissions: ['learning_resources.view_learningpathmodel'],
+        },
+        {
+          name: 'Live Classes',
+          href: '/dashboard/staff/learning/live-classes',
+          icon: <Video className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/learning/live-classes'),
+          requiredPermissions: ['learning_resources.view_liveclasssessionmodel'],
+        },
+        {
+          name: 'Peer Notes',
+          href: '/dashboard/staff/learning/peer-notes',
+          icon: <Users className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/learning/peer-notes'),
+          requiredPermissions: ['learning_resources.moderate_shared_notes'],
+        },
+
+        // --- SETUP & CONFIGURATION ---
+        {
+          name: 'Configuration',
+          href: '#',
+          icon: <Settings className="h-4 w-4" />,
+          children: [
+            {
+              name: 'Smart Hardware',
+              href: '/dashboard/staff/learning/hardware',
+              icon: <PenTool className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/learning/hardware'),
+              requiredPermissions: ['learning_resources.view_learningresourcessettingsmodel'],
+            },
+            {
+              name: 'Settings & AI',
+              href: '/dashboard/staff/learning/settings',
+              icon: <Bot className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/learning/settings'),
+              requiredPermissions: ['learning_resources.view_learningresourcessettingsmodel'],
+            },
+          ]
         },
       ],
     },
@@ -380,7 +438,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
         {
           name: 'View Results',
           href: '/dashboard/staff/result/view',
-          icon: <Eye className="h-5 w-5" />,
+          icon: <Eye className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/result/view'),
           requiredPermissions: ['result.view_resultmodel'],
         },
@@ -426,7 +484,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/result/archive'),
           requiredPermissions: ['result.view_resultmodel'],
         },
-
         {
           name: 'Configuration',
           href: '#',
@@ -481,7 +538,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               current: isCurrentPath('/dashboard/staff/result/behavior'),
               requiredPermissions: ['result.view_result_configuration'],
             },
-
             {
               name: 'Text Categories',
               href: '/dashboard/staff/result/text-categories',
@@ -496,7 +552,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
     {
       name: 'Fee Management',
       href: '#',
-      icon: <DollarSign className="h-5 w-5" />,
+      icon: <Banknote className="h-5 w-5" />,
       moduleCode: 'fee',
       children: [
         {
@@ -506,7 +562,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/fee/dashboard'),
           requiredPermissions: ['fee_management.manage_fees'],
         },
-        // ==================== BILLING & INVOICES ====================
         {
           name: 'Billing & Invoices',
           href: '#',
@@ -519,7 +574,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               current: isCurrentPath('/dashboard/staff/fee/invoices'),
               requiredPermissions: ['fee_management.manage_fees'],
             },
-
             {
               name: 'Invoice Generation',
               href: '/dashboard/staff/fee/generation-jobs',
@@ -536,7 +590,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             },
           ],
         },
-        // ==================== COLLECTIONS & DEBTS ====================
         {
           name: 'Collections & Debts',
           href: '#',
@@ -571,7 +624,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               requiredPermissions: ['fee_management.approve_fee_waiver'],
             },
             {
-              name: 'Notifications & Reminders',
+              name: 'Notifications',
               href: '/dashboard/staff/fee/reminders',
               icon: <Bell className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/fee/reminders'),
@@ -579,7 +632,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             },
           ],
         },
-        // ==================== REPORTS & ANALYTICS ====================
         {
           name: 'Reports & Analytics',
           href: '/dashboard/staff/fee/reports',
@@ -587,13 +639,12 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/fee/reports'),
           requiredPermissions: ['fee_management.manage_fees'],
         },
-        // ==================== PRICING ARCHITECTURE ====================
         {
           name: 'Pricing Architecture',
           href: '#',
           icon: <Layers className="h-4 w-4" />,
           children: [
-              {
+            {
               name: 'Fee Structures',
               href: '/dashboard/staff/fee/fee-structures',
               icon: <Layers className="h-4 w-4" />,
@@ -614,47 +665,43 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               current: isCurrentPath('/dashboard/staff/fee/groups'),
               requiredPermissions: ['fee_management.manage_fees'],
             },
-
           ],
         },
-       // ==================== DISCOUNTS & CONCESSIONS ====================
-    {
-      name: 'Discounts & Concessions',
-      href: '#',
-      icon: <Tag className="h-4 w-4" />,
-      children: [
         {
-          name: 'New Enrollment',
-          href: '/dashboard/staff/fee/discount-enrollment',
-          icon: <UserCheck className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/fee/discount-enrollment'),
-          requiredPermissions: ['fee_management.manage_fees'],
+          name: 'Discounts & Concessions',
+          href: '#',
+          icon: <Tag className="h-4 w-4" />,
+          children: [
+            {
+              name: 'New Enrollment',
+              href: '/dashboard/staff/fee/discount-enrollment',
+              icon: <UserCheck className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/fee/discount-enrollment'),
+              requiredPermissions: ['fee_management.manage_fees'],
+            },
+            {
+              name: 'Student Enrollments',
+              href: '/dashboard/staff/fee/discount-enrollments',
+              icon: <UserCheck className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/fee/discount-enrollments'),
+              requiredPermissions: ['fee_management.manage_fees'],
+            },
+            {
+              name: 'Configurations',
+              href: '/dashboard/staff/fee/discounts',
+              icon: <Settings className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/fee/discounts'),
+              requiredPermissions: ['fee_management.manage_fees'],
+            },
+            {
+              name: 'Application History',
+              href: '/dashboard/staff/fee/discount-history',
+              icon: <History className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/fee/discount-history'),
+              requiredPermissions: ['fee_management.manage_fees'],
+            },
+          ],
         },
-        {
-          name: 'Student Enrollments',
-          href: '/dashboard/staff/fee/discount-enrollments',
-          icon: <UserCheck className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/fee/discount-enrollments'),
-          requiredPermissions: ['fee_management.manage_fees'],
-        },
-
-        {
-          name: 'Discount Configurations',
-          href: '/dashboard/staff/fee/discounts',
-          icon: <Settings className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/fee/discounts'),
-          requiredPermissions: ['fee_management.manage_fees'],
-        },
-        {
-          name: 'Application History',
-          href: '/dashboard/staff/fee/discount-history',
-          icon: <History className="h-4 w-4" />, // Make sure to import History from lucide-react
-          current: isCurrentPath('/dashboard/staff/fee/discount-history'),
-          requiredPermissions: ['fee_management.manage_fees'],
-        },
-      ],
-    },
-        // ==================== CONFIGURATION ====================
         {
           name: 'Configuration',
           href: '#',
@@ -671,14 +718,12 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
         },
       ],
     },
-
     {
       name: 'Finance',
       href: '#',
-      icon: <DollarSign className="h-5 w-5" />,
+      icon: <Briefcase className="h-5 w-5" />,
       moduleCode: 'finance',
       children: [
-        // ==================== DASHBOARD ====================
         {
           name: 'Finance Dashboard',
           href: '/dashboard/staff/finance/dashboard',
@@ -686,12 +731,10 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/finance/dashboard'),
           requiredPermissions: ['finance.view_expensemodel'],
         },
-
-        // ==================== WALLET ACTIVITIES ====================
         {
           name: 'Wallet Activities',
           href: '#',
-          icon: <CreditCard className="h-5 w-5" />,
+          icon: <CreditCard className="h-4 w-4" />,
           children: [
             {
               name: 'Deposit',
@@ -705,10 +748,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               href: '/dashboard/staff/finance/deposits',
               icon: <FileText className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/finance/deposits'),
-              requiredPermissions: [
-                'finance.view_studentfundingmodel',
-                'finance.view_stafffundingmodel',
-              ],
+              requiredPermissions: ['finance.view_studentfundingmodel', 'finance.view_stafffundingmodel'],
             },
             {
               name: 'Wallet Transfer',
@@ -733,12 +773,10 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             },
           ],
         },
-
-        // ==================== INCOME & EXPENSES ====================
         {
           name: 'Income & Expenses',
           href: '#',
-          icon: <BarChart2 className="h-5 w-5" />,
+          icon: <BarChart2 className="h-4 w-4" />,
           children: [
             {
               name: 'Income Records',
@@ -784,44 +822,38 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             },
           ],
         },
-
-        // ==================== PROCUREMENT ====================
+        {
+          name: 'Procurement',
+          href: '#',
+          icon: <Package className="h-4 w-4" />,
+          children: [
             {
-              name: 'Procurement',
-              href: '#',
-              icon: <Package className="h-5 w-5" />,
-              children: [
-                {
-                  name: 'Purchase Order Payments',
-                  href: '/dashboard/staff/finance/supplier-payments',
-                  icon: <CreditCard className="h-4 w-4" />,
-                  current: isCurrentPath('/dashboard/staff/finance/supplier-payments'),
-                  requiredPermissions: ['finance.view_supplierpaymentmodel'],
-                },
-                {
-                  name: 'Advance Payments & Settlements',
-                  href: '/dashboard/staff/finance/advance-payments',
-                  icon: <ArrowUpCircle className="h-4 w-4" />,
-                  current: isCurrentPath('/dashboard/staff/finance/advance-payments'),
-                  requiredPermissions: [
-                    'finance.view_purchaseadvancepaymentmodel',
-                    'finance.view_advancesettlementmodel',
-                  ],
-                },
-              ],
+              name: 'Supplier Payments',
+              href: '/dashboard/staff/finance/supplier-payments',
+              icon: <CreditCard className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/supplier-payments'),
+              requiredPermissions: ['finance.view_supplierpaymentmodel'],
             },
+            {
+              name: 'Advance Settlements',
+              href: '/dashboard/staff/finance/advance-payments',
+              icon: <ArrowUpCircle className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/advance-payments'),
+              requiredPermissions: ['finance.view_purchaseadvancepaymentmodel', 'finance.view_advancesettlementmodel'],
+            },
+          ],
+        },
         {
           name: 'Reports',
           href: '/dashboard/staff/finance/reports',
-          icon: <FileSpreadsheet className="h-5 w-5" />,
+          icon: <FileSpreadsheet className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/finance/reports'),
           requiredPermissions: ['finance.view_expensemodel'],
         },
-        // ==================== LEDGER ====================
         {
           name: 'Ledger',
           href: '#',
-          icon: <BookOpen className="h-5 w-5" />,
+          icon: <BookOpen className="h-4 w-4" />,
           children: [
             {
               name: 'Bank Transactions',
@@ -831,14 +863,14 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               requiredPermissions: ['finance.view_banktransactionmodel'],
             },
             {
-              name: 'Student Wallet Ledger',
+              name: 'Student Ledger',
               href: '/dashboard/staff/finance/ledger/wallet-transactions',
               icon: <Wallet className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/finance/ledger/wallet-transactions'),
               requiredPermissions: ['finance.view_wallettransactionmodel'],
             },
             {
-              name: 'Staff Wallet Ledger',
+              name: 'Staff Ledger',
               href: '/dashboard/staff/finance/ledger/staff-wallet-transactions',
               icon: <Wallet className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/finance/ledger/staff-wallet-transactions'),
@@ -847,18 +879,16 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             {
               name: 'Online Transactions',
               href: '/dashboard/staff/finance/ledger/online-payments',
-              icon: <Activity className="h-5 w-5" />,
+              icon: <Activity className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/finance/ledger/online-payments'),
               requiredPermissions: ['finance.view_onlinepaymenttransactionmodel'],
             },
           ],
         },
-
-        // ==================== CONFIGURATION ====================
         {
           name: 'Configuration',
           href: '#',
-          icon: <Settings className="h-5 w-5" />,
+          icon: <Settings className="h-4 w-4" />,
           children: [
             {
               name: 'Bank Accounts',
@@ -886,133 +916,138 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
       ],
     },
     {
-      "name": "Salary Management",
-      "href": "#",
-      "icon": <DollarSign className="h-5 w-5" />,
-      "moduleCode": "salary_management",
-      "children": [
+      name: "Salary Management",
+      href: "#",
+      icon: <Coins className="h-5 w-5" />,
+      moduleCode: "salary_management",
+      children: [
         {
-          "name": "Dashboard",
-          "href": "/dashboard/staff/salary/dashboard",
-          "icon": <Layout className="h-4 w-4" />,
-          "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
+          name: "Dashboard",
+          href: "/dashboard/staff/salary/dashboard",
+          icon: <Layout className="h-4 w-4" />,
+          requiredPermissions: ["salary_management.add_salaryrecordmodel"]
         },
         {
-          "name": "Payroll",
-          "href": "#",
-          "icon": <FileText className="h-4 w-4" />,
-          "children": [
+          name: "Payroll",
+          href: "#",
+          icon: <FileText className="h-4 w-4" />,
+          children: [
             {
-              "name": "All Payroll",
-              "href": "/dashboard/staff/salary/payroll",
-              "icon": <List className="h-4 w-4" />,
-              "requiredPermissions": ["salary_management.view_salaryrecordmodel"]
+              name: "All Payroll",
+              href: "/dashboard/staff/salary/payroll",
+              icon: <List className="h-4 w-4" />,
+              requiredPermissions: ["salary_management.view_salaryrecordmodel"]
             },
             {
-              "name": "Bulk Payslips",
-              "href": "/dashboard/staff/salary/bulk-payslips",
-              "icon": <Layers className="h-4 w-4" />,
-              "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
+              name: "Bulk Payroll",
+              href: "/dashboard/staff/salary/bulk-payslips",
+              icon: <Layers className="h-4 w-4" />,
+              requiredPermissions: ["salary_management.add_salaryrecordmodel"]
             },
             {
-              "name": "Annual Payslips",
-              "href": "/dashboard/staff/salary/annual-payslips",
-              "icon": <Calendar className="h-4 w-4" />,
-              "requiredPermissions": ["salary_management.view_salaryrecordmodel"]
+              name: "Annual Payslips",
+              href: "/dashboard/staff/salary/annual-payslips",
+              icon: <Calendar className="h-4 w-4" />,
+              requiredPermissions: ["salary_management.view_salaryrecordmodel"]
             }
           ]
         },
         {
-          "name": "Salary Structure",
-          "href": "/dashboard/staff/salary/structure",
-          "icon": <Building className="h-4 w-4" />,
-          "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
+          name: "Salary Structure",
+          href: "/dashboard/staff/salary/structure",
+          icon: <Building className="h-4 w-4" />,
+          requiredPermissions: ["salary_management.add_salaryrecordmodel"]
         },
         {
-          "name": "Salary Settings",
-          "href": "/dashboard/staff/salary/settings",
-          "icon": <Settings className="h-4 w-4" />,
-          "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
-        },
-        {
-          "name": "Bonuses",
-          "href": "#",
-          "icon": <Award className="h-4 w-4" />,
-          "children": [
-            {
-              "name": "Special Bonuses",
-              "href": "/dashboard/staff/salary/bonuses",
-              "icon": <Star className="h-4 w-4" />,
-              "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
-            },
-            {
-              "name": "Bonus Categories",
-              "href": "/dashboard/staff/salary/bonus-categories",
-              "icon": <Tags className="h-4 w-4" />,
-              "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
-            },
-            {
-              "name": "My Special Bonus",
-              "href": "/dashboard/staff/salary/bonuses/my-bonus",
-              "icon": <Gift className="h-4 w-4" />,
-              "requiredPermissions": []
-            }
-          ]
-        },
-        {
-          "name": "Reports & Export",
-          "href": "#",
-          "icon": <BarChart2 className="h-4 w-4" />,
-          "children": [
-            {
-              "name": "Salary Report",
-              "href": "/dashboard/staff/salary/report",
-              "icon": <FileSpreadsheet className="h-4 w-4" />,
-              "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
-            },
-            {
-              "name": "Salary Excel Export",
-              "href": "/dashboard/staff/salary/excel-export",
-              "icon": <Download className="h-4 w-4" />,
-              "requiredPermissions": ["salary_management.add_salaryrecordmodel"]
-            }
-          ]
-        },
-        {
-          "name": "Loans & Advances",
-          "href": "#",
-          "icon": <CreditCard className="h-4 w-4" />,
-          "children": [
-            {
-              "name": "Salary Advance",
-              "href": "/dashboard/staff/salary/advances",
-              "icon": <ArrowUpCircle className="h-4 w-4" />,
-              "requiredPermissions": ["salary_management.view_salaryrecordmodel"]
-            },
-            {
-              "name": "Staff Loans",
-              "href": "/dashboard/staff/salary/loans",
-              "icon": <Users className="h-4 w-4" />,
-              "requiredPermissions": ["salary_management.view_salaryrecordmodel"]
-            },
-            {
-              "name": "Staff Loan Debtors",
-              "href": "/dashboard/staff/salary/loan-debtors",
-              "icon": <UserCheck className="h-4 w-4" />,
-              "requiredPermissions": ["salary_management.view_salaryrecordmodel"]
-            }
-          ]
+          name: "Salary Configuration",
+          href: "/dashboard/staff/salary/settings",
+          icon: <Settings className="h-4 w-4" />,
+          requiredPermissions: ["salary_management.change_salarysettingmodel"]
         },
 
         {
-          "name": "My Payslip",
-          "href": "/dashboard/staff/salary/my-payslip",
-          "icon": <CalendarDays className="h-4 w-4" />,
-          "requiredPermissions": []
+          name: "Bonuses",
+          href: "#",
+          icon: <Award className="h-4 w-4" />,
+          children: [
+            {
+              name: "Special Bonuses",
+              href: "/dashboard/staff/salary/bonuses",
+              icon: <Star className="h-4 w-4" />,
+              requiredPermissions: ["salary_management.add_salaryrecordmodel"]
+            },
+            {
+              name: "Bonus Categories",
+              href: "/dashboard/staff/salary/bonus-categories",
+              icon: <Tags className="h-4 w-4" />,
+              requiredPermissions: ["salary_management.add_salaryrecordmodel"]
+            },
+            {
+              name: "My Special Bonus",
+              href: "/dashboard/staff/salary/bonuses/my-bonus",
+              icon: <Gift className="h-4 w-4" />,
+              requiredPermissions: []
+            }
+          ]
+        },
+        {
+          name: "Reports & Export",
+          href: "#",
+          icon: <BarChart2 className="h-4 w-4" />,
+          children: [
+            {
+              name: "Salary Report",
+              href: "/dashboard/staff/salary/report",
+              icon: <FileSpreadsheet className="h-4 w-4" />,
+              requiredPermissions: ["salary_management.add_salaryrecordmodel"]
+            },
+            {
+              name: "Salary Excel Export",
+              href: "/dashboard/staff/salary/excel-export",
+              icon: <Download className="h-4 w-4" />,
+              requiredPermissions: ["salary_management.add_salaryrecordmodel"]
+            }
+          ]
+        },
+        {
+          name: "Loans & Advances",
+          href: "#",
+          icon: <CreditCard className="h-4 w-4" />,
+          children: [
+            {
+              name: "Salary Advance",
+              href: "/dashboard/staff/salary/advances",
+              icon: <ArrowUpCircle className="h-4 w-4" />,
+              requiredPermissions: ["salary_management.view_salaryrecordmodel"]
+            },
+            {
+              name: "Staff Loans",
+              href: "/dashboard/staff/salary/loans",
+              icon: <Users className="h-4 w-4" />,
+              requiredPermissions: ["salary_management.view_salaryrecordmodel"]
+            },
+            {
+              name: "Staff Loan Debtors",
+              href: "/dashboard/staff/salary/loan-debtors",
+              icon: <UserCheck className="h-4 w-4" />,
+              requiredPermissions: ["salary_management.view_salaryrecordmodel"]
+            }
+          ]
+        },
+        {
+          name: "My Payslip",
+          href: "/dashboard/staff/salary/my-payslip",
+          icon: <CalendarDays className="h-4 w-4" />,
+          requiredPermissions: []
+        },
+        {
+          name: "Global Settings",
+          href: "/dashboard/staff/salary/global-settings",
+          icon: <Sliders className="h-4 w-4" />,
+          requiredPermissions: ["salary_management.change_salarysettingmodel"]
         }
       ]
     },
-
     {
       name: 'Inventory & POS',
       href: '#',
@@ -1026,7 +1061,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/inventory/inventory-report'),
           requiredPermissions: ['inventory.view_inventory_report'],
         },
-        // ==================== POS & SALES ====================
         {
           name: 'Point of Sale',
           href: '#',
@@ -1048,7 +1082,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             },
           ],
         },
-        // ==================== CATALOG & SUPPLIERS ====================
         {
           name: 'Catalog & Suppliers',
           href: '#',
@@ -1084,8 +1117,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             },
           ],
         },
-
-        // ==================== STOCK MOVEMENTS ====================
         {
           name: 'Stock Movements',
           href: '#',
@@ -1114,7 +1145,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             },
           ],
         },
-        // ==================== PROCUREMENT ====================
         {
           name: 'Procurement',
           href: '#',
@@ -1136,45 +1166,41 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             },
           ],
         },
-       {
-              name: 'Assignments & Collections',
-              href: '#',
-              icon: <Users className="h-4 w-4" />,
-              children: [
-
-                {
-                  name: 'View Allocations',
-                  href: '/dashboard/staff/inventory/allocations',
-                  icon: <Package className="h-4 w-4" />,
-                  current: isCurrentPath('/dashboard/staff/inventory/allocations'),
-                  requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
-                },
-                {
-                  name: 'View Collections',
-                  href: '/dashboard/staff/inventory/collections',
-                  icon: <PackageCheck className="h-4 w-4" />,
-                  current: isCurrentPath('/dashboard/staff/inventory/collections'),
-                  requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
-                },
-                {
-                  name: 'Assign Items',
-                  href: '/dashboard/staff/inventory/assignments',
-                  icon: <ClipboardList className="h-4 w-4" />,
-                  current: isCurrentPath('/dashboard/staff/inventory/assignments'),
-                  requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
-                },
-                {
-                  name: 'Generate Assignments',
-                  href: '/dashboard/staff/inventory/assignments/jobs',
-                  icon: <Cog className="h-4 w-4" />,
-                  current: isCurrentPath('/dashboard/staff/inventory/assignments/jobs'),
-                  requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
-                },
-              ],
+        {
+          name: 'Assignments',
+          href: '#',
+          icon: <Users className="h-4 w-4" />,
+          children: [
+            {
+              name: 'View Allocations',
+              href: '/dashboard/staff/inventory/allocations',
+              icon: <Package className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/allocations'),
+              requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
             },
-
-
-        // ==================== CONFIGURATION ====================
+            {
+              name: 'View Collections',
+              href: '/dashboard/staff/inventory/collections',
+              icon: <PackageCheck className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/collections'),
+              requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
+            },
+            {
+              name: 'Assign Items',
+              href: '/dashboard/staff/inventory/assignments',
+              icon: <ClipboardList className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/assignments'),
+              requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
+            },
+            {
+              name: 'Generate Jobs',
+              href: '/dashboard/staff/inventory/assignments/jobs',
+              icon: <Cog className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/inventory/assignments/jobs'),
+              requiredPermissions: ['inventory.view_inventoryassignmentmodel'],
+            },
+          ],
+        },
         {
           name: 'Configuration',
           href: '#',
@@ -1214,7 +1240,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           name: 'All Staff',
           href: '/dashboard/staff/staff',
           icon: <Users className="h-4 w-4" />,
-          current: pathname === '/dashboard/staff/staff',
+          current: isCurrentPath('/dashboard/staff/staff'),
           requiredPermissions: ['human_resource.view_staffmodel'],
         },
         {
@@ -1267,13 +1293,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/communication/campaigns'),
           requiredPermissions: ['communication.view_bulkmessagecampaignmodel'],
         },
-//         {
-//           name: 'Admission Enquiries',
-//           href: '/dashboard/staff/communication/admission-enquiries',
-//           icon: <UserPlus className="h-4 w-4" />,
-//           current: isCurrentPath('/dashboard/staff/communication/admission-enquiries'),
-//           requiredPermissions: ['communication.view_admissionenquirymodel'],
-//         },
         {
           name: 'Queries & Helpdesk',
           href: '/dashboard/staff/communication/queries',
@@ -1317,7 +1336,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             {
               name: 'SMTP Configs',
               href: '/dashboard/staff/communication/smtp-configs',
-              icon: <MessageSquare className="h-4 w-4" />, // Or <Mail className="h-4 w-4" /> if you import Mail from lucide-react
+              icon: <MessageSquare className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/communication/smtp-configs'),
               requiredPermissions: ['communication.manage_communication_settings'],
             },
@@ -1329,7 +1348,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               requiredPermissions: ['communication.manage_communication_settings'],
             },
             {
-              name: 'Notification Templates',
+              name: 'Templates',
               href: '/dashboard/staff/communication/templates',
               icon: <Layout className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/communication/templates'),
@@ -1381,7 +1400,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           requiredPermissions: ['attendance.add_attendanceeventmodel'],
         },
         {
-          name: 'Exceptions & Excursions',
+          name: 'Exceptions',
           href: '/dashboard/staff/attendance/exceptions',
           icon: <MapPin className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/attendance/exceptions'),
@@ -1408,7 +1427,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/attendance/events'),
           requiredPermissions: ['attendance.view_eventattendancerecordmodel'],
         },
-
         {
           name: 'Configuration',
           href: '#',
@@ -1447,7 +1465,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
       ],
     },
     {
-      // ── System Configuration — now includes Academic Calendar as submenu ──
       name: 'System Configuration',
       href: '#',
       icon: <Settings className="h-5 w-5" />,
@@ -1474,7 +1491,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           requiredPermissions: ['school_configuration.view_schoolaiconfigmodel'],
         },
         {
-          // Academic Calendar moved here as a nested submenu
           name: 'Academic Calendar',
           href: '#',
           icon: <Calendar className="h-4 w-4" />,
@@ -1513,7 +1529,41 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
     },
   ];
 
-  // ── Recursive nav item renderer ───────────────────────────────────────────
+  // Accordion Logic: Find which parents contain the current active route
+  const getActiveParents = (items: NavItem[]): string[] => {
+    for (const item of items) {
+      if (item.children) {
+        const activeChildren = getActiveParents(item.children);
+        if (activeChildren.length > 0 || item.children.some(c => c.href === pathname)) {
+          return [item.name, ...activeChildren];
+        }
+      }
+    }
+    return [];
+  };
+
+  // Sync expanded items on load / path change
+  useEffect(() => {
+    const active = getActiveParents(navItems);
+    setExpandedItems(active);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  const toggleExpanded = (name: string, level: number) => {
+    if (expandedItems.includes(name)) {
+      // Close this item and all its children by filtering it out
+      setExpandedItems(prev => prev.filter(i => i !== name));
+    } else {
+      if (level === 0) {
+        // Strict accordion for top-level: close others, open this one
+        setExpandedItems([name]);
+      } else {
+        // For nested submenus: leave parent open, add this one
+        setExpandedItems(prev => [...prev, name]);
+      }
+    }
+  };
+
   const renderNavItem = (item: NavItem, level = 0) => {
     const hasChildren = item.children && item.children.length > 0;
     const isExpanded = expandedItems.includes(item.name);
@@ -1521,13 +1571,12 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
     if (!hasAccess(item)) return null;
 
     const indent = level === 1 ? 'ml-3' : level === 2 ? 'ml-6' : '';
-    const iconSize = level === 0 ? 'h-5 w-5' : 'h-4 w-4';
 
     return (
       <div key={item.name}>
         {hasChildren ? (
           <button
-            onClick={() => toggleExpanded(item.name)}
+            onClick={() => toggleExpanded(item.name, level)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-semibold rounded-xl transition-all mb-0.5 ${indent} ${
               isExpanded
                 ? 'bg-indigo-50 text-indigo-700'
@@ -1547,8 +1596,8 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             onClick={onClose}
             className={`flex items-center gap-3 px-3 py-2.5 text-sm font-semibold rounded-xl transition-all mb-0.5 ${indent} ${
               item.current
-  ? 'border-l-2 border-indigo-600 bg-indigo-50 text-indigo-700 pl-2.5'
-  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                ? 'border-l-2 border-indigo-600 bg-indigo-50 text-indigo-700 pl-2.5'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
             }`}
           >
             <span className="flex-shrink-0">{item.icon}</span>
@@ -1565,14 +1614,8 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
     );
   };
 
-  // ── Logo section ──────────────────────────────────────────────────────────
-  // School logo if available, else gradient icon with software name initial
-  const logoSrc = schoolInfo?.logo || null;
-  const schoolName = schoolInfo?.name || null;
-
   return (
     <>
-      {/* Mobile overlay backdrop */}
       {isOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/30 md:hidden"
@@ -1589,20 +1632,16 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           md:translate-x-0 md:shadow-none md:z-30
         `}
       >
-        {/* ── Logo / Branding ── */}
         <div className="flex-shrink-0 px-4 py-5 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            {/* Software logo — fixed, not school logo */}
             <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center bg-indigo-600 shadow-md shadow-indigo-200">
               <GraduationCap className="h-6 w-6 text-white" />
             </div>
 
             <div className="min-w-0">
-              {/* Software name */}
               <p className="text-sm font-black text-slate-800 leading-tight truncate">
                 {SOFTWARE_NAME}
               </p>
-              {/* Software tagline — constant, never changes */}
               <p className="text-[10px] font-medium text-slate-400 leading-tight truncate">
                 {SOFTWARE_TAGLINE}
               </p>
@@ -1610,12 +1649,9 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           </div>
         </div>
 
-        {/* ── Navigation ── */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5 scrollbar-hide">
           {navItems.map(item => renderNavItem(item))}
         </nav>
-
-
       </aside>
     </>
   );

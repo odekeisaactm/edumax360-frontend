@@ -3,36 +3,24 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { salaryStructuresAPI, salarySettingsAPI, staffBankDetailsAPI } from '@/lib/salary_management.service';
+import {
+  salaryStructuresAPI,
+  salarySettingsAPI,
+  staffBankDetailsAPI,
+  salaryGlobalSettingsAPI
+} from '@/lib/salary_management.service';
 import { staffAPI } from '@/lib/api';
 import { SalarySetting, SalaryStructureWrite, StaffBankDetail, StaffBankDetailWrite } from '@/lib/salary_management.types';
 import { Staff } from '@/lib/types';
 import {
-  ArrowLeft,
-  Save,
-  X,
-  AlertCircle,
-  Loader2,
-  CheckCircle,
-  ChevronDown,
-  ChevronUp,
-  Plus,
-  Info,
-  DollarSign,
-  Landmark,
-  Calculator,
-  Search,
-  ChevronRight,
-  Check,
+  ArrowLeft, Save, X, AlertCircle, Loader2, CheckCircle,
+  ChevronDown, ChevronUp, Plus, Info, DollarSign,
+  Landmark, Calculator, Search, ChevronRight, Check, Edit3, Settings
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 let _toastId = 0;
-interface ToastItem {
-  id: number;
-  type: 'success' | 'error';
-  message: string;
-}
+interface ToastItem { id: number; type: 'success' | 'error'; message: string; }
 
 function extractError(err: any): string {
   const d = err?.response?.data;
@@ -68,23 +56,10 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
   return (
     <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
       {toasts.map((t) => (
-        <div
-          key={t.id}
-          className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border max-w-sm ${
-            t.type === 'success'
-              ? 'bg-green-50 border-green-200 text-green-900'
-              : 'bg-red-50 border-red-200 text-red-900'
-          }`}
-        >
-          {t.type === 'success' ? (
-            <CheckCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-green-600" />
-          ) : (
-            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-red-500" />
-          )}
+        <div key={t.id} className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border max-w-sm ${t.type === 'success' ? 'bg-green-50 border-green-200 text-green-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
+          {t.type === 'success' ? <CheckCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-green-600" /> : <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-red-500" />}
           <p className="text-sm font-medium flex-1 leading-snug">{t.message}</p>
-          <button onClick={() => onDismiss(t.id)} className="opacity-50 hover:opacity-100 flex-shrink-0 ml-2">
-            <X className="h-3.5 w-3.5" />
-          </button>
+          <button onClick={() => onDismiss(t.id)} className="opacity-50 hover:opacity-100 flex-shrink-0 ml-2"><X className="h-3.5 w-3.5" /></button>
         </div>
       ))}
     </div>
@@ -92,84 +67,33 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 }
 
 // ─── Section Component ─────────────────────────────────────────────────────────
-interface SectionProps {
-  icon: React.ReactNode;
-  iconBg: string;
-  title: string;
-  subtitle?: string;
-  required?: boolean;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-  error?: string;
-}
-
+interface SectionProps { icon: React.ReactNode; iconBg: string; title: string; subtitle?: string; required?: boolean; open: boolean; onToggle: () => void; children: React.ReactNode; error?: string; }
 function Section({ icon, iconBg, title, subtitle, required, open, onToggle, children, error }: SectionProps) {
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        className={`w-full flex items-center gap-4 px-6 py-4 transition-colors text-left ${
-          error ? 'bg-red-50/50' : 'hover:bg-slate-50/60'
-        }`}
-      >
+      <button type="button" onClick={onToggle} className={`w-full flex items-center gap-4 px-6 py-4 transition-colors text-left ${error ? 'bg-red-50/50' : 'hover:bg-slate-50/60'}`}>
         <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${iconBg}`}>{icon}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold text-slate-800">{title}</span>
-            {required && (
-              <span className="text-[10px] font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-md border border-red-100 uppercase tracking-wide">
-                Required
-              </span>
-            )}
-            {error && (
-              <span className="text-[10px] font-semibold text-red-600 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" /> Needs attention
-              </span>
-            )}
+            {required && <span className="text-[10px] font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-md border border-red-100 uppercase tracking-wide">Required</span>}
+            {error && <span className="text-[10px] font-semibold text-red-600 flex items-center gap-1"><AlertCircle className="h-3 w-3" /> Needs attention</span>}
           </div>
           {subtitle && <p className="text-xs text-slate-400 mt-0.5 truncate">{subtitle}</p>}
         </div>
         <div className="flex-shrink-0 text-slate-400">{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</div>
       </button>
-      {open && (
-        <div className="px-6 pb-6 border-t border-slate-50">
-          <div className="pt-5">{children}</div>
-        </div>
-      )}
+      {open && <div className="px-6 pb-6 border-t border-slate-50"><div className="pt-5">{children}</div></div>}
     </div>
   );
 }
 
 // ─── Accordion ──────────────────────────────────────────────────────────────────
-function Accordion({
-  title,
-  icon,
-  open,
-  onToggle,
-  children,
-  badge,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-  badge?: React.ReactNode;
-}) {
+function Accordion({ title, icon, open, onToggle, children, badge }: { title: string; icon: React.ReactNode; open: boolean; onToggle: () => void; children: React.ReactNode; badge?: React.ReactNode; }) {
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          {icon}
-          <span className="text-sm font-semibold text-slate-700">{title}</span>
-          {badge}
-        </div>
+      <button type="button" onClick={onToggle} className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors">
+        <div className="flex items-center gap-2">{icon}<span className="text-sm font-semibold text-slate-700">{title}</span>{badge}</div>
         <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${open ? 'rotate-90' : ''}`} />
       </button>
       {open && <div className="p-4">{children}</div>}
@@ -178,21 +102,7 @@ function Accordion({
 }
 
 // ─── Searchable Staff Combobox ──────────────────────────────────────────────────
-// FIX: plain <select> is unusable once staff count grows past a few dozen.
-// Client-side filter is appropriate here since the page already eagerly loads
-// the full staff list (page_size: 1000) for the plain dropdown it replaces —
-// no extra network round-trip is introduced.
-function StaffCombobox({
-  staffList,
-  value,
-  onChange,
-  loading,
-}: {
-  staffList: Staff[];
-  value: number | null;
-  onChange: (id: number | null) => void;
-  loading?: boolean;
-}) {
+function StaffCombobox({ staffList, value, onChange, loading }: { staffList: Staff[]; value: number | null; onChange: (id: number | null) => void; loading?: boolean; }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(0);
@@ -203,115 +113,230 @@ function StaffCombobox({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return staffList.slice(0, 50); // cap initial render for performance
-    return staffList
-      .filter((s) => {
-        const label = staffLabel(s).toLowerCase();
-        return label.includes(q);
-      })
-      .slice(0, 50);
+    if (!q) return staffList.slice(0, 50);
+    return staffList.filter((s) => staffLabel(s).toLowerCase().includes(q)).slice(0, 50);
   }, [staffList, query]);
 
-  // Close on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const handleSelect = (s: Staff) => {
-    onChange(s.id);
-    setQuery('');
-    setOpen(false);
-  };
+  const handleSelect = (s: Staff) => { onChange(s.id); setQuery(''); setOpen(false); };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) {
-      setOpen(true);
-      return;
-    }
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setHighlightIndex((i) => Math.min(i + 1, filtered.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setHighlightIndex((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (filtered[highlightIndex]) handleSelect(filtered[highlightIndex]);
-    } else if (e.key === 'Escape') {
-      setOpen(false);
-    }
+    if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { setOpen(true); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightIndex((i) => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightIndex((i) => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (filtered[highlightIndex]) handleSelect(filtered[highlightIndex]); }
+    else if (e.key === 'Escape') { setOpen(false); }
   };
 
   return (
     <div className="relative" ref={containerRef}>
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300 pointer-events-none" />
-        <input
-          ref={inputRef}
-          type="text"
-          className={`${inputCls} pl-9`}
-          placeholder={loading ? 'Loading staff…' : selected ? staffLabel(selected) : 'Search staff by name or ID…'}
-          value={open ? query : ''}
-          onFocus={() => { setOpen(true); setHighlightIndex(0); }}
-          onChange={(e) => { setQuery(e.target.value); setHighlightIndex(0); }}
-          onKeyDown={handleKeyDown}
-          disabled={loading}
-          autoComplete="off"
-        />
+        <input ref={inputRef} type="text" className={`${inputCls} pl-9`} placeholder={loading ? 'Loading staff…' : selected ? staffLabel(selected) : 'Search staff by name or ID…'} value={open ? query : ''} onFocus={() => { setOpen(true); setHighlightIndex(0); }} onChange={(e) => { setQuery(e.target.value); setHighlightIndex(0); }} onKeyDown={handleKeyDown} disabled={loading} autoComplete="off" />
         {selected && !open && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onChange(null); setQuery(''); }}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500"
-            title="Clear selection"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); onChange(null); setQuery(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500" title="Clear selection"><X className="h-3.5 w-3.5" /></button>
         )}
       </div>
-
       {open && (
         <div className="absolute z-30 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
-          {filtered.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-slate-400">No staff match "{query}".</p>
-          ) : (
-            filtered.map((s, i) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => handleSelect(s)}
-                onMouseEnter={() => setHighlightIndex(i)}
-                className={`w-full flex items-center justify-between px-4 py-2.5 text-left text-sm transition-colors ${
-                  i === highlightIndex ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
-                }`}
-              >
-                <span>{staffLabel(s)}</span>
-                {s.id === value && <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />}
-              </button>
-            ))
-          )}
-          {!query && staffList.length > 50 && (
-            <p className="px-4 py-2 text-[11px] text-slate-400 border-t border-slate-100">
-              Showing first 50 — type to search all {staffList.length} staff.
-            </p>
-          )}
+          {filtered.length === 0 ? <p className="px-4 py-3 text-sm text-slate-400">No staff match "{query}".</p> : filtered.map((s, i) => (
+            <button key={s.id} type="button" onClick={() => handleSelect(s)} onMouseEnter={() => setHighlightIndex(i)} className={`w-full flex items-center justify-between px-4 py-2.5 text-left text-sm transition-colors ${i === highlightIndex ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'}`}>
+              <span>{staffLabel(s)}</span>{s.id === value && <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />}
+            </button>
+          ))}
+          {!query && staffList.length > 50 && <p className="px-4 py-2 text-[11px] text-slate-400 border-t border-slate-100">Showing first 50 — type to search all {staffList.length} staff.</p>}
         </div>
       )}
     </div>
   );
 }
 
-// ─── Main Page ─────────────────────────────────────────────────────────────────
-interface Bank {
-  bank_name: string;
-  code: string;
+// ─── Overrides Modal ────────────────────────────────────────────────────────────
+function OverridesModal({
+  open,
+  onClose,
+  onApply,
+  setting,
+  cleanCalculation,
+  initialAllowanceOverrides,
+  initialDeductionOverrides,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onApply: (allowances: Record<string, number>, deductions: Record<string, number>) => void;
+  setting: SalarySetting | null;
+  cleanCalculation: any;
+  initialAllowanceOverrides: Record<string, number>;
+  initialDeductionOverrides: Record<string, number>;
+}) {
+  const [allowances, setAllowances] = useState<Record<string, number>>({});
+  const [deductions, setDeductions] = useState<Record<string, number>>({});
+
+  // Sync initial state when opened
+  useEffect(() => {
+    if (open) {
+      setAllowances(initialAllowanceOverrides);
+      setDeductions(initialDeductionOverrides);
+    }
+  }, [open, initialAllowanceOverrides, initialDeductionOverrides]);
+
+  if (!open || !setting) return null;
+
+  const handleAllowanceChange = (name: string, value: string) => {
+    setAllowances((prev) => {
+      const next = { ...prev };
+      if (value === '') delete next[name];
+      else next[name] = parseFloat(value) || 0;
+      return next;
+    });
+  };
+
+  const handleDeductionChange = (name: string, value: string) => {
+    setDeductions((prev) => {
+      const next = { ...prev };
+      if (value === '') delete next[name];
+      else next[name] = parseFloat(value) || 0;
+      return next;
+    });
+  };
+
+  const handleClearAll = () => {
+    setAllowances({});
+    setDeductions({});
+  };
+
+  const handleApply = () => {
+    onApply(allowances, deductions);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0 bg-slate-50/50 rounded-t-2xl">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-sm">
+              <Edit3 className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Custom Flat Overrides</h3>
+              <p className="text-xs text-slate-500">Override default formula outputs for this specific staff member.</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-xl transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 overflow-y-auto flex-1">
+          <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-sm text-indigo-800 flex items-start gap-2 mb-6">
+            <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <p>
+              Leave inputs blank to use the standard template math automatically. Typing a number locks that calculation to your custom flat amount for this user.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Allowances */}
+            <div>
+              <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3">Allowances</h4>
+              {(!setting.allowances || setting.allowances.length === 0) ? (
+                <p className="text-sm text-slate-400 italic">No allowances available to override.</p>
+              ) : (
+                <div className="space-y-4">
+                  {setting.allowances.map((a: any) => {
+                    const defaultVal = cleanCalculation?.allowances.find((ca: any) => ca.name === a.name)?.monthly || 0;
+                    return (
+                      <div key={a.name}>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">{a.name}</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₦</span>
+                          <input
+                            type="number"
+                            className={`${inputCls} pl-7`}
+                            placeholder={`Default: ${fmtMoney(defaultVal).replace('₦', '')}`}
+                            value={allowances[a.name] !== undefined ? allowances[a.name] : ''}
+                            onChange={(e) => handleAllowanceChange(a.name, e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Deductions */}
+            <div>
+              <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3">Statutory Deductions</h4>
+              {(!setting.statutory_deductions || setting.statutory_deductions.length === 0) ? (
+                <p className="text-sm text-slate-400 italic">No deductions available to override.</p>
+              ) : (
+                <div className="space-y-4">
+                  {setting.statutory_deductions.map((d: any) => {
+                    const defaultVal = cleanCalculation?.statutoryDeductions.find((cd: any) => cd.name === d.name)?.monthly || 0;
+                    return (
+                      <div key={d.name}>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">{d.name}</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₦</span>
+                          <input
+                            type="number"
+                            className={`${inputCls} pl-7`}
+                            placeholder={`Default: ${fmtMoney(defaultVal).replace('₦', '')}`}
+                            value={deductions[d.name] !== undefined ? deductions[d.name] : ''}
+                            onChange={(e) => handleDeductionChange(d.name, e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between flex-shrink-0 bg-slate-50/50 rounded-b-2xl">
+          <button
+            type="button"
+            onClick={handleClearAll}
+            className="text-sm font-semibold text-slate-500 hover:text-slate-800 underline transition-colors"
+          >
+            Clear All Overrides
+          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleApply}
+              className="px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-200 rounded-xl transition-colors"
+            >
+              Apply Overrides
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
+
+
+// ─── Main Page ─────────────────────────────────────────────────────────────────
+interface Bank { bank_name: string; code: string; }
 
 export default function SalaryStructureCreatePage() {
   const router = useRouter();
@@ -324,6 +349,7 @@ export default function SalaryStructureCreatePage() {
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [salarySettings, setSalarySettings] = useState<SalarySetting[]>([]);
   const [selectedSetting, setSelectedSetting] = useState<SalarySetting | null>(null);
+  const [globalSettings, setGlobalSettings] = useState<any>(null);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [loadingBanks, setLoadingBanks] = useState(false);
   const [loadingStaff, setLoadingStaff] = useState(false);
@@ -337,10 +363,12 @@ export default function SalaryStructureCreatePage() {
   const [isActive, setIsActive] = useState(true);
   const [monthlySalary, setMonthlySalary] = useState<number>(0);
 
+  // Custom Overrides State
+  const [allowanceOverrides, setAllowanceOverrides] = useState<Record<string, number>>({});
+  const [deductionOverrides, setDeductionOverrides] = useState<Record<string, number>>({});
+  const [isOverridesModalOpen, setIsOverridesModalOpen] = useState(false);
+
   // ── Bank details state ──
-  // FIX: bank details now have their own lifecycle, separate from the
-  // structure submit. existingBankDetail tracks whether we're editing a real
-  // record (update) or creating a fresh one (create) for the selected staff.
   const [existingBankDetail, setExistingBankDetail] = useState<StaffBankDetail | null>(null);
   const [loadingBankDetail, setLoadingBankDetail] = useState(false);
   const [savingBank, setSavingBank] = useState(false);
@@ -352,15 +380,12 @@ export default function SalaryStructureCreatePage() {
   const [beneficiaryCode, setBeneficiaryCode] = useState<string>('');
   const [branchSortCode, setBranchSortCode] = useState<string>('');
 
-  // Additional fields (dynamic from selected setting)
+  // Additional fields
   const [additionalFieldValues, setAdditionalFieldValues] = useState<Record<string, number>>({});
 
   // ── UI state ──
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    basic: true,
-    bank: false,
-    additional: false,
-    preview: true,
+    basic: true, bank: false, additional: true, preview: true,
   });
   const [previewSalary, setPreviewSalary] = useState<number>(0);
 
@@ -391,18 +416,23 @@ export default function SalaryStructureCreatePage() {
     loadBanks();
   }, []);
 
-  // ── Load staff and salary settings ──
+  // ── Load staff, salary settings, and global settings ──
   useEffect(() => {
     const loadData = async () => {
       setLoadingStaff(true);
       setLoadingSettings(true);
       try {
-        const [staffData, settingsData] = await Promise.all([
+        const [staffData, settingsData, globalDataRaw] = await Promise.all([
           staffAPI.list({ page_size: 1000 }) as any,
           salarySettingsAPI.list() as any,
+          salaryGlobalSettingsAPI.get().catch(() => null),
         ]);
         setStaffList(Array.isArray(staffData) ? staffData : staffData?.results || []);
         setSalarySettings(Array.isArray(settingsData) ? settingsData : settingsData?.results || []);
+
+        // Unwrapping fix
+        const globalData = globalDataRaw?.data ?? globalDataRaw;
+        setGlobalSettings(globalData);
       } catch (error) {
         setFormError(extractError(error));
       } finally {
@@ -414,20 +444,8 @@ export default function SalaryStructureCreatePage() {
   }, [canCreate]);
 
   // ── Reset & load bank details whenever the selected staff changes ──
-  // FIX: this is the core of the upsert fix. We look up whether a
-  // StaffBankDetail already exists for this staff (OneToOneField on the
-  // backend), and switch the form between "create" and "edit" modes
-  // accordingly, instead of always blindly calling .create().
   useEffect(() => {
-    setBankName('');
-    setBankCode('');
-    setAccountNumber('');
-    setAccountName('');
-    setBeneficiaryCode('');
-    setBranchSortCode('');
-    setExistingBankDetail(null);
-    setBankSaved(false);
-
+    setBankName(''); setBankCode(''); setAccountNumber(''); setAccountName(''); setBeneficiaryCode(''); setBranchSortCode(''); setExistingBankDetail(null); setBankSaved(false);
     if (!staffId) return;
 
     let cancelled = false;
@@ -439,12 +457,7 @@ export default function SalaryStructureCreatePage() {
         const record = Array.isArray(results) ? results[0] : (results as any)?.data?.[0];
         if (record) {
           setExistingBankDetail(record);
-          setBankName(record.bank_name || '');
-          setBankCode(record.bank_code || '');
-          setAccountNumber(record.account_number || '');
-          setAccountName(record.account_name || '');
-          setBeneficiaryCode(record.beneficiary_code || '');
-          setBranchSortCode(record.branch_sort_code || '');
+          setBankName(record.bank_name || ''); setBankCode(record.bank_code || ''); setAccountNumber(record.account_number || ''); setAccountName(record.account_name || ''); setBeneficiaryCode(record.beneficiary_code || ''); setBranchSortCode(record.branch_sort_code || '');
         }
       } catch (err) {
         if (!cancelled) showToast('error', 'Could not check existing bank details: ' + extractError(err));
@@ -462,68 +475,33 @@ export default function SalaryStructureCreatePage() {
       const setting = salarySettings.find((s) => s.id === salarySettingId);
       setSelectedSetting(setting || null);
       setAdditionalFieldValues({});
+      setAllowanceOverrides({});
+      setDeductionOverrides({});
     } else {
       setSelectedSetting(null);
     }
   }, [salarySettingId, salarySettings]);
 
-  // ── Update preview when monthly salary changes ──
-  useEffect(() => {
-    setPreviewSalary(monthlySalary);
-  }, [monthlySalary]);
+  useEffect(() => { setPreviewSalary(monthlySalary); }, [monthlySalary]);
 
-  const toggleSection = (key: keyof typeof openSections) => {
-    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  const toggleSection = (key: keyof typeof openSections) => { setOpenSections((prev) => ({ ...prev, [key]: !prev[key] })); };
+  const handleAdditionalFieldChange = (code: string, value: number) => { setAdditionalFieldValues((prev) => ({ ...prev, [code]: value })); };
+  const handleBankChange = (name: string) => { setBankName(name); const found = banks.find((b) => b.bank_name === name); setBankCode(found ? found.code : ''); };
 
-  const handleAdditionalFieldChange = (code: string, value: number) => {
-    setAdditionalFieldValues((prev) => ({ ...prev, [code]: value }));
-  };
-
-  const handleBankChange = (name: string) => {
-    setBankName(name);
-    const found = banks.find((b) => b.bank_name === name);
-    setBankCode(found ? found.code : '');
-  };
-
-  // ── Save Bank Details (standalone) ──
-  // FIX: this is now its own action with its own success/failure feedback,
-  // instead of being silently bundled into the structure submit where a
-  // duplicate-record error was swallowed and logged to console only.
   const handleSaveBankDetails = async () => {
-    if (!staffId) {
-      showToast('error', 'Select a staff member before saving bank details.');
-      return;
-    }
-    if (!bankName && !accountNumber && !accountName) {
-      showToast('error', 'Enter at least a bank name, account number, or account name.');
-      return;
-    }
+    if (!staffId) { showToast('error', 'Select a staff member before saving bank details.'); return; }
+    if (!bankName && !accountNumber && !accountName) { showToast('error', 'Enter at least a bank name, account number, or account name.'); return; }
 
     setSavingBank(true);
     try {
       const payload: StaffBankDetailWrite = {
-        staff: staffId,
-        bank_name: bankName,
-        account_name: accountName,
-        bank_code: bankCode || undefined,
-        beneficiary_code: beneficiaryCode || undefined,
-        branch_sort_code: branchSortCode || undefined,
-        is_active: true,
-
-        account_number: accountNumber,
+        staff: staffId, bank_name: bankName, account_name: accountName, bank_code: bankCode || undefined, beneficiary_code: beneficiaryCode || undefined, branch_sort_code: branchSortCode || undefined, is_active: true, account_number: accountNumber,
       };
-
       let result: StaffBankDetail;
-      if (existingBankDetail) {
-        result = await staffBankDetailsAPI.update(existingBankDetail.id, payload);
-      } else {
-        result = await staffBankDetailsAPI.create(payload);
-      }
+      if (existingBankDetail) result = await staffBankDetailsAPI.update(existingBankDetail.id, payload);
+      else result = await staffBankDetailsAPI.create(payload);
 
-      setExistingBankDetail(result);
-      setAccountNumber(''); // clear the typed value after a successful save
-      setBankSaved(true);
+      setExistingBankDetail(result); setBankSaved(true);
       showToast('success', existingBankDetail ? 'Bank details updated.' : 'Bank details saved.');
     } catch (err) {
       showToast('error', extractError(err));
@@ -532,7 +510,6 @@ export default function SalaryStructureCreatePage() {
     }
   };
 
-  // ── Validation ──
   const validateForm = (): string | null => {
     if (!staffId) return 'Please select a staff member.';
     if (!salarySettingId) return 'Please select a salary setting.';
@@ -541,31 +518,35 @@ export default function SalaryStructureCreatePage() {
     return null;
   };
 
-  // ── Submit (salary structure only — bank details save independently) ──
+  const cleanCalculation = useMemo(() => {
+    if (!selectedSetting) return null;
+    return calculateSalary(monthlySalary, selectedSetting, additionalFieldValues, {}, {});
+  }, [monthlySalary, selectedSetting, additionalFieldValues]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     const validationError = validateForm();
-    if (validationError) {
-      setFormError(validationError);
-      return;
+    if (validationError) { setFormError(validationError); return; }
+
+    setFormError(null); setSubmitting(true);
+
+    if ((bankName || accountNumber || accountName) && !bankSaved) {
+      try {
+        const bankPayload: StaffBankDetailWrite = {
+          staff: staffId!, bank_name: bankName, account_name: accountName, bank_code: bankCode || undefined, beneficiary_code: beneficiaryCode || undefined, branch_sort_code: branchSortCode || undefined, is_active: true, account_number: accountNumber,
+        };
+        if (existingBankDetail) await staffBankDetailsAPI.update(existingBankDetail.id, bankPayload);
+        else await staffBankDetailsAPI.create(bankPayload);
+      } catch (err) {
+        showToast('error', 'Warning: Salary Structure will save, but Bank Details failed: ' + extractError(err));
+      }
     }
-    setFormError(null);
-    setSubmitting(true);
 
     try {
       const structurePayload: SalaryStructureWrite = {
-        staff: staffId!,
-        salary_setting: salarySettingId!,
-        monthly_salary: monthlySalary,
-        effective_from: effectiveFrom,
-        effective_to: effectiveTo || null,
-        is_active: isActive,
-        additional_field_values: additionalFieldValues,
+        staff: staffId!, salary_setting: salarySettingId!, monthly_salary: monthlySalary, effective_from: effectiveFrom, effective_to: effectiveTo || null, is_active: isActive, additional_field_values: additionalFieldValues, allowance_overrides: allowanceOverrides, deduction_overrides: deductionOverrides,
       };
-
       const result = await salaryStructuresAPI.create(structurePayload);
-
       showToast('success', `Salary structure for staff created successfully.`);
       router.push(`/dashboard/staff/salary/structure/${result.id}`);
     } catch (err) {
@@ -575,14 +556,13 @@ export default function SalaryStructureCreatePage() {
     }
   };
 
-  // ── Permission guard ──
+  const activeOverrideCount = Object.keys(allowanceOverrides).length + Object.keys(deductionOverrides).length;
+
   if (!canCreate) {
     return (
       <div className="min-h-[500px] flex items-center justify-center">
         <div className="text-center">
-          <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="h-7 w-7 text-red-400" />
-          </div>
+          <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><AlertCircle className="h-7 w-7 text-red-400" /></div>
           <p className="font-bold text-slate-800 mb-1">Access Denied</p>
           <p className="text-sm text-slate-400">You don't have permission to create salary structures.</p>
         </div>
@@ -596,114 +576,60 @@ export default function SalaryStructureCreatePage() {
     <div className="pb-28">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
+      <OverridesModal
+        open={isOverridesModalOpen}
+        onClose={() => setIsOverridesModalOpen(false)}
+        onApply={(allowances, deductions) => {
+          setAllowanceOverrides(allowances);
+          setDeductionOverrides(deductions);
+          setIsOverridesModalOpen(false);
+        }}
+        setting={selectedSetting}
+        cleanCalculation={cleanCalculation}
+        initialAllowanceOverrides={allowanceOverrides}
+        initialDeductionOverrides={deductionOverrides}
+      />
+
       {/* ── Page Header ── */}
       <div className="flex items-center gap-3 mb-5">
-        <button
-          onClick={() => router.push('/dashboard/staff/salary/structure')}
-          className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors flex-shrink-0"
-        >
+        <button onClick={() => router.push('/dashboard/staff/salary/structure')} className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors flex-shrink-0">
           <ArrowLeft className="h-4 w-4 text-slate-600" />
         </button>
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
-              <DollarSign className="h-5 w-5 text-white" />
-            </div>
+            <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200"><DollarSign className="h-5 w-5 text-white" /></div>
             Add Staff Salary
           </h1>
           <p className="text-sm text-slate-400 mt-0.5 pl-12">Set up salary structure with bank details</p>
         </div>
       </div>
 
-      {/* ── Error Banner ── */}
       {formError && (
-        <div className="mb-4">
-          <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-            <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-red-700 font-medium flex-1">{formError}</p>
-            <button onClick={() => setFormError(null)}>
-              <X className="h-4 w-4 text-red-400 hover:text-red-600 transition-colors" />
-            </button>
-          </div>
+        <div className="mb-4 flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-red-700 font-medium flex-1">{formError}</p>
+          <button onClick={() => setFormError(null)}><X className="h-4 w-4 text-red-400 hover:text-red-600 transition-colors" /></button>
         </div>
       )}
 
       {/* ── Form ── */}
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Basic Information Section */}
-        <Section
-          icon={<Info className="h-5 w-5 text-white" />}
-          iconBg="bg-gradient-to-br from-blue-500 to-blue-700"
-          title="Basic Information"
-          subtitle="Staff, salary setting, and effective dates"
-          required
-          open={openSections.basic}
-          onToggle={() => toggleSection('basic')}
-        >
+        <Section icon={<Info className="h-5 w-5 text-white" />} iconBg="bg-gradient-to-br from-blue-500 to-blue-700" title="Basic Information" subtitle="Staff, salary setting, and effective dates" required open={openSections.basic} onToggle={() => toggleSection('basic')}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><label className={labelCls}>Staff <span className="text-red-500 normal-case">*</span></label><StaffCombobox staffList={staffList} value={staffId} onChange={setStaffId} loading={loadingStaff} /></div>
             <div>
-              <label className={labelCls}>
-                Staff <span className="text-red-500 normal-case">*</span>
-              </label>
-              <StaffCombobox staffList={staffList} value={staffId} onChange={setStaffId} loading={loadingStaff} />
-            </div>
-
-            <div>
-              <label className={labelCls}>
-                Salary Setting <span className="text-red-500 normal-case">*</span>
-              </label>
-              <select
-                className={inputCls}
-                value={salarySettingId || ''}
-                onChange={(e) => setSalarySettingId(e.target.value ? parseInt(e.target.value) : null)}
-                required
-                disabled={loadingSettings}
-              >
+              <label className={labelCls}>Salary Setting <span className="text-red-500 normal-case">*</span></label>
+              <select className={inputCls} value={salarySettingId || ''} onChange={(e) => setSalarySettingId(e.target.value ? parseInt(e.target.value) : null)} required disabled={loadingSettings}>
                 <option value="">Select Salary Setting</option>
-                {salarySettings
-                  .filter((s) => s.is_active)
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} {s.is_locked ? '🔒' : ''}
-                    </option>
-                  ))}
+                {salarySettings.filter((s) => s.is_active).map((s) => (<option key={s.id} value={s.id}>{s.name} {s.is_locked ? '🔒' : ''}</option>))}
               </select>
-              <p className="text-xs text-slate-400 mt-1">Only active salary settings are shown.</p>
-              {loadingSettings && <p className="text-xs text-slate-400 mt-1">Loading settings...</p>}
             </div>
-
-            <div>
-              <label className={labelCls}>
-                Effective From <span className="text-red-500 normal-case">*</span>
-              </label>
-              <input
-                type="date"
-                className={inputCls}
-                value={effectiveFrom}
-                onChange={(e) => setEffectiveFrom(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label className={labelCls}>Effective To</label>
-              <input
-                type="date"
-                className={inputCls}
-                value={effectiveTo}
-                onChange={(e) => setEffectiveTo(e.target.value)}
-              />
-              <p className="text-xs text-slate-400 mt-1">Leave empty if indefinitely valid</p>
-            </div>
-
+            <div><label className={labelCls}>Effective From <span className="text-red-500 normal-case">*</span></label><input type="date" className={inputCls} value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} required /></div>
+            <div><label className={labelCls}>Effective To</label><input type="date" className={inputCls} value={effectiveTo} onChange={(e) => setEffectiveTo(e.target.value)} /></div>
             <div className="md:col-span-2">
               <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={isActive}
-                  onChange={(e) => setIsActive(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500" />
                 Active (Auto-deactivates other structures for this staff)
               </label>
             </div>
@@ -711,122 +637,30 @@ export default function SalaryStructureCreatePage() {
         </Section>
 
         {/* Bank Details Accordion */}
-        <Accordion
-          title="Bank Details"
-          icon={<Landmark className="h-4 w-4 text-slate-500" />}
-          open={openSections.bank}
-          onToggle={() => toggleSection('bank')}
-          badge={
-            existingBankDetail ? (
-              <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-md border border-blue-100 uppercase tracking-wide">
-                Existing record
-              </span>
-            ) : bankSaved ? (
-              <span className="text-[10px] font-semibold text-green-700 bg-green-50 px-1.5 py-0.5 rounded-md border border-green-100 uppercase tracking-wide">
-                Saved
-              </span>
-            ) : null
-          }
-        >
-          {!staffId ? (
-            <p className="text-sm text-slate-400">Select a staff member above to manage bank details.</p>
-          ) : loadingBankDetail ? (
-            <p className="text-sm text-slate-400 flex items-center gap-2">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking for existing bank details…
-            </p>
-          ) : (
+        <Accordion title="Bank Details" icon={<Landmark className="h-4 w-4 text-slate-500" />} open={openSections.bank} onToggle={() => toggleSection('bank')} badge={existingBankDetail ? <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-md border border-blue-100 uppercase tracking-wide">Existing record</span> : bankSaved ? <span className="text-[10px] font-semibold text-green-700 bg-green-50 px-1.5 py-0.5 rounded-md border border-green-100 uppercase tracking-wide">Saved</span> : null}>
+          {!staffId ? <p className="text-sm text-slate-400">Select a staff member above to manage bank details.</p> : loadingBankDetail ? <p className="text-sm text-slate-400 flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking for existing bank details…</p> : (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelCls}>Bank Name</label>
-                  <select
-                    className={inputCls}
-                    value={bankName}
-                    onChange={(e) => handleBankChange(e.target.value)}
-                    disabled={loadingBanks}
-                  >
+                  <select className={inputCls} value={bankName} onChange={(e) => handleBankChange(e.target.value)} disabled={loadingBanks}>
                     <option value="">Select Bank</option>
-                    {banks.map((bank) => (
-                      <option key={bank.code} value={bank.bank_name}>
-                        {bank.bank_name}
-                      </option>
-                    ))}
+                    {banks.map((bank) => (<option key={bank.code} value={bank.bank_name}>{bank.bank_name}</option>))}
                   </select>
-                  {loadingBanks && <p className="text-xs text-slate-400 mt-1">Loading banks...</p>}
                 </div>
-
-                <div>
-                  <label className={labelCls}>Bank Code</label>
-                  <input type="text" className={inputCls} value={bankCode} readOnly disabled />
-                  <p className="text-xs text-slate-400 mt-1">Auto-filled from bank selection</p>
-                </div>
-
+                <div><label className={labelCls}>Bank Code</label><input type="text" className={inputCls} value={bankCode} readOnly disabled /></div>
                 <div>
                   <label className={labelCls}>Account Number</label>
-                  <input
-                          type="text"
-                          className={inputCls}
-                          value={accountNumber}
-                          onChange={(e) => setAccountNumber(e.target.value)}
-                          placeholder="e.g. 0123456789"
-                        />
-                  {existingBankDetail?.account_number && (
-                    <p className="text-xs text-slate-400 mt-1">
-                      Current number on file ends in {existingBankDetail.account_number.slice(-4)}. Leave blank to keep it unchanged.
-                    </p>
-                  )}
+                  <input type="text" className={inputCls} value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} placeholder="e.g. 0123456789" />
+                  {existingBankDetail?.account_number && <p className="text-xs text-slate-400 mt-1">Current number ends in {existingBankDetail.account_number.slice(-4)}.</p>}
                 </div>
-
-                <div>
-                  <label className={labelCls}>Account Name</label>
-                  <input
-                    type="text"
-                    className={inputCls}
-                    value={accountName}
-                    onChange={(e) => setAccountName(e.target.value)}
-                    placeholder="e.g. John Doe"
-                  />
-                </div>
-
-                <div>
-                  <label className={labelCls}>Beneficiary Code</label>
-                  <input
-                    type="text"
-                    className={inputCls}
-                    value={beneficiaryCode}
-                    onChange={(e) => setBeneficiaryCode(e.target.value)}
-                    placeholder="e.g. BEN001"
-                  />
-                </div>
-
-                <div>
-                  <label className={labelCls}>Branch Sort Code</label>
-                  <input
-                    type="text"
-                    className={inputCls}
-                    value={branchSortCode}
-                    onChange={(e) => setBranchSortCode(e.target.value)}
-                    placeholder="e.g. 01-234-567"
-                  />
-                </div>
+                <div><label className={labelCls}>Account Name</label><input type="text" className={inputCls} value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="e.g. John Doe" /></div>
+                <div><label className={labelCls}>Beneficiary Code</label><input type="text" className={inputCls} value={beneficiaryCode} onChange={(e) => setBeneficiaryCode(e.target.value)} placeholder="e.g. BEN001" /></div>
+                <div><label className={labelCls}>Branch Sort Code</label><input type="text" className={inputCls} value={branchSortCode} onChange={(e) => setBranchSortCode(e.target.value)} placeholder="e.g. 01-234-567" /></div>
               </div>
-
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={handleSaveBankDetails}
-                  disabled={savingBank}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-slate-700 hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50"
-                >
-                  {savingBank ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" /> Saving…
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4" /> {existingBankDetail ? 'Update Bank Details' : 'Save Bank Details'}
-                    </>
-                  )}
+                <button type="button" onClick={handleSaveBankDetails} disabled={savingBank} className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-slate-700 hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50">
+                  {savingBank ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</> : <><Save className="h-4 w-4" /> {existingBankDetail ? 'Update Bank Details' : 'Save Bank Details'}</>}
                 </button>
               </div>
             </div>
@@ -835,123 +669,66 @@ export default function SalaryStructureCreatePage() {
 
         {/* Additional Salary Profile Fields */}
         {selectedSetting && selectedSetting.additional_fields && selectedSetting.additional_fields.length > 0 && (
-          <Section
-            icon={<Plus className="h-5 w-5 text-white" />}
-            iconBg="bg-gradient-to-br from-purple-500 to-purple-700"
-            title="Additional Salary Profile Fields"
-            subtitle={`From "${selectedSetting.name}" — monthly values`}
-            open={openSections.additional}
-            onToggle={() => toggleSection('additional')}
-          >
+          <Section icon={<Plus className="h-5 w-5 text-white" />} iconBg="bg-gradient-to-br from-purple-500 to-purple-700" title="Additional Salary Profile Fields" subtitle={`From "${selectedSetting.name}" — monthly values`} open={openSections.additional} onToggle={() => toggleSection('additional')}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {selectedSetting.additional_fields.map((field: any) => (
                 <div key={field.code}>
                   <label className={labelCls}>{field.name}</label>
-                  <input
-                    type="number"
-                    className={inputCls}
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={additionalFieldValues[field.code] || ''}
-                    onChange={(e) => handleAdditionalFieldChange(field.code, parseFloat(e.target.value) || 0)}
-                  />
+                  <input type="number" className={inputCls} step="0.01" min="0" placeholder="0.00" value={additionalFieldValues[field.code] || ''} onChange={(e) => handleAdditionalFieldChange(field.code, parseFloat(e.target.value) || 0)} />
                 </div>
               ))}
             </div>
-            <p className="text-xs text-slate-400 mt-2">
-              These values can be referenced by allowances, reliefs, and statutory deductions as "Additional Field" base type.
-            </p>
           </Section>
         )}
 
         {/* Monthly Salary Input */}
-        <Section
-          icon={<DollarSign className="h-5 w-5 text-white" />}
-          iconBg="bg-gradient-to-br from-green-500 to-green-700"
-          title="Monthly Salary Input"
-          subtitle="Enter monthly salary to see complete calculation breakdown"
-          required
-          open={openSections.preview}
-          onToggle={() => toggleSection('preview')}
-        >
+        <Section icon={<DollarSign className="h-5 w-5 text-white" />} iconBg="bg-gradient-to-br from-green-500 to-green-700" title="Monthly Salary Input" subtitle="Enter monthly salary to see complete calculation breakdown" required open={openSections.preview} onToggle={() => toggleSection('preview')}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>
-                Monthly Salary (₦) <span className="text-red-500 normal-case">*</span>
-              </label>
-              <input
-                type="number"
-                className={inputCls}
-                step="0.01"
-                min="0"
-                placeholder="e.g. 500000"
-                value={monthlySalary || ''}
-                onChange={(e) => setMonthlySalary(parseFloat(e.target.value) || 0)}
-                required
-              />
+              <label className={labelCls}>Monthly Salary (₦) <span className="text-red-500 normal-case">*</span></label>
+              <input type="number" className={inputCls} step="0.01" min="0" placeholder="e.g. 500000" value={monthlySalary || ''} onChange={(e) => setMonthlySalary(parseFloat(e.target.value) || 0)} required />
             </div>
             <div className="flex items-center">
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-700">
-                <Info className="h-4 w-4 inline mr-1" />
-                All components will be calculated automatically based on selected salary setting.
-              </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-700"><Info className="h-4 w-4 inline mr-1" /> All components calculated automatically.</div>
             </div>
           </div>
-
-          {selectedSetting && monthlySalary > 0 && (
-            <SalaryPreview setting={selectedSetting} monthlySalary={monthlySalary} additionalValues={additionalFieldValues} />
-          )}
 
           {(!selectedSetting || monthlySalary <= 0) && (
             <div className="mt-4 text-center text-slate-400 py-8 border-2 border-dashed border-slate-200 rounded-xl">
               <DollarSign className="h-8 w-8 mx-auto text-slate-300" />
-              <p className="mt-2 text-sm">
-                {!selectedSetting ? 'Select a salary setting to see preview' : 'Enter a monthly salary to see complete calculation'}
-              </p>
+              <p className="mt-2 text-sm">{!selectedSetting ? 'Select a salary setting to see preview' : 'Enter a monthly salary to see complete calculation'}</p>
             </div>
           )}
         </Section>
+
+        {/* Live Calculation Dashboard */}
+        {selectedSetting && monthlySalary > 0 && (
+          <SalaryPreview
+            setting={selectedSetting}
+            monthlySalary={monthlySalary}
+            additionalValues={additionalFieldValues}
+            allowanceOverrides={allowanceOverrides}
+            deductionOverrides={deductionOverrides}
+            onOpenOverrides={() => setIsOverridesModalOpen(true)}
+            activeOverrideCount={activeOverrideCount}
+            allowCustomOverrides={!!globalSettings?.allow_custom_overrides}
+          />
+        )}
 
         {/* ── Sticky Footer ── */}
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-100 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
           <div className="px-5 py-3.5 flex items-center justify-between gap-4">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
-                <DollarSign className="h-3.5 w-3.5 text-white" />
-              </div>
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0"><DollarSign className="h-3.5 w-3.5 text-white" /></div>
               <div className="min-w-0">
-                <p className="text-xs font-bold text-slate-800 truncate">
-                  {selectedStaff ? staffLabel(selectedStaff) : 'New Salary Structure'}
-                </p>
-                <p className="text-[11px] text-slate-400 truncate">
-                  {monthlySalary > 0 ? `₦${monthlySalary.toLocaleString()} / month` : 'Enter salary'}
-                </p>
+                <p className="text-xs font-bold text-slate-800 truncate">{selectedStaff ? staffLabel(selectedStaff) : 'New Salary Structure'}</p>
+                <p className="text-[11px] text-slate-400 truncate">{monthlySalary > 0 ? `${fmtMoney(monthlySalary)} / month` : 'Enter salary'}</p>
               </div>
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => router.push('/dashboard/staff/salary/structure')}
-                disabled={submitting}
-                className="px-4 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-xl shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Saving…
-                  </>
-                ) : (
-                  <>
-                    <Save className="h-4 w-4" /> Save Structure
-                  </>
-                )}
+              <button type="button" onClick={() => router.back()} disabled={submitting} className="px-4 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50">Cancel</button>
+              <button type="submit" disabled={submitting} className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-xl shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</> : <><Save className="h-4 w-4" /> Save Structure</>}
               </button>
             </div>
           </div>
@@ -966,21 +743,46 @@ interface SalaryPreviewProps {
   setting: SalarySetting;
   monthlySalary: number;
   additionalValues: Record<string, number>;
+  allowanceOverrides?: Record<string, number>;
+  deductionOverrides?: Record<string, number>;
+  onOpenOverrides: () => void;
+  activeOverrideCount: number;
+  allowCustomOverrides: boolean;
 }
 
-function SalaryPreview({ setting, monthlySalary, additionalValues }: SalaryPreviewProps) {
+function SalaryPreview({
+  setting, monthlySalary, additionalValues,
+  allowanceOverrides = {}, deductionOverrides = {},
+  onOpenOverrides, activeOverrideCount, allowCustomOverrides
+}: SalaryPreviewProps) {
   const calculation = useMemo(() => {
-    return calculateSalary(monthlySalary, setting, additionalValues);
-  }, [monthlySalary, setting, additionalValues]);
+    return calculateSalary(monthlySalary, setting, additionalValues, allowanceOverrides, deductionOverrides);
+  }, [monthlySalary, setting, additionalValues, allowanceOverrides, deductionOverrides]);
 
   return (
-    <div className="mt-4 border border-blue-200 rounded-xl overflow-hidden">
-      <div className="bg-blue-50 px-4 py-2 border-b border-blue-100 flex justify-between items-center">
-        <span className="text-sm font-semibold text-blue-700">
-          <Calculator className="h-4 w-4 inline mr-1" />
-          Salary Calculation Preview
+    <div className="mt-4 border border-blue-200 rounded-xl overflow-hidden mb-6">
+      {/* Dynamic Header with Trigger Button */}
+      <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex justify-between items-center flex-wrap gap-3">
+        <span className="text-sm font-semibold text-blue-700 flex items-center gap-1.5">
+          <Calculator className="h-4 w-4" /> Live Calculation Preview
         </span>
-        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Complete</span>
+        <div className="flex items-center gap-2">
+          {allowCustomOverrides && (
+            <button
+              type="button"
+              onClick={onOpenOverrides}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                activeOverrideCount > 0
+                  ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-200 ring-2 ring-indigo-200 ring-offset-1 ring-offset-blue-50'
+                  : 'bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 shadow-sm'
+              }`}
+            >
+              <Settings className="h-3 w-3" />
+              {activeOverrideCount > 0 ? `${activeOverrideCount} Override${activeOverrideCount > 1 ? 's' : ''} Applied` : 'Custom Overrides'}
+            </button>
+          )}
+          <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium hidden sm:inline-flex">Auto-updated</span>
+        </div>
       </div>
 
       <div className="p-4 space-y-4">
@@ -1014,9 +816,7 @@ function SalaryPreview({ setting, monthlySalary, additionalValues }: SalaryPrevi
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-green-50">
-                <th colSpan={4} className="text-center p-2 border border-slate-200 font-semibold text-green-700">
-                  INCOME BREAKDOWN
-                </th>
+                <th colSpan={4} className="text-center p-2 border border-slate-200 font-semibold text-green-700">INCOME BREAKDOWN</th>
               </tr>
               <tr className="bg-slate-50">
                 <th className="text-left p-2 border border-slate-200 font-semibold text-slate-600">Description</th>
@@ -1036,9 +836,13 @@ function SalaryPreview({ setting, monthlySalary, additionalValues }: SalaryPrevi
               ))}
               {calculation.allowances.map((a: any) => {
                 const pct = monthlySalary > 0 ? (a.monthly / monthlySalary) * 100 : 0;
+                const isOverridden = allowanceOverrides[a.name] !== undefined;
                 return (
-                  <tr key={a.name}>
-                    <td className="p-2 border border-slate-200">{a.name}</td>
+                  <tr key={a.name} className={isOverridden ? 'bg-indigo-50/30' : ''}>
+                    <td className="p-2 border border-slate-200 flex items-center gap-1">
+                      {a.name}
+                      {isOverridden && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded ml-1 font-semibold uppercase tracking-wider">Override</span>}
+                    </td>
                     <td className="p-2 border border-slate-200 text-right">{fmtMoney(a.monthly)}</td>
                     <td className="p-2 border border-slate-200 text-right">{fmtMoney(a.annual)}</td>
                     <td className="p-2 border border-slate-200 text-right">{pct.toFixed(2)}%</td>
@@ -1061,18 +865,22 @@ function SalaryPreview({ setting, monthlySalary, additionalValues }: SalaryPrevi
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-amber-50">
-                <th colSpan={2} className="text-center p-2 border border-slate-200 font-semibold text-amber-700">
-                  RELIEF & EXEMPTION
-                </th>
+                <th colSpan={2} className="text-center p-2 border border-slate-200 font-semibold text-amber-700">RELIEF & EXEMPTION</th>
               </tr>
             </thead>
             <tbody>
-              {calculation.statutoryDeductions.map((d: any) => (
-                <tr key={d.name}>
-                  <td className="p-2 border border-slate-200">{d.name}</td>
-                  <td className="p-2 border border-slate-200 text-right">{fmtMoney(d.annual)}</td>
-                </tr>
-              ))}
+              {calculation.statutoryDeductions.map((d: any) => {
+                const isOverridden = deductionOverrides[d.name] !== undefined;
+                return (
+                  <tr key={d.name} className={isOverridden ? 'bg-indigo-50/30' : ''}>
+                    <td className="p-2 border border-slate-200 flex items-center gap-1">
+                      {d.name}
+                      {isOverridden && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded ml-1 font-semibold uppercase tracking-wider">Override</span>}
+                    </td>
+                    <td className="p-2 border border-slate-200 text-right">{fmtMoney(d.annual)}</td>
+                  </tr>
+                )
+              })}
               {calculation.reliefs.map((r: any) => (
                 <tr key={r.name}>
                   <td className="p-2 border border-slate-200">{r.name}</td>
@@ -1092,29 +900,21 @@ function SalaryPreview({ setting, monthlySalary, additionalValues }: SalaryPrevi
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-red-50">
-                <th colSpan={3} className="text-center p-2 border border-slate-200 font-semibold text-red-700">
-                  PAYE TAX CALCULATION
-                </th>
+                <th colSpan={3} className="text-center p-2 border border-slate-200 font-semibold text-red-700">PAYE TAX CALCULATION</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td className="p-2 border border-slate-200">Annual Gross Income</td>
-                <td className="p-2 border border-slate-200 text-right" colSpan={2}>
-                  {fmtMoney(calculation.grossIncomeAnnual)}
-                </td>
+                <td className="p-2 border border-slate-200 text-right" colSpan={2}>{fmtMoney(calculation.grossIncomeAnnual)}</td>
               </tr>
               <tr>
                 <td className="p-2 border border-slate-200">Less: Tax Free Pay</td>
-                <td className="p-2 border border-slate-200 text-right" colSpan={2}>
-                  {fmtMoney(calculation.totalReliefs)}
-                </td>
+                <td className="p-2 border border-slate-200 text-right" colSpan={2}>{fmtMoney(calculation.totalReliefs)}</td>
               </tr>
               <tr className="bg-amber-50 font-bold">
                 <td className="p-2 border border-slate-200">Taxable Income</td>
-                <td className="p-2 border border-slate-200 text-right" colSpan={2}>
-                  {fmtMoney(calculation.taxableIncome)}
-                </td>
+                <td className="p-2 border border-slate-200 text-right" colSpan={2}>{fmtMoney(calculation.taxableIncome)}</td>
               </tr>
               {calculation.taxBreakdown.map((b: any, idx: number) => (
                 <tr key={idx}>
@@ -1136,44 +936,19 @@ function SalaryPreview({ setting, monthlySalary, additionalValues }: SalaryPrevi
           <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
             <h5 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Monthly Summary</h5>
             <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-600">Monthly Income:</span>
-                <strong>{fmtMoney(calculation.grossIncomeMonthly)}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Monthly PAYE Tax:</span>
-                <strong>{fmtMoney(calculation.monthlyTax)}</strong>
-              </div>
-              <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
-                <span className="text-green-700 font-semibold">Net Salary:</span>
-                <strong className="text-green-700">{fmtMoney(calculation.grossIncomeMonthly - calculation.monthlyTax)}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Effective Tax Rate:</span>
-                <strong className="text-blue-600">{calculation.effectiveTaxRate.toFixed(2)}%</strong>
-              </div>
+              <div className="flex justify-between"><span className="text-slate-600">Monthly Income:</span><strong>{fmtMoney(calculation.grossIncomeMonthly)}</strong></div>
+              <div className="flex justify-between"><span className="text-slate-600">Monthly PAYE Tax:</span><strong>{fmtMoney(calculation.monthlyTax)}</strong></div>
+              <div className="flex justify-between border-t border-slate-200 pt-1 mt-1"><span className="text-green-700 font-semibold">Net Salary:</span><strong className="text-green-700">{fmtMoney(calculation.grossIncomeMonthly - calculation.monthlyTax)}</strong></div>
+              <div className="flex justify-between"><span className="text-slate-600">Effective Tax Rate:</span><strong className="text-blue-600">{calculation.effectiveTaxRate.toFixed(2)}%</strong></div>
             </div>
           </div>
-
           <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
             <h5 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Annual Summary</h5>
             <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-600">Annual Gross:</span>
-                <strong>{fmtMoney(calculation.grossIncomeAnnual)}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Tax Free Pay:</span>
-                <strong>{fmtMoney(calculation.totalReliefs)}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Taxable Income:</span>
-                <strong>{fmtMoney(calculation.taxableIncome)}</strong>
-              </div>
-              <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
-                <span className="text-red-600 font-semibold">Total PAYE Tax:</span>
-                <strong className="text-red-600">{fmtMoney(calculation.annualTax)}</strong>
-              </div>
+              <div className="flex justify-between"><span className="text-slate-600">Annual Gross:</span><strong>{fmtMoney(calculation.grossIncomeAnnual)}</strong></div>
+              <div className="flex justify-between"><span className="text-slate-600">Tax Free Pay:</span><strong>{fmtMoney(calculation.totalReliefs)}</strong></div>
+              <div className="flex justify-between"><span className="text-slate-600">Taxable Income:</span><strong>{fmtMoney(calculation.taxableIncome)}</strong></div>
+              <div className="flex justify-between border-t border-slate-200 pt-1 mt-1"><span className="text-red-600 font-semibold">Total PAYE Tax:</span><strong className="text-red-600">{fmtMoney(calculation.annualTax)}</strong></div>
             </div>
           </div>
         </div>
@@ -1184,36 +959,19 @@ function SalaryPreview({ setting, monthlySalary, additionalValues }: SalaryPrevi
 
 // ─── Salary Calculation Engine ────────────────────────────────────────────────
 interface CalculationResult {
-  basicComponents: Record<string, any>;
-  leaveAllowancePercentage: number;
-  leaveAllowanceMonthly: number;
-  leaveAllowanceAnnual: number;
-  allowances: Array<{ name: string; monthly: number; annual: number }>;
-  grossIncomeMonthly: number;
-  grossIncomeAnnual: number;
-  reliefs: Array<{ name: string; amount: number }>;
-  totalReliefs: number;
-  taxableIncome: number;
-  taxBreakdown: Array<{ description: string; rate: number; amount: number }>;
-  annualTax: number;
-  monthlyTax: number;
-  effectiveTaxRate: number;
-  statutoryDeductions: Array<{
-    name: string;
-    monthly: number;
-    annual: number;
-    percentage: number | null;
-    basedOn: string;
-    basedOnType: string;
-    calcType: string;
-  }>;
+  basicComponents: Record<string, any>; leaveAllowancePercentage: number; leaveAllowanceMonthly: number; leaveAllowanceAnnual: number;
+  allowances: Array<{ name: string; monthly: number; annual: number }>; grossIncomeMonthly: number; grossIncomeAnnual: number;
+  reliefs: Array<{ name: string; amount: number }>; totalReliefs: number; taxableIncome: number;
+  taxBreakdown: Array<{ description: string; rate: number; amount: number }>; annualTax: number; monthlyTax: number; effectiveTaxRate: number;
+  statutoryDeductions: Array<{ name: string; monthly: number; annual: number; percentage: number | null; basedOn: string; basedOnType: string; calcType: string; }>;
   totalStatutoryDeductions: number;
 }
 
-function calculateSalary(monthlySalary: number, setting: SalarySetting, additionalValues: Record<string, number>): CalculationResult {
+function calculateSalary(
+  monthlySalary: number, setting: SalarySetting, additionalValues: Record<string, number>, allowanceOverrides: Record<string, number> = {}, deductionOverrides: Record<string, number> = {}
+): CalculationResult {
   monthlySalary = Math.round(monthlySalary * 100) / 100;
   const annualSalary = Math.round(monthlySalary * 12 * 100) / 100;
-
   const basicComponents: Record<string, any> = {};
   let totalBasicPercentage = 0;
 
@@ -1222,38 +980,22 @@ function calculateSalary(monthlySalary: number, setting: SalarySetting, addition
       const percentage = parseFloat(component.percentage) || 0;
       const monthlyAmount = Math.round(((monthlySalary * percentage) / 100) * 100) / 100;
       const annualAmount = Math.round(monthlyAmount * 12 * 100) / 100;
-
-      basicComponents[component.code] = {
-        name: component.name,
-        code: component.code,
-        percentage: percentage,
-        monthly: monthlyAmount,
-        annual: annualAmount,
-      };
+      basicComponents[component.code] = { name: component.name, code: component.code, percentage: percentage, monthly: monthlyAmount, annual: annualAmount };
       totalBasicPercentage += percentage;
     });
   }
 
   function calculateBaseAmount(basedOn: string, basedOnType: string): number {
-    if (basedOnType === 'additional_field') {
-      return additionalValues[basedOn] || 0;
-    }
+    if (basedOnType === 'additional_field') return additionalValues[basedOn] || 0;
     const upper = basedOn.toUpperCase();
     if (upper === 'TOTAL') return monthlySalary;
     if (upper === 'GROSS_INCOME') return 0;
-
-    const codes = upper.split('+').map((c) => c.trim());
     let total = 0;
-    codes.forEach((code) => {
-      if (basicComponents[code]) total += basicComponents[code].monthly;
-    });
+    upper.split('+').map((c) => c.trim()).forEach((code) => { if (basicComponents[code]) total += basicComponents[code].monthly; });
     return total;
   }
 
-  let leaveAllowancePercentage = 0;
-  let leaveAllowanceMonthly = 0;
-  let leaveAllowanceAnnual = 0;
-
+  let leaveAllowancePercentage = 0; let leaveAllowanceMonthly = 0; let leaveAllowanceAnnual = 0;
   if (setting.leave_allowance_percentage !== undefined) {
     leaveAllowancePercentage = parseFloat(setting.leave_allowance_percentage as any) || 0;
     const annualBasicSalary = Object.values(basicComponents).reduce((sum: number, comp: any) => sum + comp.annual, 0);
@@ -1262,35 +1004,24 @@ function calculateSalary(monthlySalary: number, setting: SalarySetting, addition
   }
 
   const allowances: Array<{ name: string; monthly: number; annual: number }> = [];
-  let totalOtherAllowancesMonthly = 0;
-  let totalOtherAllowancesAnnual = 0;
-
+  let totalOtherAllowancesMonthly = 0; let totalOtherAllowancesAnnual = 0;
   if (setting.allowances) {
     setting.allowances.forEach((allowance: any) => {
       if (allowance.is_active !== false) {
         let monthlyAmount = 0;
-        const calcType = allowance.calculation_type || 'percentage';
-        const basedOn = allowance.based_on || 'TOTAL';
-        const basedOnType = allowance.based_on_type || 'component';
-        const baseAmount = calculateBaseAmount(basedOn, basedOnType);
-
-        if (calcType === 'fixed') {
-          monthlyAmount = parseFloat(allowance.fixed_amount) || 0;
-        } else if (calcType === 'percentage') {
-          const percentage = parseFloat(allowance.percentage) || 0;
-          monthlyAmount = (baseAmount * percentage) / 100;
-        } else if (calcType === 'combined') {
-          const percentage = parseFloat(allowance.percentage) || 0;
-          const fixed = parseFloat(allowance.fixed_amount) || 0;
-          monthlyAmount = (baseAmount * percentage) / 100 + fixed;
+        if (allowanceOverrides[allowance.name] !== undefined) {
+          monthlyAmount = allowanceOverrides[allowance.name];
+        } else {
+          const calcType = allowance.calculation_type || 'percentage';
+          const baseAmount = calculateBaseAmount(allowance.based_on || 'TOTAL', allowance.based_on_type || 'component');
+          if (calcType === 'fixed') monthlyAmount = parseFloat(allowance.fixed_amount) || 0;
+          else if (calcType === 'percentage') monthlyAmount = (baseAmount * (parseFloat(allowance.percentage) || 0)) / 100;
+          else if (calcType === 'combined') monthlyAmount = (baseAmount * (parseFloat(allowance.percentage) || 0)) / 100 + (parseFloat(allowance.fixed_amount) || 0);
         }
-
         monthlyAmount = Math.round(monthlyAmount * 100) / 100;
         const annualAmount = Math.round(monthlyAmount * 12 * 100) / 100;
-
         allowances.push({ name: allowance.name, monthly: monthlyAmount, annual: annualAmount });
-        totalOtherAllowancesMonthly += monthlyAmount;
-        totalOtherAllowancesAnnual += annualAmount;
+        totalOtherAllowancesMonthly += monthlyAmount; totalOtherAllowancesAnnual += annualAmount;
       }
     });
   }
@@ -1306,37 +1037,21 @@ function calculateSalary(monthlySalary: number, setting: SalarySetting, addition
 
   const statutoryDeductions: Array<any> = [];
   let totalStatutoryDeductions = 0;
-
   if (setting.statutory_deductions) {
     setting.statutory_deductions.forEach((deduction: any) => {
       if (deduction.is_active !== false) {
-        const calcType = deduction.calculation_type || 'percentage';
-        const basedOn = deduction.based_on || 'B';
-        const basedOnType = deduction.based_on_type || 'component';
-        const baseAmount = calculateBaseAmount(basedOn, basedOnType);
         let amount = 0;
-
-        if (calcType === 'percentage') {
-          const percentage = parseFloat(deduction.percentage) || 0;
-          amount = (baseAmount * percentage) / 100;
-        } else if (calcType === 'fixed') {
-          amount = parseFloat(deduction.fixed_amount) || 0;
-        } else if (calcType === 'combined') {
-          const percentage = parseFloat(deduction.percentage) || 0;
-          const fixed = parseFloat(deduction.fixed_amount) || 0;
-          amount = (baseAmount * percentage) / 100 + fixed;
+        if (deductionOverrides[deduction.name] !== undefined) {
+          amount = deductionOverrides[deduction.name];
+        } else {
+          const calcType = deduction.calculation_type || 'percentage';
+          const baseAmount = calculateBaseAmount(deduction.based_on || 'B', deduction.based_on_type || 'component');
+          if (calcType === 'percentage') amount = (baseAmount * (parseFloat(deduction.percentage) || 0)) / 100;
+          else if (calcType === 'fixed') amount = parseFloat(deduction.fixed_amount) || 0;
+          else if (calcType === 'combined') amount = (baseAmount * (parseFloat(deduction.percentage) || 0)) / 100 + (parseFloat(deduction.fixed_amount) || 0);
         }
-
         amount = Math.round(amount * 100) / 100;
-        statutoryDeductions.push({
-          name: deduction.name,
-          monthly: amount,
-          annual: Math.round(amount * 12 * 100) / 100,
-          percentage: parseFloat(deduction.percentage) || null,
-          basedOn: basedOn,
-          basedOnType: basedOnType,
-          calcType: calcType,
-        });
+        statutoryDeductions.push({ name: deduction.name, monthly: amount, annual: Math.round(amount * 12 * 100) / 100, percentage: deductionOverrides[deduction.name] !== undefined ? null : (parseFloat(deduction.percentage) || null), basedOn: deduction.based_on || 'B', basedOnType: deduction.based_on_type || 'component', calcType: deduction.calculation_type || 'percentage' });
         totalStatutoryDeductions += amount;
       }
     });
@@ -1344,33 +1059,15 @@ function calculateSalary(monthlySalary: number, setting: SalarySetting, addition
 
   const reliefs: Array<{ name: string; amount: number }> = [];
   let totalReliefs = 0;
-
   if (setting.reliefs_exemptions) {
     setting.reliefs_exemptions.forEach((relief: any) => {
       if (relief.is_active !== false) {
         const calcType = relief.calculation_type || (relief.formula_type === 'percentage_plus_fixed' ? 'combined' : relief.formula_type || 'fixed');
-        const basedOn = relief.based_on || 'gross_income';
-        const basedOnType = relief.based_on_type || 'component';
-
-        let baseAmount = 0;
-        if (basedOn === 'gross_income') {
-          baseAmount = grossIncomeAnnual;
-        } else {
-          baseAmount = calculateBaseAmount(basedOn, basedOnType) * 12;
-        }
-
+        let baseAmount = (relief.based_on || 'gross_income') === 'gross_income' ? grossIncomeAnnual : calculateBaseAmount(relief.based_on, relief.based_on_type || 'component') * 12;
         let amount = 0;
-        if (calcType === 'percentage') {
-          const percentage = parseFloat(relief.percentage) || 0;
-          amount = (baseAmount * percentage) / 100;
-        } else if (calcType === 'fixed') {
-          amount = parseFloat(relief.fixed_amount) || 0;
-        } else if (calcType === 'combined') {
-          const percentage = parseFloat(relief.percentage) || 0;
-          const fixed = parseFloat(relief.fixed_amount) || 0;
-          amount = (baseAmount * percentage) / 100 + fixed;
-        }
-
+        if (calcType === 'percentage') amount = (baseAmount * (parseFloat(relief.percentage) || 0)) / 100;
+        else if (calcType === 'fixed') amount = parseFloat(relief.fixed_amount) || 0;
+        else if (calcType === 'combined') amount = (baseAmount * (parseFloat(relief.percentage) || 0)) / 100 + (parseFloat(relief.fixed_amount) || 0);
         amount = Math.round(amount * 100) / 100;
         reliefs.push({ name: relief.name, amount: amount });
         totalReliefs += amount;
@@ -1378,35 +1075,21 @@ function calculateSalary(monthlySalary: number, setting: SalarySetting, addition
     });
   }
 
-  statutoryDeductions.forEach((d) => {
-    totalReliefs += d.annual;
-  });
-
+  statutoryDeductions.forEach((d) => { totalReliefs += d.annual; });
   const taxableIncome = Math.round((grossIncomeAnnual - totalReliefs) * 100) / 100;
 
   let annualTax = 0;
   const taxBreakdown: Array<{ description: string; rate: number; amount: number }> = [];
-
   if (setting.tax_brackets && setting.tax_brackets.length > 0) {
     let remainingIncome = taxableIncome;
-
     setting.tax_brackets.forEach((bracket: any, index: number) => {
       if (remainingIncome > 0) {
         const bracketSize = bracket.limit !== null && bracket.limit !== undefined ? parseFloat(bracket.limit) : remainingIncome;
         const taxableAmount = Math.min(remainingIncome, bracketSize);
         const taxRate = parseFloat(bracket.rate) || 0;
         const taxAmount = Math.round(((taxableAmount * taxRate) / 100) * 100) / 100;
-
         if (taxableAmount > 0) {
-          let description: string;
-          if (index === 0) {
-            description = `First ${fmtMoney(bracketSize)} @ ${taxRate}%`;
-          } else if (bracket.limit === null || bracket.limit === undefined) {
-            description = `Remaining ${fmtMoney(taxableAmount)} @ ${taxRate}%`;
-          } else {
-            description = `Next ${fmtMoney(bracketSize)} @ ${taxRate}%`;
-          }
-
+          let description = index === 0 ? `First ${fmtMoney(bracketSize)} @ ${taxRate}%` : bracket.limit === null || bracket.limit === undefined ? `Remaining ${fmtMoney(taxableAmount)} @ ${taxRate}%` : `Next ${fmtMoney(bracketSize)} @ ${taxRate}%`;
           taxBreakdown.push({ description, rate: taxRate, amount: taxAmount });
           annualTax += taxAmount;
           remainingIncome -= taxableAmount;
@@ -1418,22 +1101,5 @@ function calculateSalary(monthlySalary: number, setting: SalarySetting, addition
   const monthlyTax = Math.round((annualTax / 12) * 100) / 100;
   const effectiveTaxRate = grossIncomeMonthly > 0 ? Math.round(((monthlyTax / grossIncomeMonthly) * 100) * 100) / 100 : 0;
 
-  return {
-    basicComponents,
-    leaveAllowancePercentage,
-    leaveAllowanceMonthly,
-    leaveAllowanceAnnual,
-    allowances,
-    grossIncomeMonthly,
-    grossIncomeAnnual,
-    reliefs,
-    totalReliefs,
-    taxableIncome,
-    taxBreakdown,
-    annualTax,
-    monthlyTax,
-    effectiveTaxRate,
-    statutoryDeductions,
-    totalStatutoryDeductions,
-  };
+  return { basicComponents, leaveAllowancePercentage, leaveAllowanceMonthly, leaveAllowanceAnnual, allowances, grossIncomeMonthly, grossIncomeAnnual, reliefs, totalReliefs, taxableIncome, taxBreakdown, annualTax, monthlyTax, effectiveTaxRate, statutoryDeductions, totalStatutoryDeductions };
 }
