@@ -151,6 +151,7 @@ export default function POSCheckoutPage() {
   const [tenderedAmount, setTenderedAmount] = useState<string>(''); // external cash/transfer/pos amount — drives the waterfall alongside wallet contributions
   const [tenderedTouched, setTenderedTouched] = useState(false); // true once the cashier has directly typed into "Amount Tendered" — stops the item-first auto-sync (see manualOverrides effect below)
   const [paymentMode, setPaymentMode] = useState('cash');
+  const [paymentDate, setPaymentDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [bankAccountId, setBankAccountId] = useState('');
   const [reference, setReference] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
@@ -314,6 +315,7 @@ export default function POSCheckoutPage() {
       setRawParentData(null);
       // Reset every payment input — switching terms means starting the allocation over
       setTenderedAmount('');
+      setPaymentDate(new Date().toISOString().slice(0, 10));
       setTenderedTouched(false);
       setManualOverrides({});
       setWalletContributions({});
@@ -673,6 +675,7 @@ export default function POSCheckoutPage() {
         total_amount: String(fromKobo(totalAvailableKobo)),
         allocations: [...debtAllocations, ...overpayAllocPayload],
         funding_sources: fundingSources,
+        date: paymentDate,
       };
 
       if (tenderedKobo > 0) {
@@ -704,6 +707,7 @@ export default function POSCheckoutPage() {
         router.push('/dashboard/staff/fee/payments');
       } else {
         setTenderedAmount('');
+        setPaymentDate(new Date().toISOString().slice(0, 10));
         setTenderedTouched(false);
         setManualOverrides({});
         setWalletContributions({});
@@ -1212,7 +1216,7 @@ export default function POSCheckoutPage() {
                   <p className="text-[11px] text-slate-400 font-medium mt-0.5">Covers whatever the wallet contributions above don't.</p>
                 </div>
                 <div className="p-5 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div>
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Method</label>
                       <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-xs font-bold outline-none bg-white">
@@ -1232,6 +1236,17 @@ export default function POSCheckoutPage() {
                         )}
                       </div>
                     )}
+
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Payment Date</label>
+                      <input
+                        type="date"
+                        value={paymentDate}
+                        max={new Date().toISOString().slice(0, 10)}
+                        onChange={e => setPaymentDate(e.target.value)}
+                        className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-xs font-bold outline-none bg-white"
+                      />
+                    </div>
 
                     <div>
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Reference <span className="font-normal normal-case text-slate-300">(optional)</span></label>

@@ -1,3 +1,6 @@
+// ============================================================
+// lib/types/attendance.ts
+// ============================================================
 
 // --- Enums / choice unions ---
 
@@ -5,7 +8,9 @@ export type AttendanceMethod = 'FINGERPRINT' | 'BARCODE' | 'MANUAL';
 export type AttendanceScope = 'GATE' | 'CLASS' | 'SUBJECT';
 export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | 'LEFT_EARLY';
 export type ParticipantType = 'STUDENT' | 'STAFF' | 'PARENT' | 'VISITOR';
-export type DeviceType = 'ZKTECO' | 'R4500' | 'BARCODE_SCANNER' | 'OTHER';
+export type DeviceType = 'ZKTECO' | 'DIGITAL_PERSONA' | 'BARCODE_SCANNER' | 'OTHER';
+export type DeviceIntegrationMode = 'HOST' | 'EDGE';
+export type CommandStatus = 'PENDING' | 'SENT' | 'SUCCESS' | 'FAILED';
 export type GateState = 'NOT_ARRIVED' | 'IN' | 'OUT_TEMP' | 'OUT';
 export type NotificationPayer = 'SCHOOL' | 'PARENT';
 export type ExceptionType = 'EXCURSION' | 'BUS_DEPARTURE' | 'APPROVED_EARLY_PICKUP' | 'OTHER';
@@ -50,15 +55,26 @@ export interface AttendanceSettings {
   created_at: string;
 }
 
-// --- Devices & Credentials ---
+// --- Devices, Command Queues & Credentials ---
 
 export interface AttendanceDevice {
   id: number;
   device_id: string;
   name: string;
   device_type: DeviceType;
+  integration_type: DeviceIntegrationMode;
   location?: string | null;
   is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeviceCommandQueue {
+  id: number;
+  device: number;
+  device_name?: string | null;
+  command_string: string;
+  status: CommandStatus;
   created_at: string;
   updated_at: string;
 }
@@ -70,6 +86,8 @@ export interface DeviceCredential {
   participant_type: ParticipantType;
   student?: number | null;
   student_name?: string | null;
+  student_registration_number?: string | null;
+  student_class?: string | null;
   staff?: number | null;
   staff_name?: string | null;
   parent?: number | null;
@@ -118,7 +136,7 @@ export interface ManualAttendanceEventInput {
   subject_id?: number;
 }
 
-// --- Daily Records ---
+// --- Daily Records & Term Summaries ---
 
 export interface AttendanceDailyRecord {
   id: number;
@@ -154,6 +172,24 @@ export interface AttendanceDailyRecord {
 export interface AttendanceRecordCorrectionInput {
   resolution_note: string;
   mark_as_returned: boolean;
+}
+
+export interface AttendanceSummary {
+  id: number;
+  student?: number | null;
+  student_name?: string | null;
+  staff?: number | null;
+  staff_name?: string | null;
+  participant_type: ParticipantType;
+  academic_period: number;
+  academic_period_name?: string | null;
+  total_present: number;
+  total_absent: number;
+  total_late: number;
+  total_excused: number;
+  total_left_early: number;
+  created_at: string;
+  updated_at: string;
 }
 
 // --- Exceptions / Excursions ---

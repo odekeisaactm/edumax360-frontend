@@ -1,17 +1,18 @@
 // ============================================================
 // lib/service/attendance.ts
-
 // ============================================================
 
 import api from '@/lib/api';
 import type {
   AttendanceSettings,
   AttendanceDevice,
+  DeviceCommandQueue,
   DeviceCredential,
   AttendanceEvent,
   ManualAttendanceEventInput,
   AttendanceDailyRecord,
   AttendanceRecordCorrectionInput,
+  AttendanceSummary,
   AttendanceException,
   AttendanceExceptionWrite,
   EventAttendanceRecord,
@@ -77,6 +78,21 @@ export const attendanceDevicesAPI = {
 };
 
 // ============================================================
+// COMMAND QUEUE (read-only)
+// ============================================================
+
+export const deviceCommandQueueAPI = {
+  list: async (params?: Record<string, any>): Promise<PaginatedResponse<DeviceCommandQueue>> => {
+    const res = await api.get(`${BASE}/command-queue/`, { params });
+    return res.data;
+  },
+  get: async (id: number): Promise<DeviceCommandQueue> => {
+    const res = await api.get(`${BASE}/command-queue/${id}/`);
+    return res.data;
+  },
+};
+
+// ============================================================
 // DEVICE CREDENTIALS
 // ============================================================
 
@@ -99,6 +115,10 @@ export const deviceCredentialsAPI = {
   },
   delete: async (id: number): Promise<void> => {
     await api.delete(`${BASE}/credentials/${id}/`);
+  },
+  bulkGenerateBarcode: async (): Promise<{ created: number; skipped_existing: number }> => {
+      const res = await api.post(`${BASE}/credentials/generate-barcode/`);
+      return res.data.data; // matches your APIResponse.success wrapper
   },
 };
 
@@ -137,6 +157,21 @@ export const attendanceRecordsAPI = {
   resolve: async (id: number, payload: AttendanceRecordCorrectionInput): Promise<AttendanceDailyRecord> => {
     const res = await api.post(`${BASE}/records/${id}/resolve/`, payload);
     return res.data.data;
+  },
+};
+
+// ============================================================
+// TERM SUMMARIES (read-only)
+// ============================================================
+
+export const attendanceSummariesAPI = {
+  list: async (params?: Record<string, any>): Promise<PaginatedResponse<AttendanceSummary>> => {
+    const res = await api.get(`${BASE}/summaries/`, { params });
+    return res.data;
+  },
+  get: async (id: number): Promise<AttendanceSummary> => {
+    const res = await api.get(`${BASE}/summaries/${id}/`);
+    return res.data;
   },
 };
 

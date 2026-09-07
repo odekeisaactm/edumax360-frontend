@@ -502,7 +502,7 @@ export default function PaymentsPage() {
                         >
                           {p.reference}
                         </p>
-                        <p className="text-xs font-medium text-slate-500">{formatDate(p.created_at)}</p>
+                        <p className="text-xs font-medium text-slate-500" title={`Recorded: ${formatDate(p.created_at)}`}>{formatDateShort(p.date)}</p>
                       </td>
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-3">
@@ -782,7 +782,7 @@ export default function PaymentsPage() {
                 }`}>
                   {printPayment.status_display}
                 </span>
-                <span className="text-[10px] font-bold text-slate-500">{formatDateShort(printPayment.created_at)} · {formatTime(printPayment.created_at)}</span>
+                <span className="text-[10px] font-bold text-slate-500">{formatDateShort(printPayment.date)} · {formatTime(printPayment.created_at)}</span>
               </div>
 
               {/* Received From */}

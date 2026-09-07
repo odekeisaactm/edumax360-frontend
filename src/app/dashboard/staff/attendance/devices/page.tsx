@@ -3,11 +3,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { attendanceDevicesAPI } from '@/lib/service/attendance';
-import type { AttendanceDevice, DeviceType } from '@/lib/types/attendance';
+import type { AttendanceDevice, DeviceType, DeviceIntegrationMode } from '@/lib/types/attendance';
 import {
   ScanLine, Plus, Edit3, Trash2, Search, X, Check,
   AlertCircle, AlertTriangle, Loader2, RefreshCw,
   Fingerprint, Barcode, MapPin, Wifi, WifiOff, Info,
+  Monitor, Globe
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -26,7 +27,7 @@ function extractError(err: any): string {
 
 const DEVICE_TYPE_META: Record<DeviceType, { label: string; icon: any; color: string; bg: string; border: string }> = {
   ZKTECO:           { label: 'ZKTeco',          icon: Fingerprint, color: 'text-blue-700',    bg: 'bg-blue-50',    border: 'border-blue-100' },
-  R4500:            { label: 'DigitalPersona R4500', icon: Fingerprint, color: 'text-violet-700', bg: 'bg-violet-50', border: 'border-violet-100' },
+  DIGITAL_PERSONA:  { label: 'DigitalPersona',  icon: Fingerprint, color: 'text-violet-700', bg: 'bg-violet-50', border: 'border-violet-100' },
   BARCODE_SCANNER:  { label: 'Barcode Scanner', icon: Barcode,     color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-100' },
   OTHER:            { label: 'Other',           icon: ScanLine,    color: 'text-slate-700',   bg: 'bg-slate-100',  border: 'border-slate-200' },
 };
@@ -65,7 +66,7 @@ function ConfirmDeleteModal({ open, device, isDeleting, onConfirm, onCancel }: {
         </div>
         <h3 className="text-lg font-bold text-slate-900 text-center mb-1">Delete Device</h3>
         <p className="text-sm text-slate-500 text-center mb-6">
-          Remove <span className="font-semibold text-slate-700">"{device.name}"</span>? Historical attendance events already recorded through this device are kept — only the device registration is removed.
+          Remove <span className="font-semibold text-slate-700">"{device.name}"</span>? Historical attendance events already recorded through this device are kept.
         </p>
         <div className="flex gap-3">
           <button onClick={onCancel} disabled={isDeleting}
@@ -87,13 +88,16 @@ interface DeviceFormValues {
   device_id: string;
   name: string;
   device_type: DeviceType;
+  integration_type: DeviceIntegrationMode;
   location: string;
   is_active: boolean;
 }
 
 function DeviceModal({ editing, isSaving, onSave, onClose, showToast }: {
-  editing: AttendanceDevice | null; isSaving: boolean;
-  onSave: (data: Partial<AttendanceDevice>) => Promise<void>; onClose: () => void;
+  editing: AttendanceDevice | null;
+  isSaving: boolean;
+  onSave: (data: Partial<AttendanceDevice>) => Promise<void>;
+  onClose: () => void;
   showToast: (type: 'success' | 'error', message: string) => void;
 }) {
   const [form, setForm] = useState<DeviceFormValues>(
@@ -101,12 +105,14 @@ function DeviceModal({ editing, isSaving, onSave, onClose, showToast }: {
       device_id: editing.device_id,
       name: editing.name,
       device_type: editing.device_type,
+      integration_type: editing.integration_type || 'EDGE',
       location: editing.location || '',
       is_active: editing.is_active,
     } : {
       device_id: '',
       name: '',
       device_type: 'ZKTECO',
+      integration_type: 'EDGE',
       location: '',
       is_active: true,
     }
@@ -126,58 +132,101 @@ function DeviceModal({ editing, isSaving, onSave, onClose, showToast }: {
     }
   };
 
-  const inputCls = "w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white font-medium text-slate-800";
+  const inputCls = "w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:blue-500 outline-none bg-white font-medium text-slate-800 focus:border-blue-500 transition-colors";
   const labelCls = "block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5";
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] border border-slate-100 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] border border-slate-100 overflow-hidden">
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between flex-shrink-0">
           <h3 className="text-base font-bold text-white flex items-center gap-2">
             <ScanLine className="h-5 w-5" />
             {editing ? 'Edit Device' : 'Register Device'}
           </h3>
-          <button onClick={onClose} disabled={isSaving} className="text-white/80 hover:text-white p-1 rounded-lg">
+          <button onClick={onClose} disabled={isSaving} className="text-white/80 hover:text-white p-1 rounded-lg transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <div className="overflow-y-auto flex-1 p-6">
-          <form id="device-form" onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className={labelCls}>Device Type <span className="text-red-500">*</span></label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {(Object.keys(DEVICE_TYPE_META) as DeviceType[]).map(type => {
-                  const meta = DEVICE_TYPE_META[type];
-                  const active = form.device_type === type;
-                  return (
-                    <button key={type} type="button" onClick={() => set('device_type', type)}
-                      className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 text-xs font-bold transition-all ${
-                        active ? `${meta.bg} ${meta.color} ${meta.border}` : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-                      }`}>
-                      <meta.icon className="h-4 w-4" />
-                      {meta.label}
-                    </button>
-                  );
-                })}
+          <form id="device-form" onSubmit={handleSubmit} className="space-y-6">
+
+            {/* Integration Type & Device Type Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+              {/* Integration Type */}
+              <div>
+                <label className={labelCls}>Integration Mode <span className="text-red-500">*</span></label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => set('integration_type', 'EDGE')}
+                    className={`flex flex-col items-start gap-1 p-3 rounded-xl border-2 text-left transition-all ${
+                      form.integration_type === 'EDGE' ? 'border-blue-600 bg-blue-50/50' : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}>
+                    <div className={`flex items-center gap-1.5 font-bold text-sm ${form.integration_type === 'EDGE' ? 'text-blue-700' : 'text-slate-700'}`}>
+                      <Globe className="h-4 w-4" /> EDGE
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-medium">Networked wall terminal (e.g. ZKTeco ADMS)</p>
+                  </button>
+
+                  <button type="button" onClick={() => set('integration_type', 'HOST')}
+                    className={`flex flex-col items-start gap-1 p-3 rounded-xl border-2 text-left transition-all ${
+                      form.integration_type === 'HOST' ? 'border-blue-600 bg-blue-50/50' : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}>
+                    <div className={`flex items-center gap-1.5 font-bold text-sm ${form.integration_type === 'HOST' ? 'text-blue-700' : 'text-slate-700'}`}>
+                      <Monitor className="h-4 w-4" /> HOST
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-medium">Local USB scanner plugged into a PC</p>
+                  </button>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-400 mt-1.5">
-                Any device type can be used for either capture/enrollment or gate authentication — this is just what the physical unit is, not what role it plays.
-              </p>
+
+              {/* Hardware Type */}
+              <div>
+                <label className={labelCls}>Hardware Type <span className="text-red-500">*</span></label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(Object.keys(DEVICE_TYPE_META) as DeviceType[]).map(type => {
+                    const meta = DEVICE_TYPE_META[type];
+                    const active = form.device_type === type;
+                    return (
+                      <button key={type} type="button" onClick={() => set('device_type', type)}
+                        className={`flex items-center gap-2 p-3 rounded-xl border-2 text-xs font-bold transition-all text-left ${
+                          active ? `${meta.bg} ${meta.color} ${meta.border}` : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                        }`}>
+                        <meta.icon className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{meta.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             <div>
               <label className={labelCls}>Friendly Name <span className="text-red-500">*</span></label>
               <input required type="text" value={form.name} onChange={e => set('name', e.target.value)}
-                placeholder="e.g. Main Gate ZKTeco, Front Office R4500" className={inputCls} />
+                placeholder="e.g. Main Gate ZKTeco, Front Office USB" className={inputCls} />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className={labelCls}>Device Serial / ID <span className="text-red-500">*</span></label>
                 <input required type="text" value={form.device_id} onChange={e => set('device_id', e.target.value)}
-                  placeholder="e.g. serial number" className={inputCls + ' font-mono'} disabled={!!editing} />
-                {editing && <p className="text-[11px] text-slate-400 mt-1">Locked after registration.</p>}
+                  placeholder="e.g. SN12345678" className={inputCls + ' font-mono'} disabled={!!editing} />
+
+                {/* Dynamic Help Text based on Integration Mode */}
+                {editing ? (
+                   <p className="text-[11px] text-slate-400 mt-1.5 font-medium flex items-center gap-1">
+                     <Info className="h-3.5 w-3.5" /> Locked after registration.
+                   </p>
+                ) : form.integration_type === 'EDGE' ? (
+                   <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                     <strong className="text-slate-700">Critical:</strong> Must match the exact Serial Number (SN) printed on the back of the device. The server will reject network pings otherwise.
+                   </p>
+                ) : (
+                   <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                     Enter the Device UID shown when connected, or a custom identifier (e.g. <code>FRONT-DESK-USB</code>).
+                   </p>
+                )}
               </div>
               <div>
                 <label className={labelCls}>Location</label>
@@ -188,7 +237,7 @@ function DeviceModal({ editing, isSaving, onSave, onClose, showToast }: {
 
             <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
               <div>
-                <p className="text-sm font-semibold text-slate-800">Active</p>
+                <p className="text-sm font-semibold text-slate-800">Active Status</p>
                 <p className="text-xs text-slate-500">Inactive devices stop being polled/accepted for new events</p>
               </div>
               <button type="button" role="switch" aria-checked={form.is_active} onClick={() => set('is_active', !form.is_active)}
@@ -200,10 +249,10 @@ function DeviceModal({ editing, isSaving, onSave, onClose, showToast }: {
         </div>
 
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50 flex-shrink-0">
-          <button type="button" onClick={onClose} disabled={isSaving} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200/60 rounded-xl">
+          <button type="button" onClick={onClose} disabled={isSaving} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200/60 rounded-xl transition-colors">
             Cancel
           </button>
-          <button type="submit" form="device-form" disabled={isSaving} className="px-5 py-2 text-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2">
+          <button type="submit" form="device-form" disabled={isSaving} className="px-5 py-2 text-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2 transition-all">
             {isSaving ? <><Loader2 className="h-4 w-4 animate-spin" />{editing ? 'Updating...' : 'Saving...'}</> : <><Check className="h-4 w-4" />{editing ? 'Update Device' : 'Register Device'}</>}
           </button>
         </div>
@@ -322,7 +371,13 @@ export default function AttendanceDevicesPage() {
         onConfirm={handleDelete} onCancel={() => setDeletingDevice(null)} />
 
       {showModal && (
-        <DeviceModal editing={editingDevice} isSaving={isSaving} onSave={handleSave} onClose={() => setShowModal(false)} showToast={showToast} />
+        <DeviceModal
+          editing={editingDevice}
+          isSaving={isSaving}
+          onSave={handleSave}
+          onClose={() => setShowModal(false)}
+          showToast={showToast}
+        />
       )}
 
       {!loading && hasMixedDeviceTypes && (
@@ -331,10 +386,9 @@ export default function AttendanceDevicesPage() {
           <div>
             <h4 className="text-sm font-bold text-amber-950">Multiple Device Types Active</h4>
             <p className="text-xs text-amber-800 mt-0.5">
-              You have {activeTypesInUse.map(t => DEVICE_TYPE_META[t].label).join(', ')} devices all active.
               Fingerprint templates are not interchangeable across reader brands — make sure a person is enrolled
               on the <em>same device type</em> they'll actually be authenticated on (e.g. a template captured
-              on an R4500 will not be recognized by a ZKTeco gate reader, and vice versa).
+              on a DigitalPersona will not be recognized by a ZKTeco gate reader).
             </p>
           </div>
         </div>
@@ -363,7 +417,7 @@ export default function AttendanceDevicesPage() {
         </div>
         {canCreate && (
           <button onClick={openCreate}
-            className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5">
+            className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all hover:shadow-lg">
             <Plus className="h-4 w-4" /> Register Device
           </button>
         )}
@@ -411,11 +465,12 @@ export default function AttendanceDevicesPage() {
         })}
       </div>
 
+      {/* Search and Filters */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input type="text" placeholder="Search by name, serial, or location..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium" />
+            className="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium transition-shadow" />
         </div>
         <div className="flex items-center gap-4 flex-shrink-0">
           <label className="flex items-center gap-2.5 cursor-pointer select-none">
@@ -449,7 +504,7 @@ export default function AttendanceDevicesPage() {
           </p>
           {!searchTerm && canCreate && (
             <button onClick={openCreate}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-bold rounded-xl shadow-md">
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-bold rounded-xl shadow-md transition-all hover:shadow-lg">
               <Plus className="h-4 w-4" /> Register First Device
             </button>
           )}
@@ -457,9 +512,13 @@ export default function AttendanceDevicesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {filteredDevices.map(device => {
-            const meta = DEVICE_TYPE_META[device.device_type];
+            // Safety fallback to prevent crashes on legacy data
+            const meta = DEVICE_TYPE_META[device.device_type] || DEVICE_TYPE_META.OTHER;
+
             return (
-              <div key={device.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden flex flex-col">
+              <div key={device.id} className={`bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden flex flex-col ${
+                !device.is_active ? 'border-slate-200 opacity-75' : 'border-slate-100'
+              }`}>
                 <div className={`h-1.5 w-full bg-gradient-to-r ${device.is_active ? 'from-blue-500 to-indigo-500' : 'from-slate-300 to-slate-400'}`} />
                 <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
                   <div className="flex items-start justify-between">
@@ -468,14 +527,21 @@ export default function AttendanceDevicesPage() {
                         <meta.icon className="h-5 w-5" />
                       </div>
                       <div className="min-w-0">
-                        <h3 className="font-bold text-slate-900 truncate text-base">{device.name}</h3>
-                        <p className="text-xs text-slate-500 font-medium truncate">{meta.label}</p>
+                        <h3 className="font-bold text-slate-900 truncate text-base flex items-center gap-2">
+                          {device.name}
+                        </h3>
+                        <p className="text-xs text-slate-500 font-medium truncate flex items-center gap-1.5">
+                          {device.integration_type === 'EDGE' ? <Globe className="h-3 w-3" /> : <Monitor className="h-3 w-3" />}
+                          {meta.label} ({device.integration_type})
+                        </p>
                       </div>
                     </div>
-                    <span className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${device.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
-                      {device.is_active ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-                      {device.is_active ? 'Active' : 'Inactive'}
-                    </span>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${device.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
+                        {device.is_active ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+                        {device.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-200/60">

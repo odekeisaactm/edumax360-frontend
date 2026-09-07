@@ -755,7 +755,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               href: '/dashboard/staff/finance/wallet-transfer',
               icon: <ArrowRightLeft className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/finance/wallet-transfer'),
-              requiredPermissions: ['finance.add_wallettransfermodel'],
+              requiredPermissions: ['finance.view_wallettransfermodel'],
             },
             {
               name: 'Transfers History',
@@ -1379,13 +1379,6 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           requiredPermissions: ['attendance.view_attendancedailyrecordmodel'],
         },
         {
-          name: 'Missing Credentials',
-          href: '/dashboard/staff/attendance/gate/missing',
-          icon: <AlertCircle className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/attendance/gate/missing'),
-          requiredPermissions: ['attendance.view_attendancedailyrecordmodel'],
-        },
-        {
           name: 'Daily Records',
           href: '/dashboard/staff/attendance/records',
           icon: <ListChecks className="h-4 w-4" />,
@@ -1397,6 +1390,13 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           href: '/dashboard/staff/attendance/manual',
           icon: <Edit className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/attendance/manual'),
+          requiredPermissions: ['attendance.add_attendanceeventmodel'],
+        },
+        {
+          name: 'Subject Attendance',
+          href: '/dashboard/staff/attendance/subject',
+          icon: <BookOpen className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/attendance/subject'),
           requiredPermissions: ['attendance.add_attendanceeventmodel'],
         },
         {
@@ -1428,6 +1428,27 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           requiredPermissions: ['attendance.view_eventattendancerecordmodel'],
         },
         {
+          name: 'Reports',
+          href: '#',
+          icon: <FileText className="h-4 w-4" />,
+          children: [
+            {
+              name: 'Missing Credentials',
+              href: '/dashboard/staff/attendance/reports/missing',
+              icon: <AlertCircle className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/attendance/reports/missing'),
+              requiredPermissions: ['attendance.view_attendancedailyrecordmodel'],
+            },
+            {
+              name: 'Term Summaries',
+              href: '/dashboard/staff/attendance/reports/summaries',
+              icon: <BarChart2 className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/attendance/reports/summaries'),
+              requiredPermissions: ['attendance.view_attendancesummarymodel'],
+            },
+          ],
+        },
+        {
           name: 'Configuration',
           href: '#',
           icon: <Settings className="h-4 w-4" />,
@@ -1438,6 +1459,13 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               icon: <ScanLine className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/attendance/devices'),
               requiredPermissions: ['attendance.view_attendancedevicemodel'],
+            },
+            {
+              name: 'Terminal Sync',
+              href: '/dashboard/staff/attendance/command-queue',
+              icon: <Activity className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/attendance/command-queue'),
+              requiredPermissions: ['attendance.view_devicecommandqueuemodel'],
             },
             {
               name: 'Credentials',
