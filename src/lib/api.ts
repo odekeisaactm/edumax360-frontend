@@ -368,6 +368,32 @@ export const schoolSettingsAPI = {
 };
 
 
+export const aiAccessAPI = {
+  /**
+   * Ask the backend whether AI is enabled for a given module right now.
+   * Handles school-level billing mode, module resolver, and wallet balance
+   * in one call. Frontend just reads `enabled`.
+   *
+   * POST/GET is fine — currently GET.
+   */
+  check: async (moduleKey: string): Promise<{
+    enabled: boolean;
+    reason: string;
+    message: string;
+    provider_name: string;
+  }> => {
+    try {
+      const response = await api.get(`/api/school/ai-access/${moduleKey}/`);
+      return response.data?.data ?? {
+        enabled: false, reason: 'error', message: '', provider_name: '',
+      };
+    } catch {
+      // Fail closed: any error means "no AI UI".
+      return { enabled: false, reason: 'error', message: '', provider_name: '' };
+    }
+  },
+};
+
 // Classes API
 export const classesAPI = {
   list: async (params?: { school_section?: number }): Promise<ClassModel[]> => {
@@ -1470,6 +1496,10 @@ export const academicAPI = {
     return response.data.data || [];
   },
 
+    getMyTeachingScope: async (): Promise<{ scope: any[] }> => {
+  const r = await api.get('/api/academic/my-teaching-scope/');
+  return r.data.data;
+},
   // --- Automated Promotions ---
   getPromotionBatches: async (params?: any) => {
     const response = await api.get('/api/academic/promotion-batches/', { params });
@@ -2234,6 +2264,8 @@ const fetchUploadableClasses = async (resultType: 'score' | 'text' | 'special') 
   });
   return response.data.data.classes;
 };
+
+
 
 
 export const studentDashboardAPI = {

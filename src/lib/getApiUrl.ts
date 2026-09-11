@@ -31,4 +31,11 @@ export function getApiUrl(): string {
 }
 
 
-// done
+export function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('access_token');
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}

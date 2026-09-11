@@ -66,6 +66,14 @@ function renumber(qs: SelectedQuestion[]): SelectedQuestion[] {
   return qs.map((q, i) => ({ ...q, _order: i + 1 }));
 }
 
+function unwrapList<T = any>(data: any): T[] {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.results)) return data.results;          // plain DRF pagination
+  if (Array.isArray(data?.results?.data)) return data.results.data; // your custom APIResponse wrapper
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+}
+
 // ─── Toast ────────────────────────────────────────────────────────────────────
 
 interface Toast { id: number; type: 'success' | 'error'; message: string; }
@@ -727,7 +735,8 @@ export default function ExamScheduleDetailPage() {
       const banks = banksResponse.banks ?? [];
       setQuestionBanks(banks);
       setHalls(hallData);
-      setStaffList(staffData);
+
+    setStaffList(unwrapList(staffData));
     } catch (err) {
       showToast('error', extractError(err));
     } finally {

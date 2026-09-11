@@ -2,9 +2,9 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { schemeOfWorkAPI, academicAPI, academicCalendarAPI } from '@/lib/api';
+import { schemeOfWorkAPI, academicAPI } from '@/lib/api';
 import {
   Save, Send, X, Check, AlertCircle, Loader2, ChevronLeft,
   BookOpen, Calendar, Plus, Trash2, Info
@@ -56,7 +56,7 @@ interface ToastItem { id: number; type: 'success' | 'error' | 'warn'; message: s
 
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
-    <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
+    <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none print:hidden">
       {toasts.map(t => (
         <div key={t.id} className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border max-w-sm
           ${t.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
@@ -75,7 +75,8 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
   );
 }
 
-export default function CreateSchemePage() {
+export default function EditSchemePage() {
+  const { id } = useParams() as { id: string };
   const router = useRouter();
   const { user } = useAuth();
 
@@ -85,67 +86,102 @@ export default function CreateSchemePage() {
     class_name: '',
     class_config_ids: [] as number[],
   });
-  // null = auto mode (recompute from class/subject/term)
-  // string = user has manually entered a title
   const [titleManual, setTitleManual] = useState<string | null>(null);
-
   const [weeks, setWeeks] = useState<WeekForm[]>([DEFAULT_WEEK(1)]);
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
 
-  const [currentSession, setCurrentSession] = useState<any>(null);
-  const [currentTerm, setCurrentTerm] = useState<any>(null);
+  // Scheme meta carried into the editor (not editable here)
+  const [schemeMeta, setSchemeMeta] = useState<{
+    session_name: string;
+    term_name: string;
+    session_id: number;
+    term_id: number;
+    decline_reason: string | null;
+    declined_at: string | null;
+    status: string;
+  } | null>(null);
+
   const [scope, setScope] = useState<TeachingScopeItem[]>([]);
-
-  const weekOneInitialized = useRef(false);
+  const [initialized, setInitialized] = useState(false);
 
   const showToast = (type: 'success' | 'error' | 'warn', message: string) => {
-    const id = ++_toastId;
-    setToasts(prev => [...prev, { id, type, message }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4500);
+    const toastId = ++_toastId;
+    setToasts(prev => [...prev, { id: toastId, type, message }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toastId)), 4500);
   };
-  const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
+  const dismissToast = (toastId: number) => setToasts(prev => prev.filter(t => t.id !== toastId));
 
-  // ── Init ─────────────────────────────────────────────────────────
+  // ── Load scheme + scope ──────────────────────────────────────────
   useEffect(() => {
-    const init = async () => {
+    const load = async () => {
       try {
-        const [cs, ct, scopeData] = await Promise.all([
-          academicCalendarAPI.getCurrentSession().catch(() => null),
-          academicCalendarAPI.getCurrentPeriod().catch(() => null),
+        const [scheme, scopeRes] = await Promise.all([
+          schemeOfWorkAPI.get(Number(id)),
           academicAPI.getMyTeachingScope().catch(() => ({ scope: [] })),
         ]);
-        setCurrentSession(cs);
-        setCurrentTerm(ct);
-        setScope(scopeData?.scope || []);
-      } catch {
-        showToast('error', 'Failed to load configuration.');
+
+        const scopeList: TeachingScopeItem[] = scopeRes?.scope || [];
+        setScope(scopeList);
+
+        // Resolve class_name from the scheme's class_configuration ids
+        const schemeConfigIds: number[] = (scheme.class_configurations_detail || []).map((c: any) => c.id);
+
+        let detectedClassName = '';
+        for (const item of scopeList) {
+          if (schemeConfigIds.includes(item.class_config_id)) {
+            detectedClassName = item.class_name;
+            break;
+          }
+        }
+
+        // Prefill form
+        const prefTitle = scheme.title || '';
+        setForm({
+          title: prefTitle,
+          subject_id: String(scheme.subject_id ?? scheme.subject?.id ?? ''),
+          class_name: detectedClassName,
+          class_config_ids: schemeConfigIds,
+        });
+        setTitleManual(prefTitle);
+
+        // Prefill weeks
+        const prefWeeks: WeekForm[] = (scheme.weeks || []).map((w: any) => ({
+          week_number: w.week_number,
+          week_start_date: w.week_start_date || '',
+          week_end_date: w.week_end_date || '',
+          topic: w.topic || '',
+          sub_topics: Array.isArray(w.sub_topics) && w.sub_topics.length > 0 ? w.sub_topics : [''],
+          planned_objectives: w.planned_objectives || '',
+          planned_activities: w.planned_activities || '',
+          reference_materials: w.reference_materials || '',
+          is_holiday_or_break: !!w.is_holiday_or_break,
+        }));
+        setWeeks(prefWeeks.length > 0 ? prefWeeks : [DEFAULT_WEEK(1)]);
+
+        setSchemeMeta({
+          session_name: (scheme as any).session_name || String(scheme.session),
+          term_name: (scheme as any).term_name || String(scheme.term),
+          session_id: scheme.session,
+          term_id: scheme.term,
+          decline_reason: scheme.decline_reason || null,
+          declined_at: scheme.declined_at || null,
+          status: scheme.status,
+        });
+
+        setInitialized(true);
+      } catch (err: any) {
+        setLoadError(err?.response?.data?.message || 'Failed to load scheme.');
       } finally {
         setLoading(false);
       }
     };
-    init();
-  }, []);
-
-  // Week 1 auto-compute once we know the term's start date
-  useEffect(() => {
-    if (weekOneInitialized.current) return;
-    if (!currentTerm?.resumption_date) return;
-    weekOneInitialized.current = true;
-    setWeeks(prev => {
-      if (prev.length === 0) return prev;
-      const w1 = prev[0];
-      if (w1.week_start_date) return prev; // already set
-      const start = currentTerm.resumption_date;
-      const next = [...prev];
-      next[0] = { ...w1, week_start_date: start, week_end_date: addDays(start, 6) };
-      return next;
-    });
-  }, [currentTerm]);
+    if (id) load();
+  }, [id]);
 
   // ── Derived scope ────────────────────────────────────────────────
   const classNames = useMemo(
@@ -172,16 +208,12 @@ export default function CreateSchemePage() {
     return s?.name || '';
   }, [availableSubjects, form.subject_id]);
 
-  const sessionLabel = currentSession
-    ? (currentSession.name || `${currentSession.start_year}/${currentSession.end_year}`)
-    : '';
-  const termLabel = currentTerm
-    ? (currentTerm.period?.name || currentTerm.name || '')
-    : '';
+  const sessionLabel = schemeMeta?.session_name || '';
+  const termLabel = schemeMeta?.term_name || '';
 
-  // ── Auto title ───────────────────────────────────────────────────
-  // Recompute whenever any input that feeds it changes and title is in auto mode.
+  // ── Auto title (only when titleManual is null) ───────────────────
   useEffect(() => {
+    if (!initialized) return;
     if (titleManual !== null) return;
     if (!form.class_name || !selectedSubjectName || !sessionLabel || !termLabel) {
       setForm(prev => (prev.title === '' ? prev : { ...prev, title: '' }));
@@ -189,13 +221,11 @@ export default function CreateSchemePage() {
     }
     const auto = `${sessionLabel} - ${termLabel} ${selectedSubjectName} for ${form.class_name}`;
     setForm(prev => (prev.title === auto ? prev : { ...prev, title: auto }));
-  }, [titleManual, form.class_name, selectedSubjectName, sessionLabel, termLabel]);
+  }, [initialized, titleManual, form.class_name, selectedSubjectName, sessionLabel, termLabel]);
 
   const handleTitleChange = (value: string) => {
     if (value === '') {
-      // clear → return to auto mode
       setTitleManual(null);
-      // immediately try to recompute if we have the ingredients
       if (form.class_name && selectedSubjectName && sessionLabel && termLabel) {
         setForm(prev => ({
           ...prev,
@@ -240,8 +270,6 @@ export default function CreateSchemePage() {
       let start = '';
       if (last?.week_end_date) {
         start = addDays(last.week_end_date, 1);
-      } else if (currentTerm?.start_date) {
-        start = addDays(currentTerm.start_date, (nextNum - 1) * 7);
       }
       const end = start ? addDays(start, 6) : '';
       return [...prev, { ...DEFAULT_WEEK(nextNum), week_start_date: start, week_end_date: end }];
@@ -263,7 +291,6 @@ export default function CreateSchemePage() {
     });
   };
 
-  // Start date change → auto-compute end as start + 6 days
   const handleWeekStartChange = (index: number, startDate: string) => {
     setWeeks(prev => {
       const next = [...prev];
@@ -300,33 +327,6 @@ export default function CreateSchemePage() {
     });
   };
 
-  // ── Duplicate check ──────────────────────────────────────────────
-  useEffect(() => {
-    if (!form.subject_id || !form.class_config_ids.length || !currentSession) {
-      setDuplicateWarning(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const existing: any = await schemeOfWorkAPI.list({
-          subject: form.subject_id,
-          session: currentSession.id,
-          class_config: form.class_config_ids[0],
-        });
-        const results = existing?.results || existing || [];
-        if (!cancelled && Array.isArray(results) && results.length > 0) {
-          setDuplicateWarning(
-            `A scheme for this subject, class, and session already exists ("${results[0].title}"). You can still create another if you're planning a different range of weeks.`
-          );
-        } else if (!cancelled) {
-          setDuplicateWarning(null);
-        }
-      } catch { /* ignore */ }
-    })();
-    return () => { cancelled = true; };
-  }, [form.subject_id, form.class_config_ids, currentSession]);
-
   // ── Save ─────────────────────────────────────────────────────────
   const handleSave = async (andSubmit = false) => {
     setSaveError(null);
@@ -335,7 +335,7 @@ export default function CreateSchemePage() {
     if (form.class_config_ids.length === 0) return setSaveError('Select at least one section.');
     if (!form.subject_id) return setSaveError('Subject is required.');
     if (!form.title.trim()) return setSaveError('Title is required.');
-    if (!currentSession || !currentTerm) return setSaveError('No active session/term. Set one in academic settings.');
+    if (!schemeMeta) return setSaveError('Scheme metadata missing.');
     if (weeks.length === 0) return setSaveError('At least one week must be planned.');
 
     for (let i = 0; i < weeks.length; i++) {
@@ -349,8 +349,8 @@ export default function CreateSchemePage() {
         title: form.title,
         subject_id: Number(form.subject_id),
         class_configuration_ids: form.class_config_ids,
-        session: currentSession.id,
-        term: currentTerm.id,
+        session: schemeMeta.session_id,
+        term: schemeMeta.term_id,
         weeks_data: weeks.map(w => ({
           week_number: w.week_number,
           week_start_date: w.week_start_date || null,
@@ -364,13 +364,14 @@ export default function CreateSchemePage() {
         })),
       };
 
-      const res = await schemeOfWorkAPI.create(payload as any);
-      const savedId = res.id;
+      await schemeOfWorkAPI.update(Number(id), payload as any);
 
-      if (andSubmit) await schemeOfWorkAPI.submit(savedId);
+      if (andSubmit) {
+        await schemeOfWorkAPI.submit(Number(id));
+      }
 
-      showToast('success', andSubmit ? 'Scheme created and submitted.' : 'Draft saved.');
-      router.push('/dashboard/staff/learning/schemes');
+      showToast('success', andSubmit ? 'Scheme updated and submitted.' : 'Changes saved.');
+      router.push(`/dashboard/staff/learning/schemes/${id}`);
     } catch (err: any) {
       const data = err?.response?.data;
       if (data && typeof data === 'object' && !data.message) {
@@ -407,15 +408,11 @@ export default function CreateSchemePage() {
     </div>
   );
 
-  if (scope.length === 0) return (
-    <div className="max-w-lg mx-auto mt-20 text-center bg-white rounded-2xl border border-slate-100 shadow-sm p-10">
-      <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-        <BookOpen className="h-8 w-8 text-slate-300" />
-      </div>
-      <h2 className="text-lg font-bold text-slate-800 mb-1">No teaching assignments</h2>
-      <p className="text-sm text-slate-500">
-        You aren't currently assigned to teach any subject in any class. Contact your administrator.
-      </p>
+  if (loadError) return (
+    <div className="max-w-lg mx-auto mt-20 text-center bg-white rounded-2xl border border-red-100 shadow-sm p-10">
+      <AlertCircle className="h-10 w-10 text-red-400 mx-auto mb-4" />
+      <h2 className="text-lg font-bold text-slate-800 mb-1">Failed to load scheme</h2>
+      <p className="text-sm text-slate-500">{loadError}</p>
       <button onClick={() => router.back()} className="mt-5 text-sm text-blue-600 font-medium hover:underline">
         Go back
       </button>
@@ -434,11 +431,25 @@ export default function CreateSchemePage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-blue-600" />
-            Create Scheme of Work
+            Edit Scheme of Work
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">Plan your termly curriculum structure</p>
+          <p className="text-sm text-slate-500 mt-0.5">Update the plan and resubmit for approval</p>
         </div>
       </div>
+
+      {/* Previously declined banner */}
+      {schemeMeta?.decline_reason && (schemeMeta.status === 'draft' || schemeMeta.status === 'declined') && (
+        <div className="p-4 bg-orange-50 border border-orange-200 rounded-2xl flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-orange-600 flex-shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <h4 className="text-sm font-bold text-orange-800">
+              Previously declined
+              {schemeMeta.declined_at && ` — ${new Date(schemeMeta.declined_at).toLocaleDateString()}`}
+            </h4>
+            <p className="text-sm text-orange-700 mt-1 whitespace-pre-line">{schemeMeta.decline_reason}</p>
+          </div>
+        </div>
+      )}
 
       {saveError && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
@@ -450,8 +461,6 @@ export default function CreateSchemePage() {
 
       {/* Metadata */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6">
-
-        {/* Class + Subject row (top) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelCls}>Class <span className="text-red-400 normal-case">*</span></label>
@@ -474,7 +483,6 @@ export default function CreateSchemePage() {
           </div>
         </div>
 
-        {/* Sections */}
         {form.class_name && sectionsForClass.length > 0 && (
           <div>
             <label className={labelCls}>Sections / Arms <span className="text-red-400 normal-case">*</span></label>
@@ -497,7 +505,6 @@ export default function CreateSchemePage() {
           </div>
         )}
 
-        {/* Title (auto-fills from above) */}
         <div>
           <label className={labelCls}>
             Scheme Title <span className="text-red-400 normal-case">*</span>
@@ -509,7 +516,7 @@ export default function CreateSchemePage() {
             type="text"
             value={form.title}
             onChange={e => handleTitleChange(e.target.value)}
-            placeholder="Select class and subject to auto-fill, or type your own"
+            placeholder="Type a title or clear to auto-fill"
             className={inputCls}
           />
         </div>
@@ -517,22 +524,11 @@ export default function CreateSchemePage() {
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-start gap-3">
           <Info className="h-4 w-4 text-slate-400 flex-shrink-0 mt-0.5" />
           <div className="text-xs text-slate-600">
-            <p className="font-semibold text-slate-700">
-              {sessionLabel}
-              {' · '}
-              {termLabel}
-            </p>
-            <p className="mt-0.5">Schemes are always planned for the current academic period.</p>
+            <p className="font-semibold text-slate-700">{sessionLabel} · {termLabel}</p>
+            <p className="mt-0.5">Session and term are fixed for this scheme.</p>
           </div>
         </div>
       </div>
-
-      {duplicateWarning && (
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
-          <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-amber-800 flex-1">{duplicateWarning}</p>
-        </div>
-      )}
 
       {/* Weeks */}
       <div className="space-y-4">
@@ -657,7 +653,7 @@ export default function CreateSchemePage() {
       </div>
 
       {/* Fixed bottom action bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-sm shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-sm shadow-[0_-4px_12px_rgba(0,0,0,0.04)] print:hidden">
         <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
           <p className="text-xs text-slate-400 hidden sm:block">
             {weeks.length} week{weeks.length !== 1 ? 's' : ''} planned
@@ -665,11 +661,11 @@ export default function CreateSchemePage() {
           <div className="flex items-center gap-2 ml-auto">
             <button onClick={() => handleSave(false)} disabled={isSaving}
               className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50">
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Draft
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Changes
             </button>
             <button onClick={() => handleSave(true)} disabled={isSaving}
               className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all shadow-md disabled:opacity-50">
-              <Send className="h-4 w-4" /> Submit for Approval
+              <Send className="h-4 w-4" /> Save & Submit
             </button>
           </div>
         </div>

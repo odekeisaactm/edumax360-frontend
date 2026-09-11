@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^5.0.1",
+    "@floating-ui/dom": "^1.8.0",
     "@tiptap/extension-placeholder": "^3.21.0",
+    "@tiptap/extension-table": "^3.28.0",
     "@tiptap/extension-text-align": "^3.21.0",
     "@tiptap/extension-underline": "^3.21.0",
     "@tiptap/pm": "^3.21.0",

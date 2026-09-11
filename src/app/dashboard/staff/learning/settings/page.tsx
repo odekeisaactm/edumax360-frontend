@@ -12,9 +12,10 @@ import {
   ChevronRight, Lock, BookOpen, HelpCircle
 } from 'lucide-react';
 
-// ─── API Unwrapper (Fixes the Wrapped Response Bug) ───────────────────────────
+// ─── API Unwrapper ────────────────────────────────────────────────────────────
+// CRUD endpoints return raw serializer data. Custom @action endpoints return
+// { success, data }. This handles both shapes.
 function unwrap(payload: any) {
-  // If backend returns { success: true, data: { ... } }, extract the data
   if (payload && payload.success !== undefined && payload.data !== undefined) {
     return payload.data;
   }
@@ -56,10 +57,6 @@ const VOICE_LABELS: Record<string, string> = {
   bf_isabella: 'Isabella (Female, UK)',
   bm_george: 'George (Male, UK)',
   bm_lewis: 'Lewis (Male, UK)',
-  'en-US-Neural2-F': 'Neural2-F (Female, US)',
-  'en-US-Neural2-D': 'Neural2-D (Male, US)',
-  'en-GB-Neural2-A': 'Neural2-A (Female, UK)',
-  'en-GB-Neural2-B': 'Neural2-B (Male, UK)',
 };
 
 function settingsToForm(s: LearningResourcesSettings): Partial<LearningResourcesSettings> {
@@ -81,7 +78,7 @@ function settingsToForm(s: LearningResourcesSettings): Partial<LearningResources
     summary_length: s.summary_length ?? 'medium',
     key_points_count: s.key_points_count ?? 5,
     enable_text_to_speech: s.enable_text_to_speech ?? false,
-    tts_voice: s.tts_voice ?? 'en-US-Neural2-F',
+    tts_voice: s.tts_voice ?? 'af_sarah',
     tts_speed: s.tts_speed ?? 1.0,
     enable_live_recording: s.enable_live_recording ?? false,
   };
@@ -181,18 +178,13 @@ function SettingsModal({
     e.preventDefault();
     setSaveError(null);
 
+    // Note: we deliberately do NOT zero out AI fields when the master kill
+    // switch is off. The toggles are disabled in the UI, so the user cannot
+    // have changed them — the payload reflects the existing values. If the
+    // backend rejects a save because AI is disabled, it returns a clear 400
+    // and we surface it below. Wiping the school's AI preferences on every
+    // save would be data loss disguised as a safety check.
     const payload = { ...form };
-
-    // Master Kill Switch Cleanup: If AI is globally disabled, ensure payload turns off AI features
-    if (!isAIGloballyActive) {
-      payload.ai_service = null;
-      payload.enable_auto_note_generation = false;
-      payload.enable_auto_summary = false;
-      payload.enable_auto_flashcards = false;
-      payload.enable_auto_quiz_generation = false;
-      payload.enable_ai_vetting = false;
-      payload.enable_text_to_speech = false;
-    }
 
     try { await onSave(payload); }
     catch (err: any) {
@@ -269,7 +261,7 @@ function SettingsModal({
                   <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5 text-amber-600" />
                   <div>
                     <strong className="block text-amber-900 mb-0.5">AI is Globally Disabled</strong>
-                    The AI Billing Mode is currently disabled or missing an API key in the global School Settings. All AI features are locked off.
+                    The AI Billing Mode is currently disabled or missing an API key in the global School Settings. AI features cannot be enabled until this is resolved.
                   </div>
                 </div>
                 {canManageGlobal && (
@@ -427,25 +419,18 @@ function SettingsModal({
                       onChange={e => set('tts_voice', e.target.value)}
                       className={inputCls}
                     >
-                      <optgroup label="Kokoro Voices (Self-hosted)">
-                        <option value="af_sarah">Sarah (Female, US)</option>
-                        <option value="af_bella">Bella (Female, US)</option>
-                        <option value="af_nicole">Nicole (Female, US)</option>
-                        <option value="af_sky">Sky (Female, US)</option>
-                        <option value="am_adam">Adam (Male, US)</option>
-                        <option value="am_michael">Michael (Male, US)</option>
-                        <option value="bf_emma">Emma (Female, UK)</option>
-                        <option value="bf_isabella">Isabella (Female, UK)</option>
-                        <option value="bm_george">George (Male, UK)</option>
-                        <option value="bm_lewis">Lewis (Male, UK)</option>
-                      </optgroup>
-                      <optgroup label="Google Neural Voices (Cloud)">
-                        <option value="en-US-Neural2-F">Neural2-F (Female, US)</option>
-                        <option value="en-US-Neural2-D">Neural2-D (Male, US)</option>
-                        <option value="en-GB-Neural2-A">Neural2-A (Female, UK)</option>
-                        <option value="en-GB-Neural2-B">Neural2-B (Male, UK)</option>
-                      </optgroup>
+                      <option value="af_sarah">Sarah (Female, US)</option>
+                      <option value="af_bella">Bella (Female, US)</option>
+                      <option value="af_nicole">Nicole (Female, US)</option>
+                      <option value="af_sky">Sky (Female, US)</option>
+                      <option value="am_adam">Adam (Male, US)</option>
+                      <option value="am_michael">Michael (Male, US)</option>
+                      <option value="bf_emma">Emma (Female, UK)</option>
+                      <option value="bf_isabella">Isabella (Female, UK)</option>
+                      <option value="bm_george">George (Male, UK)</option>
+                      <option value="bm_lewis">Lewis (Male, UK)</option>
                     </select>
+                    <p className="text-xs text-slate-400 mt-1">Kokoro voice used for TTS generation</p>
                   </div>
                   <div>
                     <label className={labelCls}>Speech Speed</label>
@@ -515,18 +500,27 @@ export default function LearningSettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  const canEdit = user?.is_superuser || hasPermission('learning_resources.view_learningresourcessettingsmodel');
-  const canManageGlobal = user?.is_superuser || hasPermission('school_configuration.change_schoolsettingsmodel');
+  // Edit requires `change`, not `view`. A user with only view permission sees
+  // the page in read-only mode; the backend would 403 any write attempt.
+  const canEdit = user?.is_superuser
+    || hasPermission('learning_resources.change_learningresourcessettingsmodel');
+  const canManageGlobal = user?.is_superuser
+    || hasPermission('school_configuration.change_schoolsettingsmodel');
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
     setPageError(null);
     try {
-      const [learningRes, globalRes, aiRes] = await Promise.all([
-        learningAISettingsAPI.getGlobal().catch(() => null),
-        schoolSettingsAPI.get().catch(() => null),
-        aiConfigAPI.list().catch(() => []),
-      ]);
+      // `getGlobal` internally returns null on 404 ("no settings yet").
+      // We only want to swallow 404 here; anything else (500, auth, network)
+      // should bubble to the outer catch and show the error state, not the
+      // friendly "Initialize Settings" page.
+      const learningRes = await learningAISettingsAPI.getGlobal().catch((e: any) => {
+        if (e?.response?.status === 404) return null;
+        throw e;
+      });
+      const globalRes = await schoolSettingsAPI.get().catch(() => null);
+      const aiRes = await aiConfigAPI.list().catch(() => []);
 
       const learningData = unwrap(learningRes);
       const globalData = unwrap(globalRes);
@@ -646,7 +640,9 @@ export default function LearningSettingsPage() {
   ].filter(Boolean).length : 0;
 
   // Resolve the configured AI name for the display card
-  const selectedAIProviderName = aiConfigs.find(c => c.id === s.ai_service)?.name || (s as any).ai_service_name || 'Not configured';
+  const selectedAIProviderName = aiConfigs.find(c => c.id === s.ai_service)?.name
+    || s.ai_service_name
+    || 'Not configured';
 
   return (
     <div className="space-y-6 pb-10">
@@ -736,7 +732,7 @@ export default function LearningSettingsPage() {
             <div>
               <strong className="block text-amber-900 text-sm mb-0.5">AI Processing is Disabled</strong>
               <p className="text-xs text-amber-800">
-                The global AI Billing Mode is set to 'Disabled' or is missing an API key in School Settings. All AI tools in this module have been locked down.
+                The global AI Billing Mode is set to 'Disabled' or is missing an API key in School Settings. AI tools in this module cannot be enabled until this is resolved.
               </p>
             </div>
           </div>
@@ -782,13 +778,13 @@ export default function LearningSettingsPage() {
           </div>
           <div className="p-3 flex-1">
             <SettingRow icon={Brain} iconBg="bg-slate-100 text-slate-600"
-                label="Learning AI Provider"
-                description="Selected API for Notes & Summaries"
-                value={
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg max-w-[120px] truncate block text-right ${isAIGloballyActive && s.ai_service ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
-                    {selectedAIProviderName}
-                  </span>
-                } />
+              label="Learning AI Provider"
+              description="Selected API for Notes & Summaries"
+              value={
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg max-w-[120px] truncate block text-right ${isAIGloballyActive && s.ai_service ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
+                  {selectedAIProviderName}
+                </span>
+              } />
             <SettingRow icon={BookOpen} iconBg="bg-emerald-50 text-emerald-600"
               label="Auto Note Generation"
               description="AI creates structured notes from topics"

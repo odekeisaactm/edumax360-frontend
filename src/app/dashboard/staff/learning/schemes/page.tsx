@@ -3,17 +3,15 @@ export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { schemeOfWorkAPI, academicAPI, academicCalendarAPI } from '@/lib/api';
 import { SchemeOfWorkList, SchemeOfWorkStatus } from '@/lib/types';
 import {
-  Plus, Search, Filter, FileText, Clock, CheckCircle,
-  XCircle, AlertCircle, ChevronRight, Loader2, RefreshCw,
-  BookOpen, Edit3, Trash2, Send, X, ShieldCheck, ChevronLeft
+  Plus, Search, Filter, CheckCircle, AlertCircle, ChevronRight,
+  Loader2, RefreshCw, BookOpen, Edit3, Trash2, Send, X,
+  ShieldCheck, ChevronLeft, RotateCcw
 } from 'lucide-react';
 
-// ─── Status Config ─────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<SchemeOfWorkStatus, { label: string; color: string; dot: string }> = {
   draft: { label: 'Draft', color: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
   submitted: { label: 'Pending Review', color: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
@@ -22,29 +20,34 @@ const STATUS_CONFIG: Record<SchemeOfWorkStatus, { label: string; color: string; 
 };
 
 const PAGE_SIZE = 25;
-
 let _toastId = 0;
 interface ToastItem { id: number; type: 'success' | 'error'; message: string; }
 
 interface FilterState {
-  session_id: string;
-  period_id: string;
-  class_level_id: string;
-  class_section_id: string;
-  class_config_id: string;
-  subject_id: string;
-  status: string;
+  session_id: string; period_id: string; class_level_id: string;
+  class_section_id: string; subject_id: string; status: string;
 }
-
 const EMPTY_FILTERS: FilterState = {
   session_id: '', period_id: '', class_level_id: '',
-  class_section_id: '', class_config_id: '', subject_id: '', status: ''
+  class_section_id: '', subject_id: '', status: ''
 };
 
-// ─── Sub-components ────────────────────────────────────────────────────────────
+function StatusBadge({ scheme }: { scheme: SchemeOfWorkList }) {
+  const isRevising = scheme.status === 'draft' && !!scheme.declined_at;
+  const isResubmission = scheme.status === 'submitted' && !!scheme.declined_at;
 
-function StatusBadge({ status }: { status: SchemeOfWorkStatus }) {
-  const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.draft;
+  if (isRevising || isResubmission) {
+    return (
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+        isRevising ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+      }`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${isRevising ? 'bg-orange-500' : 'bg-blue-500'}`} />
+        {isRevising ? 'Revising' : 'Resubmission'}
+      </span>
+    );
+  }
+
+  const cfg = STATUS_CONFIG[scheme.status] || STATUS_CONFIG.draft;
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${cfg.color}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
@@ -72,24 +75,21 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
   );
 }
 
-// ─── Main Page ─────────────────────────────────────────────────────────────────
-
 export default function SchemeOfWorkListPage() {
-  const router = useRouter();
   const { hasPermission, user } = useAuth();
 
-  // Data State
   const [schemes, setSchemes] = useState<SchemeOfWorkList[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
 
-  // Filter & Option State
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [pendingSearch, setPendingSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFirstLoad = useRef(true);
 
   const [options, setOptions] = useState({
     sessions: [] as any[], periods: [] as any[],
@@ -97,13 +97,13 @@ export default function SchemeOfWorkListPage() {
     classConfigs: [] as any[], subjects: [] as any[],
   });
 
-  // Modals & Actions
   const [reviewingScheme, setReviewingScheme] = useState<SchemeOfWorkList | null>(null);
   const [declineReason, setDeclineReason] = useState('');
   const [isActioning, setIsActioning] = useState(false);
+  const [deletingScheme, setDeletingScheme] = useState<SchemeOfWorkList | null>(null);
+  const [reopeningScheme, setReopeningScheme] = useState<SchemeOfWorkList | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  // Permissions
   const canCreate = user?.is_superuser || hasPermission('learning_resources.add_schemeofworkmodel');
   const canApprove = user?.is_superuser || hasPermission('learning_resources.approve_scheme_of_work') || hasPermission('learning_resources.decline_scheme_of_work');
 
@@ -114,7 +114,6 @@ export default function SchemeOfWorkListPage() {
   };
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  // 1. Fetch Options
   useEffect(() => {
     const fetchOptions = async () => {
       try {
@@ -126,35 +125,19 @@ export default function SchemeOfWorkListPage() {
           academicAPI.listSubjects(),
         ]);
         setOptions(prev => ({ ...prev, sessions, classLevels, classSections, classConfigs, subjects }));
-      } catch (err) {
+      } catch {
         showToast('error', 'Failed to load filter options.');
       }
     };
     fetchOptions();
   }, []);
 
-  // 2. Handle Cascading Updates
   const handleSessionChange = async (sessionId: string) => {
     setFilters(prev => ({ ...prev, session_id: sessionId, period_id: '' }));
-    if (!sessionId) {
-       setOptions(prev => ({ ...prev, periods: [] }));
-       return;
-    }
+    if (!sessionId) { setOptions(prev => ({ ...prev, periods: [] })); return; }
     const periods = await academicCalendarAPI.listSessionPeriods({ session_id: Number(sessionId) });
     setOptions(prev => ({ ...prev, periods }));
   };
-
-  useEffect(() => {
-    if (filters.class_level_id && filters.class_section_id) {
-      const config = options.classConfigs.find(c =>
-        String(c.student_class) === filters.class_level_id &&
-        String(c.class_section) === filters.class_section_id
-      );
-      setFilters(prev => ({ ...prev, class_config_id: config ? String(config.id) : '' }));
-    } else {
-      setFilters(prev => ({ ...prev, class_config_id: '' }));
-    }
-  }, [filters.class_level_id, filters.class_section_id, options.classConfigs]);
 
   const filteredClassSections = filters.class_level_id
     ? options.classSections.filter(s => {
@@ -163,17 +146,26 @@ export default function SchemeOfWorkListPage() {
       })
     : options.classSections;
 
-  // 3. Fetch Data
-  const fetchSchemes = useCallback(async (f: FilterState, pg = 1, search = pendingSearch) => {
-    setLoading(true); setError(false);
+  const fetchSchemes = useCallback(async (f: FilterState, pg: number, search: string) => {
+    if (isFirstLoad.current) setLoading(true);
+    else setRefreshing(true);
+    setError(false);
+
     try {
       const params: Record<string, any> = { page: pg, page_size: PAGE_SIZE };
-      if (search)              params.search       = search;
-      if (f.session_id)        params.session      = f.session_id;
-      if (f.period_id)         params.term         = f.period_id;
-      if (f.class_config_id)   params.class_config = f.class_config_id;
-      if (f.subject_id)        params.subject      = f.subject_id;
-      if (f.status)            params.status       = f.status;
+      if (search)       params.search  = search;
+      if (f.session_id) params.session = f.session_id;
+      if (f.period_id)  params.term    = f.period_id;
+      if (f.subject_id) params.subject = f.subject_id;
+      if (f.status)     params.status  = f.status;
+
+      if (f.class_level_id && f.class_section_id) {
+        const cfg = options.classConfigs.find(c =>
+          String(c.student_class) === f.class_level_id &&
+          String(c.class_section) === f.class_section_id
+        );
+        if (cfg) params.class_config = cfg.id;
+      }
 
       const data: any = await schemeOfWorkAPI.list(params);
       const results = data?.results || data || [];
@@ -184,23 +176,19 @@ export default function SchemeOfWorkListPage() {
       setError(true);
     } finally {
       setLoading(false);
+      setRefreshing(false);
+      isFirstLoad.current = false;
     }
-  }, [pendingSearch]);
-
-  useEffect(() => { fetchSchemes(filters, 1, pendingSearch); }, [filters]);
+  }, [options.classConfigs]);
 
   useEffect(() => {
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
-    searchDebounce.current = setTimeout(() => fetchSchemes(filters, 1, pendingSearch), 400);
+    searchDebounce.current = setTimeout(() => fetchSchemes(filters, 1, pendingSearch), 300);
     return () => { if (searchDebounce.current) clearTimeout(searchDebounce.current); };
-  }, [pendingSearch, fetchSchemes, filters]);
+  }, [filters, pendingSearch, fetchSchemes]);
 
-  const resetFilters = () => {
-    setFilters(EMPTY_FILTERS);
-    setPendingSearch('');
-  };
+  const resetFilters = () => { setFilters(EMPTY_FILTERS); setPendingSearch(''); };
 
-  // 4. Action Handlers
   const handleSubmit = async (id: number) => {
     try {
       await schemeOfWorkAPI.submit(id);
@@ -214,41 +202,52 @@ export default function SchemeOfWorkListPage() {
   const handleReview = async (action: 'approve' | 'decline') => {
     if (!reviewingScheme) return;
     if (action === 'decline' && !declineReason.trim()) {
-      showToast('error', 'A decline reason is required.');
-      return;
+      showToast('error', 'A decline reason is required.'); return;
     }
     setIsActioning(true);
     try {
       await schemeOfWorkAPI.review(reviewingScheme.id, {
-        action,
-        decline_reason: action === 'decline' ? declineReason : undefined
+        action, decline_reason: action === 'decline' ? declineReason : undefined
       });
-      showToast('success', `Scheme successfully ${action}d.`);
-      setReviewingScheme(null);
-      setDeclineReason('');
+      showToast('success', `Scheme ${action === 'approve' ? 'approved' : 'declined'}.`);
+      setReviewingScheme(null); setDeclineReason('');
       fetchSchemes(filters, page, pendingSearch);
     } catch (err: any) {
       showToast('error', err?.response?.data?.message || `Failed to ${action} scheme.`);
-    } finally {
-      setIsActioning(false);
-    }
+    } finally { setIsActioning(false); }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this draft scheme? This cannot be undone.')) return;
+  const confirmDelete = async () => {
+    if (!deletingScheme) return;
+    setIsActioning(true);
     try {
-      await schemeOfWorkAPI.delete(id);
-      showToast('success', 'Scheme deleted successfully.');
+      await schemeOfWorkAPI.delete(deletingScheme.id);
+      showToast('success', 'Scheme deleted.');
+      setDeletingScheme(null);
       fetchSchemes(filters, page, pendingSearch);
     } catch (err: any) {
       showToast('error', err?.response?.data?.message || 'Failed to delete scheme.');
-    }
+    } finally { setIsActioning(false); }
+  };
+
+  const confirmReopen = async () => {
+    if (!reopeningScheme) return;
+    setIsActioning(true);
+    try {
+      await schemeOfWorkAPI.reopen(reopeningScheme.id);
+      showToast('success', 'Scheme reopened for editing.');
+      setReopeningScheme(null);
+      fetchSchemes(filters, page, pendingSearch);
+    } catch (err: any) {
+      showToast('error', err?.response?.data?.message || 'Failed to reopen scheme.');
+    } finally { setIsActioning(false); }
   };
 
   const setF = (key: keyof FilterState, val: string) => setFilters(prev => ({ ...prev, [key]: val }));
   const inputCls = "w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white";
   const labelCls = "block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5";
   const totalPages = Math.ceil(total / PAGE_SIZE);
+  const hasActiveFilters = Object.values(filters).some(v => v !== '') || !!pendingSearch;
 
   return (
     <div className="space-y-6 pb-10">
@@ -262,29 +261,23 @@ export default function SchemeOfWorkListPage() {
               <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
                 <ShieldCheck className="h-5 w-5 text-blue-600" />
               </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">Review Scheme of Work</h3>
+              <div className="min-w-0">
+                <h3 className="text-lg font-bold text-slate-900">Review Scheme</h3>
                 <p className="text-xs text-slate-500 truncate">{reviewingScheme.title}</p>
               </div>
               <button onClick={() => setReviewingScheme(null)} className="ml-auto text-slate-400 hover:text-slate-600 p-1">
                 <X className="h-5 w-5" />
               </button>
             </div>
-
             <div className="mb-5 space-y-3">
-              <p className="text-sm text-slate-600">Please review the curriculum outline. You can approve it immediately or decline it with feedback for the teacher.</p>
+              <p className="text-sm text-slate-600">Approve to accept, or decline with feedback so the teacher can revise and resubmit.</p>
               <div>
-                <label className={labelCls}>Decline Reason (Required if declining)</label>
-                <textarea
-                  value={declineReason}
-                  onChange={(e) => setDeclineReason(e.target.value)}
-                  placeholder="Explain what needs to be changed..."
-                  className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
-                  rows={3}
-                />
+                <label className={labelCls}>Decline Reason (required if declining)</label>
+                <textarea value={declineReason} onChange={(e) => setDeclineReason(e.target.value)}
+                  placeholder="Explain what needs to change..." rows={3}
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none" />
               </div>
             </div>
-
             <div className="flex gap-3">
               <button onClick={() => handleReview('decline')} disabled={isActioning || !declineReason.trim()}
                 className="flex-1 px-4 py-2.5 bg-red-50 text-red-700 font-semibold rounded-xl border border-red-100 hover:bg-red-100 transition-colors disabled:opacity-50">
@@ -293,6 +286,60 @@ export default function SchemeOfWorkListPage() {
               <button onClick={() => handleReview('approve')} disabled={isActioning}
                 className="flex-1 px-4 py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-50">
                 {isActioning ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Approve'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Modal ── */}
+      {deletingScheme && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg font-bold text-slate-900">Delete Scheme?</h3>
+                <p className="text-xs text-slate-500 truncate">{deletingScheme.title}</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600 mb-5">This cannot be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeletingScheme(null)} disabled={isActioning}
+                className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 font-medium rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50">Cancel</button>
+              <button onClick={confirmDelete} disabled={isActioning}
+                className="flex-1 px-4 py-2.5 bg-red-600 text-white font-semibold rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50">
+                {isActioning ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reopen Modal ── */}
+      {reopeningScheme && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                <RotateCcw className="h-5 w-5 text-orange-600" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg font-bold text-slate-900">
+                  {reopeningScheme.status === 'declined' ? 'Reopen for Editing?' : 'Revert to Draft?'}
+                </h3>
+                <p className="text-xs text-slate-500 truncate">{reopeningScheme.title}</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600 mb-5">This scheme will return to draft and need to be resubmitted for approval.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setReopeningScheme(null)} disabled={isActioning}
+                className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 font-medium rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50">Cancel</button>
+              <button onClick={confirmReopen} disabled={isActioning}
+                className="flex-1 px-4 py-2.5 bg-orange-600 text-white font-semibold rounded-xl hover:bg-orange-700 transition-colors disabled:opacity-50">
+                {isActioning ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Reopen'}
               </button>
             </div>
           </div>
@@ -308,9 +355,7 @@ export default function SchemeOfWorkListPage() {
             </div>
             Schemes of Work
           </h1>
-          <p className="text-sm text-slate-400 mt-1 pl-12">
-            Manage termly curriculum outlines
-          </p>
+          <p className="text-sm text-slate-400 mt-1 pl-12">Manage termly curriculum outlines</p>
         </div>
         {canCreate && (
           <Link href="/dashboard/staff/learning/schemes/create"
@@ -335,17 +380,17 @@ export default function SchemeOfWorkListPage() {
         <div className="flex gap-2">
           <button onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border rounded-xl transition-colors ${
-              showFilters || Object.values(filters).some(v => v !== '') ? 'border-blue-500 text-blue-700 bg-blue-50' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              showFilters || hasActiveFilters ? 'border-blue-500 text-blue-700 bg-blue-50' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
             }`}>
             <Filter className="h-4 w-4" /> Filters
           </button>
-          <button onClick={() => fetchSchemes(filters, page, pendingSearch)} className="flex items-center gap-2 px-3 py-2.5 text-sm text-slate-500 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
-            <RefreshCw className="h-4 w-4" />
+          <button onClick={() => fetchSchemes(filters, page, pendingSearch)} disabled={refreshing}
+            className="flex items-center gap-2 px-3 py-2.5 text-sm text-slate-500 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* ── Expandable Filter Panel ── */}
       {showFilters && (
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
@@ -401,7 +446,7 @@ export default function SchemeOfWorkListPage() {
         </div>
       )}
 
-      {/* ── List Rendering ── */}
+      {/* ── List ── */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="text-center space-y-3">
@@ -425,71 +470,115 @@ export default function SchemeOfWorkListPage() {
             <BookOpen className="h-8 w-8 text-slate-300" />
           </div>
           <h3 className="text-base font-semibold text-slate-700 mb-1">
-            {pendingSearch || Object.values(filters).some(v => v !== '') ? 'No schemes match your filters' : 'No schemes of work yet'}
+            {hasActiveFilters ? 'No schemes match your filters' : 'No schemes of work yet'}
           </h3>
           <p className="text-sm text-slate-400 mb-4">
-            {pendingSearch || Object.values(filters).some(v => v !== '') ? 'Try adjusting your search or filters.' : 'Create your first scheme of work to plan your term.'}
+            {hasActiveFilters ? 'Try adjusting your search or filters.' : 'Create your first scheme of work to plan your term.'}
           </p>
-          {(pendingSearch || Object.values(filters).some(v => v !== '')) && (
+          {hasActiveFilters && (
             <button onClick={resetFilters} className="text-sm px-4 py-2 bg-slate-50 text-blue-600 rounded-lg font-medium hover:bg-slate-100 transition-colors">
               Clear filters
             </button>
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+        <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col transition-opacity ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
           <div className="divide-y divide-slate-50 flex-1">
-            {schemes.map(scheme => (
-              <div key={scheme.id} className="flex flex-col sm:flex-row sm:items-center gap-4 px-5 py-4 hover:bg-slate-50/60 transition-colors group">
-                <div className="hidden sm:flex w-10 h-10 rounded-xl bg-blue-50 items-center justify-center flex-shrink-0">
-                  <BookOpen className="h-5 w-5 text-blue-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                    <p className="text-sm font-bold text-slate-800 truncate">{scheme.title}</p>
-                    <StatusBadge status={scheme.status} />
+            {schemes.map(scheme => {
+              const isAutoApproved = scheme.status === 'approved' && !scheme.approved_by;
+              const isManualApproved = scheme.status === 'approved' && !!scheme.approved_by;
+
+              return (
+                <div key={scheme.id} className="flex flex-col sm:flex-row sm:items-center gap-4 px-5 py-4 hover:bg-slate-50/60 transition-colors group">
+                  <div className="hidden sm:flex w-10 h-10 rounded-xl bg-blue-50 items-center justify-center flex-shrink-0">
+                    <BookOpen className="h-5 w-5 text-blue-600" />
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
-                    <span className="font-semibold text-slate-600">{scheme.subject_name}</span>
-                    <span>•</span>
-                    <span>{scheme.week_count} Weeks planned</span>
-                    <span>•</span>
-                    <span>Updated {new Date(scheme.updated_at).toLocaleDateString()}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                      <p className="text-sm font-bold text-slate-800 truncate">{scheme.title}</p>
+                      <StatusBadge scheme={scheme} />
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
+                      <span className="font-semibold text-slate-600">{scheme.subject_name}</span>
+                      <span>•</span>
+                      <span>{scheme.week_count} Weeks planned</span>
+                      <span>•</span>
+                      <span>Updated {new Date(scheme.updated_at).toLocaleDateString()}</span>
+                      {isManualApproved && scheme.approved_by_name && (
+                        <>
+                          <span>•</span>
+                          <span className="text-emerald-600 font-medium">Approved by {scheme.approved_by_name}</span>
+                        </>
+                      )}
+                      {isAutoApproved && (
+                        <>
+                          <span>•</span>
+                          <span className="text-emerald-600 font-medium">Auto-approved</span>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0 mt-3 sm:mt-0">
-                  {scheme.status === 'draft' && (
-                    <>
-                      <Link href={`/dashboard/staff/learning/schemes/create?edit=${scheme.id}`} title="Edit Draft"
-                        className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors border border-transparent hover:border-amber-100">
+                  <div className="flex items-center gap-2 flex-shrink-0 mt-3 sm:mt-0">
+                    {/* Draft — creator edits, deletes, submits */}
+                    {scheme.status === 'draft' && canCreate && (
+                      <>
+                        <Link href={`/dashboard/staff/learning/schemes/${scheme.id}/edit`} title="Edit"
+                          className="p-2 text-amber-600 bg-amber-50 border border-amber-100 rounded-lg hover:bg-amber-100 transition-colors">
+                          <Edit3 className="h-4 w-4" />
+                        </Link>
+                        <button onClick={() => setDeletingScheme(scheme)} title="Delete"
+                          className="p-2 text-red-600 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 transition-colors">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => handleSubmit(scheme.id)} title="Submit for Approval"
+                          className="p-2 text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg hover:bg-emerald-100 transition-colors">
+                          <Send className="h-4 w-4" />
+                        </button>
+                      </>
+                    )}
+
+                    {/* Declined — creator reopens */}
+                    {scheme.status === 'declined' && canCreate && (
+                      <button onClick={() => setReopeningScheme(scheme)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-orange-700 bg-orange-50 border border-orange-100 text-xs font-semibold rounded-lg hover:bg-orange-100 transition-colors">
+                        <RotateCcw className="h-3.5 w-3.5" /> Reopen
+                      </button>
+                    )}
+
+                    {/* Approved auto — creator edits directly */}
+                    {isAutoApproved && canCreate && (
+                      <Link href={`/dashboard/staff/learning/schemes/${scheme.id}/edit`} title="Edit"
+                        className="p-2 text-amber-600 bg-amber-50 border border-amber-100 rounded-lg hover:bg-amber-100 transition-colors">
                         <Edit3 className="h-4 w-4" />
                       </Link>
-                      <button onClick={() => handleDelete(scheme.id)} title="Delete Draft"
-                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100">
-                        <Trash2 className="h-4 w-4" />
+                    )}
+
+                    {/* Approved manual — approver reverts */}
+                    {isManualApproved && canApprove && (
+                      <button onClick={() => setReopeningScheme(scheme)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-orange-700 bg-orange-50 border border-orange-100 text-xs font-semibold rounded-lg hover:bg-orange-100 transition-colors">
+                        <RotateCcw className="h-3.5 w-3.5" /> Revert
                       </button>
-                      <button onClick={() => handleSubmit(scheme.id)} title="Submit for Approval"
-                        className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors border border-transparent hover:border-emerald-100">
-                        <Send className="h-4 w-4" />
+                    )}
+
+                    {/* Submitted — approver reviews */}
+                    {scheme.status === 'submitted' && canApprove && (
+                      <button onClick={() => setReviewingScheme(scheme)}
+                        className="px-3 py-1.5 text-blue-600 bg-blue-50 border border-blue-100 text-xs font-semibold rounded-lg hover:bg-blue-100 transition-colors">
+                        Review
                       </button>
-                    </>
-                  )}
-                  {canApprove && scheme.status === 'submitted' && (
-                    <button onClick={() => setReviewingScheme(scheme)}
-                      className="px-3 py-1.5 bg-blue-50 text-blue-600 text-xs font-semibold rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors">
-                      Review
-                    </button>
-                  )}
-                  <Link href={`/dashboard/staff/learning/schemes/${scheme.id}`}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-lg transition-all">
-                    View <ChevronRight className="h-3.5 w-3.5" />
-                  </Link>
+                    )}
+
+                    <Link href={`/dashboard/staff/learning/schemes/${scheme.id}`}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-lg transition-all">
+                      View <ChevronRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          {/* ── Pagination Footer ── */}
           <div className="px-5 py-3 border-t border-slate-50 bg-slate-50/40 flex items-center justify-between gap-4 flex-wrap mt-auto">
             <p className="text-xs text-slate-400">
               Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} of{' '}

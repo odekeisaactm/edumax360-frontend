@@ -225,61 +225,142 @@ export const MODULES: ModuleDef[] = [
       description: 'Lesson notes, schemes of work, AI workflows, and live classes',
       moduleCode: 'learning',
       areas: [
+        // ── Scheme of Work ────────────────────────────────────────
         {
           key: 'scheme_of_work',
           label: 'Scheme of Work',
           description: 'Manage and approve termly schemes of work',
           permissions: [
-            { codename: 'view_schemeofworkmodel',     label: 'View Schemes',    desc: 'Read schemes of work' },
-            { codename: 'add_schemeofworkmodel',      label: 'Create Schemes',  desc: 'Draft new schemes of work' },
-            { codename: 'approve_scheme_of_work',     label: 'Approve Schemes', desc: 'Approve submitted schemes of work' },
-            { codename: 'decline_scheme_of_work',     label: 'Decline Schemes', desc: 'Decline submitted schemes of work' },
+            { codename: 'view_schemeofworkmodel',  label: 'View Schemes',    desc: 'Read schemes of work and their weekly breakdown' },
+            { codename: 'add_schemeofworkmodel',   label: 'Create Schemes',  desc: 'Draft, edit, and delete schemes of work' },
+            { codename: 'approve_scheme_of_work',  label: 'Approve Schemes', desc: 'Approve submitted schemes of work' },
+            { codename: 'decline_scheme_of_work',  label: 'Decline Schemes', desc: 'Decline submitted schemes of work' },
           ],
         },
+
+        // ── Lesson Notes & Lesson Docs ────────────────────────────
         {
           key: 'learning_content',
-          label: 'Lesson Notes & Materials',
-          description: 'Manage, upload, and approve daily lesson notes and supplementary materials',
+          label: 'Lesson Notes & Lesson Docs',
+          description: 'Manage and approve lesson notes and supplementary lesson documents',
           permissions: [
-            { codename: 'view_lessonnotemodel',       label: 'View Content',    desc: 'Read lesson notes and materials' },
-            { codename: 'add_lessonnotemodel',        label: 'Upload Content',  desc: 'Create notes and upload materials' },
-            { codename: 'approve_lesson_note',        label: 'Approve Notes',   desc: 'Approve submitted lesson notes' },
-            { codename: 'decline_lesson_note',        label: 'Decline Notes',   desc: 'Decline submitted lesson notes' },
+            { codename: 'view_lessonnotemodel', label: 'View Content',   desc: 'Read lesson notes and lesson documents' },
+            { codename: 'add_lessonnotemodel',  label: 'Upload Content', desc: 'Create, edit, and delete lesson notes and lesson documents' },
+            { codename: 'approve_lesson_note',  label: 'Approve Notes',  desc: 'Approve submitted lesson notes' },
+            { codename: 'decline_lesson_note',  label: 'Decline Notes',  desc: 'Decline submitted lesson notes' },
           ],
         },
+
+        // ── Learning Paths ────────────────────────────────────────
         {
           key: 'learning_paths',
-          label: 'Learning Paths & Assignments',
-          description: 'Manage structured learning paths and assignments',
+          label: 'Learning Paths',
+          description: 'Structured sequential lesson paths with unlock quizzes',
           permissions: [
-            { codename: 'view_learningpathmodel',     label: 'View Paths',       desc: 'Read learning paths and sections' },
-            { codename: 'add_learningpathmodel',      label: 'Manage Paths',     desc: 'Create learning paths and assignments' },
+            { codename: 'view_learningpathmodel',        label: 'View Paths',      desc: 'Read learning paths and their sections' },
+            { codename: 'add_learningpathmodel',         label: 'Manage Paths',    desc: 'Create, edit, and delete learning paths' },
+            { codename: 'view_learningpathsectionmodel', label: 'View Sections',   desc: 'Read learning path sections' },
+            { codename: 'add_learningpathsectionmodel',  label: 'Manage Sections', desc: 'Create, edit, and delete sections' },
           ],
         },
+
+        // ── Assignments ───────────────────────────────────────────
+        {
+          key: 'assignments',
+          label: 'Assignments',
+          description: 'Coursework, homework, and student submissions',
+          permissions: [
+            { codename: 'view_lessonassignmentmodel',              label: 'View Assignments',   desc: 'Read assignments' },
+            { codename: 'add_lessonassignmentmodel',               label: 'Manage Assignments', desc: 'Create, edit, and delete assignments' },
+            { codename: 'view_studentassignmentsubmissionmodel',   label: 'View Submissions',   desc: 'Read student submissions' },
+            { codename: 'change_studentassignmentsubmissionmodel', label: 'Grade Submissions',  desc: 'Grade submissions and give feedback' },
+          ],
+        },
+
+        // ── Live Classes ──────────────────────────────────────────
         {
           key: 'live_classes',
           label: 'Live Classes & Whiteboards',
-          description: 'Manage WebRTC live sessions and remote learning',
+          description: 'Schedule, host, and monitor live class sessions',
           permissions: [
-            { codename: 'view_liveclasssessionmodel', label: 'View Live Classes',desc: 'Read scheduled and past live classes' },
-            { codename: 'add_liveclasssessionmodel',  label: 'Manage Live Classes',desc: 'Schedule and host live classes' },
+            { codename: 'view_liveclasssessionmodel',    label: 'View Live Classes',   desc: 'Read scheduled and past live classes' },
+            { codename: 'add_liveclasssessionmodel',     label: 'Manage Live Classes', desc: 'Schedule, edit, and delete live classes' },
+            { codename: 'change_liveclasssessionmodel',  label: 'Host Live Classes',   desc: 'Start, host, and end live sessions' },
+            { codename: 'view_liveclassattendancemodel', label: 'View Attendance',     desc: 'Read live class attendance records' },
+            { codename: 'view_liveclasswhiteboardmodel', label: 'View Whiteboards',   desc: 'Read saved whiteboard snapshots' },
           ],
         },
+
+        // ── Screen Monitoring & Pen Streams ───────────────────────
+        {
+          key: 'live_class_monitoring',
+          label: 'Screen Monitoring & Pen Streams',
+          description: 'Remote student screens and smart pen streams during live classes',
+          permissions: [
+            { codename: 'view_studentscreenmonitormodel', label: 'View Screen Monitors', desc: 'Read student screen monitoring records' },
+            { codename: 'view_liveclasspenstreammodel',   label: 'View Pen Streams',     desc: 'Read live smart pen stroke streams' },
+          ],
+        },
+
+        // ── Peer Note Sharing ─────────────────────────────────────
         {
           key: 'peer_notes',
           label: 'Peer Note Sharing',
           description: 'Manage student peer-to-peer study notes',
           permissions: [
-            { codename: 'moderate_shared_notes',      label: 'Moderate Notes',  desc: 'Approve or reject student shared notes' },
+            { codename: 'moderate_shared_notes', label: 'Moderate Notes', desc: 'Approve or reject student shared notes' },
           ],
         },
+
+        // ── Student Progress ──────────────────────────────────────
+        {
+          key: 'student_progress',
+          label: 'Student Progress & Annotations',
+          description: 'Track student progress and personal annotations',
+          permissions: [
+            { codename: 'view_studentmaterialprogressmodel',     label: 'View Material Progress', desc: 'Read student progress through lesson docs' },
+            { codename: 'view_studentlearningpathprogressmodel', label: 'View Path Progress',     desc: 'Read student progress through learning paths' },
+            { codename: 'view_studentbookmarkmodel',             label: 'View Bookmarks',         desc: 'Read student bookmarks' },
+            { codename: 'view_studenthighlightmodel',            label: 'View Highlights',        desc: 'Read student highlights' },
+          ],
+        },
+
+        // ── Smart Pen & Handwriting ───────────────────────────────
+        {
+          key: 'smart_hardware',
+          label: 'Smart Pen & Handwriting',
+          description: 'School smart pen devices and handwritten page OCR',
+          permissions: [
+            { codename: 'view_smartpendevicemodel',     label: 'View Smart Pens',   desc: 'Read smart pen device registry' },
+            { codename: 'add_smartpendevicemodel',      label: 'Manage Smart Pens', desc: 'Register and update smart pen devices' },
+            { codename: 'view_handwritingcapturemodel', label: 'View Captures',     desc: 'Read handwriting capture records' },
+            { codename: 'add_handwritingcapturemodel',  label: 'Manage Captures',   desc: 'Create and process handwriting captures' },
+          ],
+        },
+
+        // ── AI Content ────────────────────────────────────────────
+        {
+          key: 'ai_content',
+          label: 'AI-Generated Content',
+          description: 'Summaries, flashcards, quizzes, and TTS generated from lesson content',
+          permissions: [
+            { codename: 'view_materialsummarymodel',   label: 'View Summaries',  desc: 'Read AI-generated summaries' },
+            { codename: 'view_flashcardsetmodel',      label: 'View Flashcards', desc: 'Read AI-generated flashcard sets' },
+            { codename: 'view_autogeneratedquizmodel', label: 'View Quizzes',    desc: 'Read AI-generated quizzes' },
+            { codename: 'view_texttospeechaudiomodel', label: 'View TTS Audio',  desc: 'Read text-to-speech audio records' },
+            { codename: 'view_aiprocessingqueuemodel', label: 'View AI Queue',   desc: 'Monitor AI processing queue' },
+          ],
+        },
+
+        // ── Settings & Reminders ──────────────────────────────────
         {
           key: 'learning_settings',
           label: 'Settings & Reminders',
-          description: 'Manage core learning workflows, overdue reminders, and AI automations',
+          description: 'AI settings, module settings, and overdue note reminders',
           permissions: [
-            { codename: 'view_pendingnoteremindermodel',      label: 'View Reminders', desc: 'Read pending note reminders' },
-            { codename: 'view_learningresourcessettingsmodel',label: 'View Settings',  desc: 'Read learning and AI settings' },
+            { codename: 'view_learningresourcessettingsmodel',   label: 'View Settings',   desc: 'Read learning and AI settings' },
+            { codename: 'change_learningresourcessettingsmodel', label: 'Manage Settings', desc: 'Update learning and AI settings' },
+            { codename: 'view_pendingnoteremindermodel',         label: 'View Reminders',  desc: 'Read pending note reminders' },
           ],
         },
       ],

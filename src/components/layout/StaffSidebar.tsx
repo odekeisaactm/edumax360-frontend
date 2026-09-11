@@ -268,50 +268,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/learning/notes'),
           requiredPermissions: ['learning_resources.view_lessonnotemodel'],
         },
-        {
-          name: 'Lesson Materials',
-          href: '/dashboard/staff/learning/materials',
-          icon: <FolderOpen className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/learning/materials'),
-          requiredPermissions: ['learning_resources.view_lessonnotemodel'],
-        },
-        {
-          name: 'Pending Reminders',
-          href: '/dashboard/staff/learning/reminders',
-          icon: <Bell className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/learning/reminders'),
-          requiredPermissions: ['learning_resources.view_pendingnoteremindermodel'],
-        },
 
-        // --- ADVANCED LEARNING (Phase 2) ---
-        {
-          name: 'Assignments',
-          href: '/dashboard/staff/learning/assignments',
-          icon: <ClipboardCheck className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/learning/assignments'),
-          requiredPermissions: ['learning_resources.view_lessonassignmentmodel'],
-        },
-        {
-          name: 'Learning Paths',
-          href: '/dashboard/staff/learning/paths',
-          icon: <MapPin className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/learning/paths'),
-          requiredPermissions: ['learning_resources.view_learningpathmodel'],
-        },
-        {
-          name: 'Live Classes',
-          href: '/dashboard/staff/learning/live-classes',
-          icon: <Video className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/learning/live-classes'),
-          requiredPermissions: ['learning_resources.view_liveclasssessionmodel'],
-        },
-        {
-          name: 'Peer Notes',
-          href: '/dashboard/staff/learning/peer-notes',
-          icon: <Users className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/learning/peer-notes'),
-          requiredPermissions: ['learning_resources.moderate_shared_notes'],
-        },
 
         // --- SETUP & CONFIGURATION ---
         {
@@ -319,13 +276,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           href: '#',
           icon: <Settings className="h-4 w-4" />,
           children: [
-            {
-              name: 'Smart Hardware',
-              href: '/dashboard/staff/learning/hardware',
-              icon: <PenTool className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/learning/hardware'),
-              requiredPermissions: ['learning_resources.view_learningresourcessettingsmodel'],
-            },
+
             {
               name: 'Settings & AI',
               href: '/dashboard/staff/learning/settings',
