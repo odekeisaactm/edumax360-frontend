@@ -4,25 +4,37 @@
  * Combined Template 1 — Legacy HTML Match (Improved)
  * File: src/components/result/templates/combined/1_default/preview.tsx
  *
- * v2 changes vs original:
- *  - Header uses minHeight instead of a fixed height, so a long school
- *    address/motto can no longer overflow into the subtitle bar below it.
- *  - Student-info strip rebuilt as a lighter 3x3 grid; Date of Birth removed,
- *    Resumption Date kept (renders "—" when unset, same as before).
- *  - Topics-covered fetch now sends the student's class id so the backend can
- *    scope categories to the right class; a name-based de-dupe on the
- *    frontend is kept as a defensive safety net on top of that.
- *  - "KEY" block for text ratings is now a compact, content-width block
- *    instead of a full-width table.
- *  - Rating/Grading legend redesigned as chips instead of a wall of text.
- *  - @page print rule + break-inside:avoid on major blocks/rows, so output
- *    doesn't depend on each browser's print-dialog margin settings and rows
- *    don't get sliced across a page break.
- *  - Cum. Total / Cum. Average now rounded, consistent with every other
+ * v3 changes vs v2:
+ *  - Header tightened: smaller/tighter type in the middle column, contact
+ *    line no longer wraps (protocol stripped from the website, single
+ *    nowrap line), logo switched to objectFit:contain (was cropping),
+ *    minHeight reduced. Outer page padding and @page margin trimmed to
+ *    reclaim width (actual PDF margins are still whatever the backend
+ *    generator sets — this only fixes the frontend/preview side).
+ *  - Visual language brought in line with the score template: black
+ *    borders everywhere replaced with the same light `#e2e8f0` used by
+ *    score; the outer black page frame replaced with score's drop
+ *    shadow; student-info block rebuilt as score's inline
+ *    primary-color-label / zebra-striped grid instead of a
+ *    stacked-label table with hardcoded grey labels.
+ *  - Topics-covered now derives from the SAME filtered set as the
+ *    achievement table (`groupedCategories`) instead of the raw
+ *    class-scoped category fetch, so a category with no recorded
+ *    result no longer shows as a topic with nothing under it.
+ *  - Text (achievement) table flattened into a single table with
+ *    `rowSpan` on the category cell and `<td>` throughout, replacing
+ *    the nested-table-per-category structure. Fixes the last
+ *    category's border never closing, and lets the Aspect/Comment/
+ *    Rating columns actually line up with their header.
+ *  - Added a `sections` prop (`'full' | 'text' | 'score'`, default
+ *    `'full'`) so a page embedding this template can render just the
+ *    text half or just the score half — used by the preview page's
+ *    print/download scope picker, and available for the backend to
+ *    reuse if it ever renders this same component server-side.
+ *  - Cum. Total / Cum. Average rounded, consistent with every other
  *    score on the page.
- *  - Font stack consolidated (cursive/lato/courier mix replaced with one
- *    sans-serif for structure, monospace kept only for the numeric score grid).
- *  - Colors: unchanged — already pulled from settings, not hardcoded.
+ *  - Font stack consolidated (monospace kept only for the numeric
+ *    score grid, as before).
  */
 
 import React, { useMemo, useEffect, useState } from 'react';
@@ -51,6 +63,8 @@ interface CombinedTemplateProps {
   subjectList?:        any[];
   ratingOptions?:      any[];
   periodId?:           string | number | null;
+  /** Which half of the combined result to render. Default 'full' renders everything. */
+  sections?:           'full' | 'text' | 'score';
 }
 
 function hex(v: string, fallback: string): string {
@@ -101,7 +115,11 @@ export default function DefaultCombinedTemplate({
   subjectList:        subjectListProp,
   ratingOptions:      ratingOptionsProp,
   periodId,
+  sections            = 'full',
 }: CombinedTemplateProps) {
+
+  const showText  = sections !== 'score';
+  const showScore = sections !== 'text';
 
   // ── Resolve with fallbacks ──────────────────────────────────────────────────
   const isPreview = !studentProp && !resultProp;
@@ -122,10 +140,11 @@ export default function DefaultCombinedTemplate({
   }
   const backendRatingOptions = Array.isArray(rawOptions) ? rawOptions : [];
 
-  // ── Colors from settings ────────────────────────────────────────────────────
+  // ── Colors from settings (same set + roles as the score template) ──────────
   const primaryColor   = hex(settings.primary_color, '#2c5f8d');
   const secondaryColor = hex(settings.secondary_color, '#f0f4f8');
   const headerColor    = hex(settings.header_color, '#2c5f8d');
+  const accentColor    = hex(settings.accent_color, '#1890ff');
 
   const resultData: Record<string, any> = result.result_data ?? {};
 
@@ -191,20 +210,12 @@ export default function DefaultCombinedTemplate({
     return () => { cancelled = true; };
   }, [isPreview, resolvedPeriodId, resolvedClassId]);
 
-  // Defensive de-dupe by category name — a safety net on top of the backend's
-  // class filter, in case two categories ever share a name (see e.g. the
-  // "Expressive Arts And Design/story Telling" vs ".../ Storytelling" case).
-  const topicsForDisplay = useMemo(() => {
-    if (!activeCategories) return [];
-    const seen = new Set<string>();
-    return activeCategories.filter((c: any) => {
-      const key = (c.name || '').trim().toLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [activeCategories]);
-
+  // groupedCategories is the single source of truth for BOTH the topics-covered
+  // cards and the achievement table: only categories that actually have a
+  // recorded field in result_data show up anywhere. (Note: matching is still
+  // by field id — if the categories endpoint and result_data ever disagree on
+  // an id for the same field, that field silently won't appear here. That's a
+  // backend-side data issue, not something this de-dupe can fix.)
   const groupedCategories = useMemo(() => {
     if (activeCategories === null) return [];
     return activeCategories.map((cat: any) => {
@@ -244,33 +255,16 @@ export default function DefaultCombinedTemplate({
   const baseFont    = "'Segoe UI', Arial, Helvetica, sans-serif";
   const numericFont = "'Courier New', Courier, monospace";
 
+  // Border color matches the score template's tdBase (#e2e8f0) instead of a
+  // hardcoded black — this is what makes the whole document pick up the
+  // school's colors instead of reading as plain black-and-white.
   const cellStyle: React.CSSProperties = {
-    border: '1px solid black',
+    border: '1px solid #e2e8f0',
     paddingLeft: '5px',
     textAlign: 'center',
     fontFamily: numericFont,
     fontSize: '12px',
     fontWeight: 'bolder'
-  };
-
-  // Lighter, non-tabular style for the compact student-info strip — no longer
-  // borrows the heavy bordered/courier score-table styling.
-  const infoCellStyle: React.CSSProperties = {
-    border: `1px solid ${hexToRgba(headerColor, 0.25)}`,
-    padding: '6px 10px',
-    fontFamily: baseFont,
-    fontSize: '13px',
-    textAlign: 'left',
-    verticalAlign: 'middle',
-  };
-  const infoLabelStyle: React.CSSProperties = {
-    display: 'block',
-    fontSize: '9px',
-    letterSpacing: '0.5px',
-    color: 'rgba(0,0,0,0.55)',
-    fontWeight: 600,
-    textTransform: 'uppercase',
-    marginBottom: '1px',
   };
 
   // Keeps a block from being sliced in half across a page break on print.
@@ -279,101 +273,118 @@ export default function DefaultCombinedTemplate({
   return (
     <div style={{
       width: '210mm', minHeight: '297mm', backgroundColor: '#fff',
-      margin: '0 auto', padding: '14px', boxSizing: 'border-box', fontFamily: baseFont,
+      margin: '0 auto', padding: '8px', boxSizing: 'border-box', fontFamily: baseFont,
     }}>
       {/* Print rules baked into the page itself so output no longer depends on
-          each staff member's own browser print-dialog margin settings. */}
+          each staff member's own browser print-dialog margin settings.
+          NOTE: if a backend PDF generator (Playwright/WeasyPrint/etc.) also
+          sets its own page margins, this @page rule may be overridden there —
+          that side is unchanged by this file. */}
       <style>{`
-        @page { size: A4; margin: 8mm; }
+        @page { size: A4; margin: 6mm; }
         @media print {
           html, body { margin: 0 !important; padding: 0 !important; }
           .avoid-break { break-inside: avoid; page-break-inside: avoid; }
         }
       `}</style>
 
-      <div style={{ backgroundColor: 'white', border: '2px solid black', fontFamily: baseFont }}>
+      {/* Outer frame: score template's drop shadow instead of a heavy black
+          border, so the page reads the same way score's does. */}
+      <div style={{ backgroundColor: 'white', boxShadow: '0 4px 32px rgba(0,0,0,0.10)', fontFamily: baseFont }}>
 
         {/* ══ HEADER ══ */}
-        {/* minHeight (not a fixed height) — a long address/motto can now grow
-            the box instead of overflowing into the subtitle bar below it. */}
-        <div className="avoid-break" style={{ ...avoidBreak, backgroundColor: headerColor, color: 'white', border: '1px solid black', borderBottom: '1px solid black', minHeight: '135px', display: 'flex', alignItems: 'stretch' }}>
-          <div style={{ width: '16.66%' }}>
-            <img src={ensureAbsoluteUrl(student.image) || '/default_image.jpg'} alt="Student" style={{ width: '100%', height: '100%', minHeight: '133px', objectFit: 'cover', display: 'block' }} />
+        {/* Tightened vs v2: smaller type, no line-wrapping on the contact
+            line (protocol stripped, nowrap), logo switched to `contain` so
+            it's no longer cropped, minHeight reduced now that the content
+            itself is compact enough to fit without growing the box. */}
+        <div className="avoid-break" style={{ ...avoidBreak, backgroundColor: headerColor, color: 'white', minHeight: '100px', display: 'flex', alignItems: 'stretch' }}>
+          <div style={{ width: '100px', flexShrink: 0 }}>
+            <img src={ensureAbsoluteUrl(student.image) || '/default_image.jpg'} alt="Student" style={{ width: '100%', height: '100%', minHeight: '98px', objectFit: 'cover', display: 'block' }} />
           </div>
-          <div style={{ width: '66.66%', padding: '15px', color: 'white', textAlign: 'center' }}>
-            <h4 style={{ fontFamily: 'Georgia, serif', fontWeight: 'bold', margin: 0, fontSize: '20px' }}>{school.name?.toUpperCase()}</h4>
-            <h6 style={{ fontSize: '13px', marginTop: '10px', fontWeight: 'bold', margin: '10px 0 5px 0' }}>...{toTitleCase(school.motto)}</h6>
-            <h6 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 'normal' }}>{toTitleCase(school.address)}</h6>
-            <p style={{ margin: 0, fontSize: '13px' }}>{school.mobile_1} | {school.email?.toLowerCase()} | {school.website}</p>
+          <div style={{ flex: 1, padding: '8px 12px', color: 'white', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <h4 style={{ fontFamily: 'Georgia, serif', fontWeight: 'bold', margin: 0, fontSize: '18px', letterSpacing: '0.02em' }}>{school.name?.toUpperCase()}</h4>
+            {school.motto && (
+              <div style={{ fontSize: '10.5px', fontStyle: 'italic', opacity: 0.85, margin: '3px 0 0 0' }}>…{toTitleCase(school.motto)}…</div>
+            )}
+            <div style={{ margin: '3px 0 0 0', fontSize: '10.5px', opacity: 0.9 }}>{toTitleCase(school.address)}</div>
+            <div style={{ margin: '2px 0 0 0', fontSize: '10.5px', opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {[school.mobile_1, school.email?.toLowerCase(), (school.website || '').replace(/^https?:\/\//, '')].filter(Boolean).join('  |  ')}
+            </div>
           </div>
-          <div style={{ width: '16.66%' }}>
-            <img src={ensureAbsoluteUrl(school.logo)} alt="Logo" style={{ width: '100%', height: '100%', minHeight: '133px', objectFit: 'cover', display: 'block' }} />
+          <div style={{ width: '100px', flexShrink: 0 }}>
+            <img src={ensureAbsoluteUrl(school.logo)} alt="Logo" style={{ width: '100%', height: '100%', minHeight: '98px', objectFit: 'contain', display: 'block', padding: '8px', boxSizing: 'border-box' }} />
           </div>
         </div>
 
         {/* ══ SUBTITLE ══ */}
-        <div style={{ backgroundColor: headerColor, color: 'white', minHeight: '22px', borderBottom: '2px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3px 0' }}>
-          <p style={{ fontWeight: 'bold', margin: 0, fontSize: '14px' }}>
+        <div style={{ backgroundColor: headerColor, color: 'white', minHeight: '22px', borderTop: `3px solid ${accentColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3px 0' }}>
+          <p style={{ fontWeight: 'bold', margin: 0, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             Student Report Card For {termType === 'midterm' ? 'Mid ' : ''}{toTitleCase(periodName)} {toTitleCase(sessionName)} Session
           </p>
         </div>
 
-        {/* ══ STUDENT INFO — compact 3x3 grid. Date of Birth removed; Resumption
-            Date kept (still renders "—" when unset). ══ */}
-        <div className="avoid-break" style={{ ...avoidBreak, backgroundColor: secondaryColor, borderBottom: '2px solid black', padding: '6px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <tbody>
-              <tr>
-                <td style={{ ...infoCellStyle, width: '40%' }}>
-                  <span style={infoLabelStyle}>Pupil's Name</span>{toTitleCase(studentName)}
-                </td>
-                <td style={infoCellStyle}>
-                  <span style={infoLabelStyle}>Adm No.</span>{student.registration_number?.toUpperCase()}
-                </td>
-                <td style={infoCellStyle}>
-                  <span style={infoLabelStyle}>Class</span>{className.toUpperCase()}
-                </td>
-              </tr>
-              <tr>
-                <td style={infoCellStyle}>
-                  <span style={infoLabelStyle}>No. Of Times School Opened</span>{attendance.total || '—'}
-                </td>
-                <td style={infoCellStyle}>
-                  <span style={infoLabelStyle}>No. Of Times Present</span>{attendance.present || '—'}
-                </td>
-                <td style={infoCellStyle}>
-                  <span style={infoLabelStyle}>Sex</span>{toTitleCase(student.gender)}
-                </td>
-              </tr>
-              <tr>
-                <td style={infoCellStyle}>
-                  <span style={infoLabelStyle}>Cum. Total</span>{roundOrDash(totalScore)}
-                </td>
-                <td style={infoCellStyle}>
-                  <span style={infoLabelStyle}>Cum. Average</span>{roundOrDash(studentAverage)}
-                </td>
-                <td style={infoCellStyle}>
-                  <span style={infoLabelStyle}>Resumption Date</span>{result.resumption_date || '—'}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        {/* ══ STUDENT INFO ══ */}
+        {/* Rebuilt to match the score template exactly: light #e2e8f0
+            borders, rounded container, rows zebra-striped secondary/white,
+            labels in primaryColor inline before the value — instead of the
+            old stacked-block grey (rgba(0,0,0,0.55)) labels, which is what
+            made this section (and the rest of the document) read as plain
+            black regardless of the school's configured colors. */}
+        <div className="avoid-break" style={{ ...avoidBreak, margin: '8px 0', border: '1px solid #e2e8f0', borderRadius: 5, overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', borderBottom: '1px solid #e2e8f0', backgroundColor: secondaryColor }}>
+            <div style={{ padding: '6px 10px', borderRight: '1px solid #e2e8f0', display: 'flex', alignItems: 'center' }}>
+              <span style={{ fontWeight: 800, fontSize: 14 }}>{toTitleCase(studentName)}</span>
+            </div>
+            <div style={{ padding: '6px 10px', borderRight: '1px solid #e2e8f0', fontSize: 11, display: 'flex', alignItems: 'center' }}>
+              <span style={{ color: primaryColor, fontWeight: 700, textTransform: 'uppercase', marginRight: 6 }}>Adm No:</span>
+              <span style={{ fontWeight: 600 }}>{student.registration_number?.toUpperCase() ?? '—'}</span>
+            </div>
+            <div style={{ padding: '6px 10px', fontSize: 11, display: 'flex', alignItems: 'center' }}>
+              <span style={{ color: primaryColor, fontWeight: 700, textTransform: 'uppercase', marginRight: 6 }}>Class:</span>
+              <span style={{ fontWeight: 600 }}>{className.toUpperCase()}</span>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', borderBottom: '1px solid #e2e8f0', backgroundColor: '#fff' }}>
+            {[
+              ['No. of Times School Opened', attendance.total || '—'],
+              ['No. of Times Present', attendance.present || '—'],
+              ['Sex', toTitleCase(student.gender)],
+            ].map(([label, value], i) => (
+              <div key={i} style={{ padding: '6px 10px', borderRight: i < 2 ? '1px solid #e2e8f0' : 'none', fontSize: 11, display: 'flex', alignItems: 'center' }}>
+                <span style={{ color: primaryColor, fontWeight: 700, textTransform: 'uppercase', marginRight: 6 }}>{label}:</span>
+                <span style={{ fontWeight: 600 }}>{value}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', backgroundColor: secondaryColor }}>
+            {[
+              ['Cum. Total', roundOrDash(totalScore)],
+              ['Cum. Average', roundOrDash(studentAverage)],
+              ['Resumption Date', result.resumption_date || '—'],
+            ].map(([label, value], i) => (
+              <div key={i} style={{ padding: '6px 10px', borderRight: i < 2 ? '1px solid #e2e8f0' : 'none', fontSize: 11, display: 'flex', alignItems: 'center' }}>
+                <span style={{ color: primaryColor, fontWeight: 700, textTransform: 'uppercase', marginRight: 6 }}>{label}:</span>
+                <span style={{ fontWeight: 600 }}>{value}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* ══ TOPICS COVERED ══ */}
-        {/* activeCategories is now fetched scoped to the student's class
-            (resolvedClassId → student_class param); topicsForDisplay adds a
-            name-based de-dupe on top as a display-layer safety net. */}
-        {topicsForDisplay.length > 0 && (
-          <div style={{ color: 'black', borderBottom: '1px solid black', padding: '15px' }}>
+        {/* Now derives from groupedCategories — the SAME filtered set the
+            achievement table below uses — instead of the raw class-scoped
+            fetch. A category with no recorded result for this student no
+            longer shows up here with an empty table underneath it. */}
+        {showText && groupedCategories.length > 0 && (
+          <div style={{ color: 'black', borderBottom: '1px solid #e2e8f0', padding: '15px' }}>
             <div style={{ padding: '1px' }}>
               <p style={{ color: primaryColor, textAlign: 'center', fontWeight: 'bold', margin: '0 0 10px 0', fontSize: '16px' }}>
                 TOPICS COVERED THIS TERM IN THE AREAS OF LEARNING
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', margin: '0 -5px' }}>
-                {topicsForDisplay.map((category: any, idx: number) => (
+                {groupedCategories.map((category: any, idx: number) => (
                   <div key={idx} className="avoid-break" style={{ ...avoidBreak, width: '50%', padding: '0 5px', boxSizing: 'border-box', marginBottom: '10px' }}>
-                    <div style={{ border: '1px solid black', height: '100%', padding: '10px' }}>
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: 4, height: '100%', padding: '10px' }}>
                       <h4 style={{ color: primaryColor, fontSize: '15px', textAlign: 'center', fontWeight: 'bold', margin: '0 0 5px 0' }}>
                         {category.name?.toUpperCase()}
                       </h4>
@@ -388,56 +399,47 @@ export default function DefaultCombinedTemplate({
           </div>
         )}
 
-        {/* ══ TEXT TABLE ══ */}
-        {groupedCategories.length > 0 && (
+        {/* ══ TEXT (ACHIEVEMENT) TABLE ══ */}
+        {/* Flattened from a table-per-category nested inside a <th> into one
+            table with rowSpan on the category cell. This fixes the last
+            category's border never closing (it depended on the NEXT
+            category's header row to draw its bottom edge, and there's
+            nothing after the last one) and lets Aspect/Comment/Rating line
+            up with the header above them, which the nested-table version
+            never actually did. */}
+        {showText && groupedCategories.length > 0 && (
           <div style={{ padding: '4px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ backgroundColor: secondaryColor }}>
+              <thead>
                 <tr>
-                  <th rowSpan={2} style={{ ...cellStyle, fontFamily: baseFont, width: '150px' }}>AREAS OF LEARNING</th>
-                  <th rowSpan={2} style={{ ...cellStyle, fontFamily: baseFont, width: '200px' }}>ASPECT</th>
-                  <th colSpan={3} style={{ ...cellStyle, fontFamily: baseFont }}>PUPIL'S ACHIEVEMENT</th>
-                </tr>
-                <tr>
-                  <th style={{ ...cellStyle, fontFamily: baseFont }}>Comment</th>
-                  <th style={{ ...cellStyle, fontFamily: baseFont, width: '150px' }}>Rating</th>
+                  <th style={{ ...cellStyle, fontFamily: baseFont, width: '150px', backgroundColor: headerColor, color: '#fff' }}>Areas of Learning</th>
+                  <th style={{ ...cellStyle, fontFamily: baseFont, width: '200px', backgroundColor: headerColor, color: '#fff' }}>Aspect</th>
+                  <th style={{ ...cellStyle, fontFamily: baseFont, backgroundColor: headerColor, color: '#fff' }}>Comment</th>
+                  <th style={{ ...cellStyle, fontFamily: baseFont, width: '120px', backgroundColor: headerColor, color: '#fff' }}>Rating</th>
                 </tr>
               </thead>
               <tbody>
                 {groupedCategories.map((cat: any, catIndex: number) => (
-                  <tr key={catIndex} className="avoid-break" style={{ ...avoidBreak, border: '1px solid black' }}>
-                    <th style={{ ...cellStyle, fontFamily: baseFont, backgroundColor: headerColor, color: '#fff', fontWeight: 'bold', fontSize: '18px' }}>
-                      {toTitleCase(cat.name)}
-                    </th>
-                    <th colSpan={3} style={{ padding: '0px', border: 'none' }}>
-                      <table style={{ height: '100%', width: '100%', margin: '0px', textAlign: 'left', borderCollapse: 'collapse' }}>
-                        <tbody>
-                          {cat.fields.map((field: any, fieldIndex: number) => (
-                            <tr key={fieldIndex}>
-                              <td style={{ ...cellStyle, fontFamily: baseFont, width: '200px', textAlign: 'left', borderTop: fieldIndex === 0 ? 'none' : '1px solid black', borderBottom: 'none', borderLeft: 'none' }}>
-                                {toTitleCase(field.field_name)}
-                              </td>
-                              <td style={{ ...cellStyle, fontFamily: baseFont, textAlign: 'left', borderTop: fieldIndex === 0 ? 'none' : '1px solid black', borderBottom: 'none' }}>
-                                {field.comment ? field.comment : <span style={{ color: 'transparent' }}>.</span>}
-                              </td>
-                              <td style={{ ...cellStyle, fontFamily: baseFont, width: '150px', textAlign: 'left', borderTop: fieldIndex === 0 ? 'none' : '1px solid black', borderBottom: 'none', borderRight: 'none' }}>
-                                {field.rating ? field.rating.toUpperCase() : <span style={{ color: 'transparent' }}>.</span>}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </th>
-                  </tr>
+                  cat.fields.map((field: any, fieldIndex: number) => (
+                    <tr key={`${catIndex}-${fieldIndex}`} className="avoid-break" style={{ ...avoidBreak, backgroundColor: catIndex % 2 === 0 ? '#fff' : secondaryColor }}>
+                      {fieldIndex === 0 && (
+                        <td rowSpan={cat.fields.length} style={{ ...cellStyle, fontFamily: baseFont, backgroundColor: headerColor, color: '#fff', fontWeight: 'bold', fontSize: '14px', verticalAlign: 'middle' }}>
+                          {toTitleCase(cat.name)}
+                        </td>
+                      )}
+                      <td style={{ ...cellStyle, fontFamily: baseFont, textAlign: 'left' }}>{toTitleCase(field.field_name)}</td>
+                      <td style={{ ...cellStyle, fontFamily: baseFont, textAlign: 'left' }}>{field.comment || '—'}</td>
+                      <td style={{ ...cellStyle, fontFamily: baseFont, textAlign: 'left' }}>{field.rating ? field.rating.toUpperCase() : '—'}</td>
+                    </tr>
+                  ))
                 ))}
               </tbody>
             </table>
           </div>
         )}
 
-        {/* ══ TEXT KEY — now a compact, content-width block instead of a
-            full-width table (item 4: it no longer stretches to fill the page) ══ */}
-        {groupedCategories.length > 0 && backendRatingOptions.length > 0 && (
+        {/* ══ TEXT KEY ══ */}
+        {showText && groupedCategories.length > 0 && backendRatingOptions.length > 0 && (
           <div style={{ padding: '8px', display: 'flex', justifyContent: 'flex-start' }}>
             <div style={{ maxWidth: '340px', width: '100%' }}>
               <h3 style={{ color: primaryColor, fontSize: '14px', margin: '0 0 6px 0', fontWeight: 'bold' }}>KEY</h3>
@@ -460,7 +462,7 @@ export default function DefaultCombinedTemplate({
         )}
 
         {/* ══ SCORE TABLE ══ */}
-        {subjectRows.length > 0 && (
+        {showScore && subjectRows.length > 0 && (
           <div style={{ padding: '4px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -488,7 +490,7 @@ export default function DefaultCombinedTemplate({
               </thead>
               <tbody>
                 {subjectRows.map((sub: any, idx: number) => (
-                  <tr key={idx} className="avoid-break" style={avoidBreak}>
+                  <tr key={idx} className="avoid-break" style={{ ...avoidBreak, backgroundColor: idx % 2 === 0 ? '#fff' : secondaryColor }}>
                     <td style={{ ...cellStyle, textAlign: 'left' }}><b>{sub.name}</b></td>
                     {scoreCols.map((col: any) => (
                       <td key={col.id} style={{ ...cellStyle, maxWidth: '150px' }}>{getScore(col.name, sub.scores)}</td>
@@ -507,9 +509,9 @@ export default function DefaultCombinedTemplate({
         )}
 
         {/* ══ BEHAVIOUR ══ */}
-        {bCats.length > 0 && (
+        {showScore && bCats.length > 0 && (
           <div style={{ padding: '4px' }}>
-            <div style={{ backgroundColor: headerColor, color: 'white', minHeight: '20px', border: '1px solid black' }}>
+            <div style={{ backgroundColor: headerColor, color: 'white', minHeight: '20px' }}>
               <p style={{ textAlign: 'center', fontSize: '14px', fontFamily: baseFont, fontWeight: 'bold', margin: 0, padding: '2px 0' }}>
                 Affective and Psychomotor Observation (Behavioural & Physical Abilities)
               </p>
@@ -543,10 +545,9 @@ export default function DefaultCombinedTemplate({
           </div>
         )}
 
-        {/* ══ RATING / GRADING LEGEND — redesigned as chips instead of a
-            single dull line of grey text ══ */}
-        {(bCats.length > 0 || subjectRows.length > 0) && (
-          <div className="avoid-break" style={{ ...avoidBreak, border: '1px solid black', margin: '4px', padding: '8px 10px' }}>
+        {/* ══ RATING / GRADING LEGEND ══ */}
+        {showScore && (bCats.length > 0 || subjectRows.length > 0) && (
+          <div className="avoid-break" style={{ ...avoidBreak, border: '1px solid #e2e8f0', borderRadius: 4, margin: '4px', padding: '8px 10px' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
 
               {bCats.length > 0 && (
@@ -602,23 +603,23 @@ export default function DefaultCombinedTemplate({
         )}
 
         {/* ══ REMARKS & COMMENTS ══ */}
-        <div className="avoid-break" style={{ ...avoidBreak, color: 'black', borderBottom: '2px solid black', padding: '1px', fontFamily: baseFont }}>
-          <div style={{ border: '1px solid black', borderRadius: '3px', paddingLeft: '5px', paddingBottom: '0px' }}>
+        <div className="avoid-break" style={{ ...avoidBreak, color: 'black', borderBottom: '1px solid #e2e8f0', padding: '1px', fontFamily: baseFont }}>
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '3px', paddingLeft: '5px', paddingBottom: '0px' }}>
 
             {settings.custom_comment_fields?.map((customField: string, idx: number) => (
-              <p key={idx} style={{ minHeight: '16px', padding: '0px', margin: '0px', fontSize: '12px', borderBottom: '1px solid black' }}>
+              <p key={idx} style={{ minHeight: '16px', padding: '0px', margin: '0px', fontSize: '12px', borderBottom: '1px solid #e2e8f0' }}>
                 <b>{customField}: {comments.custom_comments?.[customField] || comments[customField] || ''}</b>
               </p>
             ))}
 
-            <p style={{ height: '16px', padding: '0px', margin: '0px', fontSize: '12px', borderBottom: '1px solid black' }}>
+            <p style={{ height: '16px', padding: '0px', margin: '0px', fontSize: '12px', borderBottom: '1px solid #e2e8f0' }}>
               <b>Teacher's Name: {toTitleCase(comments.form_teacher)}</b>
             </p>
-            <p style={{ backgroundColor: headerColor, color: 'white', minHeight: '16px', padding: '0px 0px 0px 3px', margin: '0px', fontSize: '12px', borderBottom: '1px solid black' }}>
+            <p style={{ backgroundColor: headerColor, color: 'white', minHeight: '16px', padding: '0px 0px 0px 3px', margin: '0px', fontSize: '12px', borderBottom: '1px solid #e2e8f0' }}>
               <b>Teacher's Comment:</b> {comments.form_teacher_comment}
             </p>
 
-            <p style={{ height: '16px', padding: '0px', margin: '0px', fontSize: '12px', borderBottom: '1px solid black' }}>
+            <p style={{ height: '16px', padding: '0px', margin: '0px', fontSize: '12px', borderBottom: '1px solid #e2e8f0' }}>
               <b>{comments.head_teacher_title || 'Head of Foundation Classes'}: {toTitleCase(comments.head_teacher)}</b>
             </p>
             <p style={{ backgroundColor: headerColor, color: 'white', minHeight: '16px', padding: '0px 0px 0px 3px', margin: '0px', fontSize: '12px', borderBottom: 'none' }}>
