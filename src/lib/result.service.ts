@@ -307,6 +307,8 @@ export const textCategoriesAPI = {
     period_id?: number;
     session?: number;
     academic_period?: number;
+    student_class?: number;   // NEW
+    student_kind?: 'normal' | 'special';  // NEW
   }): Promise<TextResultCategory[]> => {
     const r = await api.get('/api/result/text-categories/', { params });
     return r.data.results || r.data;
