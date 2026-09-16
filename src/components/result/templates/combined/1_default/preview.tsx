@@ -1,11 +1,28 @@
 'use client';
 
 /**
- * Combined Template 1 — Legacy HTML Match (Clean & Dynamic)
+ * Combined Template 1 — Legacy HTML Match (Improved)
  * File: src/components/result/templates/combined/1_default/preview.tsx
  *
- * Structural arrangement matched to the original HTML.
- * Colors, rating keys, and vendor tags are strictly dynamic.
+ * v2 changes vs original:
+ *  - Header uses minHeight instead of a fixed height, so a long school
+ *    address/motto can no longer overflow into the subtitle bar below it.
+ *  - Student-info strip rebuilt as a lighter 3x3 grid; Date of Birth removed,
+ *    Resumption Date kept (renders "—" when unset, same as before).
+ *  - Topics-covered fetch now sends the student's class id so the backend can
+ *    scope categories to the right class; a name-based de-dupe on the
+ *    frontend is kept as a defensive safety net on top of that.
+ *  - "KEY" block for text ratings is now a compact, content-width block
+ *    instead of a full-width table.
+ *  - Rating/Grading legend redesigned as chips instead of a wall of text.
+ *  - @page print rule + break-inside:avoid on major blocks/rows, so output
+ *    doesn't depend on each browser's print-dialog margin settings and rows
+ *    don't get sliced across a page break.
+ *  - Cum. Total / Cum. Average now rounded, consistent with every other
+ *    score on the page.
+ *  - Font stack consolidated (cursive/lato/courier mix replaced with one
+ *    sans-serif for structure, monospace kept only for the numeric score grid).
+ *  - Colors: unchanged — already pulled from settings, not hardcoded.
  */
 
 import React, { useMemo, useEffect, useState } from 'react';
@@ -40,6 +57,18 @@ function hex(v: string, fallback: string): string {
   return v && v.startsWith('#') ? v : fallback;
 }
 
+// Derives a translucent tint of a settings color for chips/borders —
+// keeps the legend/chip redesign fully dynamic, never a hardcoded brand color.
+function hexToRgba(hexColor: string, alpha: number): string {
+  const clean = (hexColor || '').replace('#', '');
+  const full = clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean;
+  const r = parseInt(full.substring(0, 2), 16);
+  const g = parseInt(full.substring(2, 4), 16);
+  const b = parseInt(full.substring(4, 6), 16);
+  if ([r, g, b].some(Number.isNaN)) return `rgba(44,95,141,${alpha})`;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function toTitleCase(str: string | null | undefined): string {
   if (!str) return '—';
   return str.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
@@ -49,6 +78,12 @@ function ensureAbsoluteUrl(url: string | null | undefined): string | undefined {
   if (!url) return undefined;
   if (url.startsWith('http')) return url;
   return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function roundOrDash(v: any): string {
+  if (v === undefined || v === null || v === '') return '—';
+  const n = Number(v);
+  return Number.isFinite(n) ? String(Math.round(n)) : String(v);
 }
 
 export default function DefaultCombinedTemplate({
@@ -130,9 +165,12 @@ export default function DefaultCombinedTemplate({
   };
 
   // ============================================================================
-  // TEXT LOGIC (Filter for `field_name` + Fetch Categories)
+  // TEXT LOGIC (Filter for `field_name` + Fetch Categories, scoped to the student's class)
   // ============================================================================
   const resolvedPeriodId = periodId ?? result?.academic_period ?? result?.academic_session_period ?? result?.period?.id ?? null;
+  // class_config_id is what the real API payload carries; current_class?.id kept as a fallback
+  // in case a different caller shapes the student object differently.
+  const resolvedClassId  = student.class_config_id ?? student.current_class?.id ?? null;
   const [activeCategories, setActiveCategories] = useState<any[] | null>(null);
 
   useEffect(() => {
@@ -142,6 +180,7 @@ export default function DefaultCombinedTemplate({
     let cancelled = false;
     import('@/lib/api').then(({ textCategoriesAPI }) => {
        const params: any = { academic_period: resolvedPeriodId };
+       if (resolvedClassId) params.student_class = resolvedClassId;
        textCategoriesAPI.list(params).then(res => {
          if (cancelled) return;
          const data = (res as any)?.results || res || [];
@@ -150,7 +189,21 @@ export default function DefaultCombinedTemplate({
     }).catch(err => console.error(err));
 
     return () => { cancelled = true; };
-  }, [isPreview, resolvedPeriodId]);
+  }, [isPreview, resolvedPeriodId, resolvedClassId]);
+
+  // Defensive de-dupe by category name — a safety net on top of the backend's
+  // class filter, in case two categories ever share a name (see e.g. the
+  // "Expressive Arts And Design/story Telling" vs ".../ Storytelling" case).
+  const topicsForDisplay = useMemo(() => {
+    if (!activeCategories) return [];
+    const seen = new Set<string>();
+    return activeCategories.filter((c: any) => {
+      const key = (c.name || '').trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [activeCategories]);
 
   const groupedCategories = useMemo(() => {
     if (activeCategories === null) return [];
@@ -187,85 +240,144 @@ export default function DefaultCombinedTemplate({
   const vendorSite  = school.vendor_website || 'https://balabalutech.com';
   const vendorPhone = school.vendor_phone   || '08163550192';
 
-  // ── Exact Styles ──
+  // ── Styles ──
+  const baseFont    = "'Segoe UI', Arial, Helvetica, sans-serif";
+  const numericFont = "'Courier New', Courier, monospace";
+
   const cellStyle: React.CSSProperties = {
     border: '1px solid black',
     paddingLeft: '5px',
     textAlign: 'center',
-    fontFamily: 'courier, monospace',
+    fontFamily: numericFont,
     fontSize: '12px',
     fontWeight: 'bolder'
   };
 
+  // Lighter, non-tabular style for the compact student-info strip — no longer
+  // borrows the heavy bordered/courier score-table styling.
+  const infoCellStyle: React.CSSProperties = {
+    border: `1px solid ${hexToRgba(headerColor, 0.25)}`,
+    padding: '6px 10px',
+    fontFamily: baseFont,
+    fontSize: '13px',
+    textAlign: 'left',
+    verticalAlign: 'middle',
+  };
+  const infoLabelStyle: React.CSSProperties = {
+    display: 'block',
+    fontSize: '9px',
+    letterSpacing: '0.5px',
+    color: 'rgba(0,0,0,0.55)',
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    marginBottom: '1px',
+  };
+
+  // Keeps a block from being sliced in half across a page break on print.
+  const avoidBreak: React.CSSProperties = { breakInside: 'avoid', pageBreakInside: 'avoid' };
+
   return (
     <div style={{
       width: '210mm', minHeight: '297mm', backgroundColor: '#fff',
-      margin: '0 auto', padding: '20px', boxSizing: 'border-box',
+      margin: '0 auto', padding: '14px', boxSizing: 'border-box', fontFamily: baseFont,
     }}>
-      <div style={{ backgroundColor: 'white', border: '2px solid black', fontFamily: 'lato, courier, cursive' }}>
+      {/* Print rules baked into the page itself so output no longer depends on
+          each staff member's own browser print-dialog margin settings. */}
+      <style>{`
+        @page { size: A4; margin: 8mm; }
+        @media print {
+          html, body { margin: 0 !important; padding: 0 !important; }
+          .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+        }
+      `}</style>
+
+      <div style={{ backgroundColor: 'white', border: '2px solid black', fontFamily: baseFont }}>
 
         {/* ══ HEADER ══ */}
-        <div style={{ backgroundColor: headerColor, color: 'white', fontFamily: 'cursive', border: '1px solid black', borderBottom: '1px solid black', height: '135px', display: 'flex' }}>
+        {/* minHeight (not a fixed height) — a long address/motto can now grow
+            the box instead of overflowing into the subtitle bar below it. */}
+        <div className="avoid-break" style={{ ...avoidBreak, backgroundColor: headerColor, color: 'white', border: '1px solid black', borderBottom: '1px solid black', minHeight: '135px', display: 'flex', alignItems: 'stretch' }}>
           <div style={{ width: '16.66%' }}>
-            <img src={ensureAbsoluteUrl(student.image) || '/default_image.jpg'} alt="Student" style={{ width: '100%', height: '133px', borderRadius: '0px', objectFit: 'cover' }} />
+            <img src={ensureAbsoluteUrl(student.image) || '/default_image.jpg'} alt="Student" style={{ width: '100%', height: '100%', minHeight: '133px', objectFit: 'cover', display: 'block' }} />
           </div>
           <div style={{ width: '66.66%', padding: '15px', color: 'white', textAlign: 'center' }}>
-            <h4 style={{ fontFamily: 'serif', fontWeight: 'bold', margin: 0, fontSize: '20px' }}>{school.name?.toUpperCase()}</h4>
-            <h6 style={{ fontSize: '14px', marginTop: '10px', fontWeight: 'bold', margin: '10px 0 5px 0' }}>...{toTitleCase(school.motto)}</h6>
-            <h6 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>{toTitleCase(school.address)}</h6>
-            <p style={{ margin: 0, fontSize: '15px' }}>{school.mobile_1} | {school.email?.toLowerCase()} | {school.website}</p>
+            <h4 style={{ fontFamily: 'Georgia, serif', fontWeight: 'bold', margin: 0, fontSize: '20px' }}>{school.name?.toUpperCase()}</h4>
+            <h6 style={{ fontSize: '13px', marginTop: '10px', fontWeight: 'bold', margin: '10px 0 5px 0' }}>...{toTitleCase(school.motto)}</h6>
+            <h6 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 'normal' }}>{toTitleCase(school.address)}</h6>
+            <p style={{ margin: 0, fontSize: '13px' }}>{school.mobile_1} | {school.email?.toLowerCase()} | {school.website}</p>
           </div>
           <div style={{ width: '16.66%' }}>
-            <img src={ensureAbsoluteUrl(school.logo)} alt="Logo" style={{ width: '100%', height: '133px', borderRadius: '0px', objectFit: 'cover' }} />
+            <img src={ensureAbsoluteUrl(school.logo)} alt="Logo" style={{ width: '100%', height: '100%', minHeight: '133px', objectFit: 'cover', display: 'block' }} />
           </div>
         </div>
 
         {/* ══ SUBTITLE ══ */}
-        <div style={{ backgroundColor: headerColor, color: 'white', height: '22px', borderBottom: '2px solid black', borderTop: '0px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ backgroundColor: headerColor, color: 'white', minHeight: '22px', borderBottom: '2px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3px 0' }}>
           <p style={{ fontWeight: 'bold', margin: 0, fontSize: '14px' }}>
             Student Report Card For {termType === 'midterm' ? 'Mid ' : ''}{toTitleCase(periodName)} {toTitleCase(sessionName)} Session
           </p>
         </div>
 
-        {/* ══ STUDENT INFO ══ */}
-        <div style={{ color: 'black', borderBottom: '2px solid black', borderTop: '0px solid black', padding: '1px' }}>
-          <table style={{ width: '100%', color: 'black', fontSize: '15px', borderCollapse: 'collapse' }}>
+        {/* ══ STUDENT INFO — compact 3x3 grid. Date of Birth removed; Resumption
+            Date kept (still renders "—" when unset). ══ */}
+        <div className="avoid-break" style={{ ...avoidBreak, backgroundColor: secondaryColor, borderBottom: '2px solid black', padding: '6px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>
               <tr>
-                <th style={{ ...cellStyle, textAlign: 'left' }}>PUPIL’S NAME: {toTitleCase(studentName)}</th>
-                <th style={{ ...cellStyle, textAlign: 'left' }}>ADM NO.: {student.registration_number?.toUpperCase()}</th>
-                <th style={{ ...cellStyle, textAlign: 'left' }}>NO. OF TIMES<br />SCHOOL OPENED: {attendance.total}</th>
-                <th style={{ ...cellStyle, textAlign: 'left' }}>CUM. TOTAL: {totalScore}</th>
+                <td style={{ ...infoCellStyle, width: '40%' }}>
+                  <span style={infoLabelStyle}>Pupil's Name</span>{toTitleCase(studentName)}
+                </td>
+                <td style={infoCellStyle}>
+                  <span style={infoLabelStyle}>Adm No.</span>{student.registration_number?.toUpperCase()}
+                </td>
+                <td style={infoCellStyle}>
+                  <span style={infoLabelStyle}>Class</span>{className.toUpperCase()}
+                </td>
               </tr>
               <tr>
-                <th style={{ ...cellStyle, textAlign: 'left' }}>DATE OF BIRTH: {student.date_of_birth || ''}</th>
-                <th style={{ ...cellStyle, textAlign: 'left' }}>CLASS: {className.toUpperCase()}</th>
-                <th style={{ ...cellStyle, textAlign: 'left' }}>NO. OF TIMES PRESENT: {attendance.present}</th>
-                <th style={{ ...cellStyle, textAlign: 'left' }}>CUM. AVERAGE: {studentAverage}</th>
+                <td style={infoCellStyle}>
+                  <span style={infoLabelStyle}>No. Of Times School Opened</span>{attendance.total || '—'}
+                </td>
+                <td style={infoCellStyle}>
+                  <span style={infoLabelStyle}>No. Of Times Present</span>{attendance.present || '—'}
+                </td>
+                <td style={infoCellStyle}>
+                  <span style={infoLabelStyle}>Sex</span>{toTitleCase(student.gender)}
+                </td>
               </tr>
               <tr>
-                <th style={{ ...cellStyle, textAlign: 'left' }}>SEX: {toTitleCase(student.gender)}</th>
-                <th colSpan={3} style={{ ...cellStyle, textAlign: 'left' }}>RESUMPTION DATE: {result.resumption_date || ''}</th>
+                <td style={infoCellStyle}>
+                  <span style={infoLabelStyle}>Cum. Total</span>{roundOrDash(totalScore)}
+                </td>
+                <td style={infoCellStyle}>
+                  <span style={infoLabelStyle}>Cum. Average</span>{roundOrDash(studentAverage)}
+                </td>
+                <td style={infoCellStyle}>
+                  <span style={infoLabelStyle}>Resumption Date</span>{result.resumption_date || '—'}
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
 
         {/* ══ TOPICS COVERED ══ */}
-        {activeCategories && activeCategories.length > 0 && (
-          <div style={{ color: 'black', borderBottom: '1px solid black', borderTop: '0px solid black', padding: '15px' }}>
+        {/* activeCategories is now fetched scoped to the student's class
+            (resolvedClassId → student_class param); topicsForDisplay adds a
+            name-based de-dupe on top as a display-layer safety net. */}
+        {topicsForDisplay.length > 0 && (
+          <div style={{ color: 'black', borderBottom: '1px solid black', padding: '15px' }}>
             <div style={{ padding: '1px' }}>
               <p style={{ color: primaryColor, textAlign: 'center', fontWeight: 'bold', margin: '0 0 10px 0', fontSize: '16px' }}>
                 TOPICS COVERED THIS TERM IN THE AREAS OF LEARNING
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', margin: '0 -5px' }}>
-                {activeCategories.map((category: any, idx: number) => (
-                  <div key={idx} style={{ width: '50%', padding: '0 5px', boxSizing: 'border-box', marginBottom: '10px' }}>
+                {topicsForDisplay.map((category: any, idx: number) => (
+                  <div key={idx} className="avoid-break" style={{ ...avoidBreak, width: '50%', padding: '0 5px', boxSizing: 'border-box', marginBottom: '10px' }}>
                     <div style={{ border: '1px solid black', height: '100%', padding: '10px' }}>
-                      <h4 style={{ color: primaryColor, fontSize: '16px', textAlign: 'center', fontWeight: 'bold', margin: '0 0 5px 0' }}>
+                      <h4 style={{ color: primaryColor, fontSize: '15px', textAlign: 'center', fontWeight: 'bold', margin: '0 0 5px 0' }}>
                         {category.name?.toUpperCase()}
                       </h4>
-                      <p style={{ fontSize: '14px', color: 'black', fontFamily: 'sans-serif', margin: 0 }}>
+                      <p style={{ fontSize: '13px', color: 'black', margin: 0 }}>
                         {category.description || ''}
                       </p>
                     </div>
@@ -282,19 +394,19 @@ export default function DefaultCombinedTemplate({
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead style={{ backgroundColor: secondaryColor }}>
                 <tr>
-                  <th rowSpan={2} style={{ ...cellStyle, width: '150px' }}>AREAS OF LEARNING</th>
-                  <th rowSpan={2} style={{ ...cellStyle, width: '200px' }}>ASPECT</th>
-                  <th colSpan={3} style={cellStyle}>PUPIL'S ACHIEVEMENT</th>
+                  <th rowSpan={2} style={{ ...cellStyle, fontFamily: baseFont, width: '150px' }}>AREAS OF LEARNING</th>
+                  <th rowSpan={2} style={{ ...cellStyle, fontFamily: baseFont, width: '200px' }}>ASPECT</th>
+                  <th colSpan={3} style={{ ...cellStyle, fontFamily: baseFont }}>PUPIL'S ACHIEVEMENT</th>
                 </tr>
                 <tr>
-                  <th style={cellStyle}>Comment</th>
-                  <th style={{ ...cellStyle, width: '150px' }}>Rating</th>
+                  <th style={{ ...cellStyle, fontFamily: baseFont }}>Comment</th>
+                  <th style={{ ...cellStyle, fontFamily: baseFont, width: '150px' }}>Rating</th>
                 </tr>
               </thead>
               <tbody>
                 {groupedCategories.map((cat: any, catIndex: number) => (
-                  <tr key={catIndex} style={{ border: '1px solid black' }}>
-                    <th style={{ ...cellStyle, backgroundColor: headerColor, color: '#fff', fontWeight: 'bold', fontSize: '20px' }}>
+                  <tr key={catIndex} className="avoid-break" style={{ ...avoidBreak, border: '1px solid black' }}>
+                    <th style={{ ...cellStyle, fontFamily: baseFont, backgroundColor: headerColor, color: '#fff', fontWeight: 'bold', fontSize: '18px' }}>
                       {toTitleCase(cat.name)}
                     </th>
                     <th colSpan={3} style={{ padding: '0px', border: 'none' }}>
@@ -302,13 +414,13 @@ export default function DefaultCombinedTemplate({
                         <tbody>
                           {cat.fields.map((field: any, fieldIndex: number) => (
                             <tr key={fieldIndex}>
-                              <td style={{ ...cellStyle, width: '200px', textAlign: 'left', borderTop: fieldIndex === 0 ? 'none' : '1px solid black', borderBottom: 'none', borderLeft: 'none' }}>
+                              <td style={{ ...cellStyle, fontFamily: baseFont, width: '200px', textAlign: 'left', borderTop: fieldIndex === 0 ? 'none' : '1px solid black', borderBottom: 'none', borderLeft: 'none' }}>
                                 {toTitleCase(field.field_name)}
                               </td>
-                              <td style={{ ...cellStyle, textAlign: 'left', borderTop: fieldIndex === 0 ? 'none' : '1px solid black', borderBottom: 'none' }}>
+                              <td style={{ ...cellStyle, fontFamily: baseFont, textAlign: 'left', borderTop: fieldIndex === 0 ? 'none' : '1px solid black', borderBottom: 'none' }}>
                                 {field.comment ? field.comment : <span style={{ color: 'transparent' }}>.</span>}
                               </td>
-                              <td style={{ ...cellStyle, width: '150px', textAlign: 'left', borderTop: fieldIndex === 0 ? 'none' : '1px solid black', borderBottom: 'none', borderRight: 'none' }}>
+                              <td style={{ ...cellStyle, fontFamily: baseFont, width: '150px', textAlign: 'left', borderTop: fieldIndex === 0 ? 'none' : '1px solid black', borderBottom: 'none', borderRight: 'none' }}>
                                 {field.rating ? field.rating.toUpperCase() : <span style={{ color: 'transparent' }}>.</span>}
                               </td>
                             </tr>
@@ -323,24 +435,27 @@ export default function DefaultCombinedTemplate({
           </div>
         )}
 
-        {/* ══ TEXT KEY ══ */}
+        {/* ══ TEXT KEY — now a compact, content-width block instead of a
+            full-width table (item 4: it no longer stretches to fill the page) ══ */}
         {groupedCategories.length > 0 && backendRatingOptions.length > 0 && (
-          <div style={{ padding: '8px' }}>
-            <h3 style={{ color: primaryColor, fontSize: '18px', margin: '0 0 10px 0', fontWeight: 'bold' }}>KEY</h3>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <tbody>
-                {backendRatingOptions.map((opt: any, idx: number) => (
-                  <tr key={idx}>
-                    <td style={{ ...cellStyle, width: '150px', backgroundColor: headerColor, color: '#fff', fontWeight: 'bold' }}>
-                      {opt.label?.toUpperCase()}
-                    </td>
-                    <td style={{ ...cellStyle, textAlign: 'left' }}>
-                      {opt.description || opt.remark || opt.label}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ padding: '8px', display: 'flex', justifyContent: 'flex-start' }}>
+            <div style={{ maxWidth: '340px', width: '100%' }}>
+              <h3 style={{ color: primaryColor, fontSize: '14px', margin: '0 0 6px 0', fontWeight: 'bold' }}>KEY</h3>
+              <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                <tbody>
+                  {backendRatingOptions.map((opt: any, idx: number) => (
+                    <tr key={idx}>
+                      <td style={{ ...cellStyle, fontFamily: baseFont, width: '120px', backgroundColor: headerColor, color: '#fff', fontWeight: 'bold', fontSize: '11px' }}>
+                        {opt.label?.toUpperCase()}
+                      </td>
+                      <td style={{ ...cellStyle, fontFamily: baseFont, textAlign: 'left', fontSize: '11px', fontWeight: 'normal' }}>
+                        {opt.description || opt.remark || opt.label}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -350,16 +465,16 @@ export default function DefaultCombinedTemplate({
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ height: '20px', backgroundColor: headerColor, color: 'white' }}>
-                  <th rowSpan={2} style={{ ...cellStyle, verticalAlign: 'middle', textAlign: 'left', paddingLeft: '10px', fontSize: '16px', minWidth: '200px', width: '150px' }}>Subjects</th>
+                  <th rowSpan={2} style={{ ...cellStyle, fontFamily: baseFont, verticalAlign: 'middle', textAlign: 'left', paddingLeft: '10px', fontSize: '16px', minWidth: '200px', width: '150px' }}>Subjects</th>
                   {scoreCols.map((col: any) => (
-                    <th key={col.id} style={cellStyle}>{toTitleCase(col.name)}</th>
+                    <th key={col.id} style={{ ...cellStyle, fontFamily: baseFont }}>{toTitleCase(col.name)}</th>
                   ))}
-                  <th style={{ ...cellStyle, width: '60px' }}>Total Score</th>
-                  <th style={{ ...cellStyle, width: '60px' }}>Highest Score</th>
-                  <th style={{ ...cellStyle, width: '60px' }}>Lowest Score</th>
-                  <th style={{ ...cellStyle, width: '60px' }}>Average Score</th>
-                  <th rowSpan={2} style={{ ...cellStyle, width: '60px', verticalAlign: 'middle' }}>Grade</th>
-                  <th rowSpan={2} style={{ ...cellStyle, width: '100px', verticalAlign: 'middle' }}>Remark</th>
+                  <th style={{ ...cellStyle, fontFamily: baseFont, width: '60px' }}>Total Score</th>
+                  <th style={{ ...cellStyle, fontFamily: baseFont, width: '60px' }}>Highest Score</th>
+                  <th style={{ ...cellStyle, fontFamily: baseFont, width: '60px' }}>Lowest Score</th>
+                  <th style={{ ...cellStyle, fontFamily: baseFont, width: '60px' }}>Average Score</th>
+                  <th rowSpan={2} style={{ ...cellStyle, fontFamily: baseFont, width: '60px', verticalAlign: 'middle' }}>Grade</th>
+                  <th rowSpan={2} style={{ ...cellStyle, fontFamily: baseFont, width: '100px', verticalAlign: 'middle' }}>Remark</th>
                 </tr>
                 <tr style={{ backgroundColor: headerColor, color: 'white' }}>
                   {scoreCols.map((col: any) => (
@@ -373,8 +488,8 @@ export default function DefaultCombinedTemplate({
               </thead>
               <tbody>
                 {subjectRows.map((sub: any, idx: number) => (
-                  <tr key={idx}>
-                    <td style={{ ...cellStyle, textAlign: 'left', fontFamily: 'courier' }}><b>{sub.name}</b></td>
+                  <tr key={idx} className="avoid-break" style={avoidBreak}>
+                    <td style={{ ...cellStyle, textAlign: 'left' }}><b>{sub.name}</b></td>
                     {scoreCols.map((col: any) => (
                       <td key={col.id} style={{ ...cellStyle, maxWidth: '150px' }}>{getScore(col.name, sub.scores)}</td>
                     ))}
@@ -394,19 +509,19 @@ export default function DefaultCombinedTemplate({
         {/* ══ BEHAVIOUR ══ */}
         {bCats.length > 0 && (
           <div style={{ padding: '4px' }}>
-            <div style={{ backgroundColor: headerColor, color: 'white', height: '20px', border: '1px solid black' }}>
-              <p style={{ textAlign: 'center', fontSize: '14px', fontFamily: 'Arial', fontWeight: 'bold', margin: 0 }}>
+            <div style={{ backgroundColor: headerColor, color: 'white', minHeight: '20px', border: '1px solid black' }}>
+              <p style={{ textAlign: 'center', fontSize: '14px', fontFamily: baseFont, fontWeight: 'bold', margin: 0, padding: '2px 0' }}>
                 Affective and Psychomotor Observation (Behavioural & Physical Abilities)
               </p>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap' }}>
               {bCats.map((cat: any, idx: number) => (
-                <div key={idx} style={{ width: bCats.length === 1 ? '100%' : (bCats.length === 2 ? '50%' : '33.333%') }}>
+                <div key={idx} className="avoid-break" style={{ ...avoidBreak, width: bCats.length === 1 ? '100%' : (bCats.length === 2 ? '50%' : '33.333%') }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ backgroundColor: headerColor, color: 'white', height: '20px' }}>
-                        <th style={{ ...cellStyle, textAlign: 'left', paddingLeft: '5px' }}>{cat.name?.toUpperCase()}</th>
-                        <th style={cellStyle}>Score</th>
+                        <th style={{ ...cellStyle, fontFamily: baseFont, textAlign: 'left', paddingLeft: '5px' }}>{cat.name?.toUpperCase()}</th>
+                        <th style={{ ...cellStyle, fontFamily: baseFont }}>Score</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -415,7 +530,7 @@ export default function DefaultCombinedTemplate({
                         const score = item.score ?? bRatings[itemName] ?? bRatings[itemName?.toLowerCase?.()] ?? '';
                         return (
                           <tr key={iIdx}>
-                            <td style={{ ...cellStyle, textAlign: 'left', fontWeight: 'bold', fontSize: '12px', padding: '0px 5px' }}>{toTitleCase(itemName)}</td>
+                            <td style={{ ...cellStyle, fontFamily: baseFont, textAlign: 'left', fontWeight: 'bold', fontSize: '12px', padding: '0px 5px' }}>{toTitleCase(itemName)}</td>
                             <td style={cellStyle}>{score}</td>
                           </tr>
                         );
@@ -428,32 +543,66 @@ export default function DefaultCombinedTemplate({
           </div>
         )}
 
-        {/* ══ GRADING KEY ══ */}
+        {/* ══ RATING / GRADING LEGEND — redesigned as chips instead of a
+            single dull line of grey text ══ */}
         {(bCats.length > 0 || subjectRows.length > 0) && (
-          <div style={{ color: 'grey', border: '1px solid black', padding: '0px', minHeight: '45px', margin: '4px' }}>
-            {bCats.length > 0 && (
-              <>
-                <p style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '14px', margin: '5px 0' }}>
-                  Rating: 5 - Excellent Trait, 4 Good Trait, 3 Fair Trait, 1 - No Trait
-                </p>
-                <hr style={{ marginTop: '-5px', marginBottom: '0px', borderTop: '1px solid grey' }} />
-              </>
-            )}
-            {subjectRows.length > 0 && (
-              <p style={{ textAlign: 'center', padding: '0px', margin: '5px 0', fontSize: '12px', fontFamily: 'Arial' }}>
-                Grading: {(termType === 'midterm' ? midGrades : grades).map((g: any, idx: number) => (
-                  <span key={idx}>
-                    {Math.round(g.min_score || g.end_of_term_min_mark || g.midterm_min_mark || 0)} - {Math.round(g.max_score || g.end_of_term_max_mark || g.midterm_max_mark || 0)} = {toTitleCase(g.remark || g.end_of_term_remark || g.midterm_remark)}
-                    {idx < (termType === 'midterm' ? midGrades : grades).length - 1 ? ' | ' : ''}
-                  </span>
-                ))}
-              </p>
-            )}
+          <div className="avoid-break" style={{ ...avoidBreak, border: '1px solid black', margin: '4px', padding: '8px 10px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
+
+              {bCats.length > 0 && (
+                <div style={{ flex: '1 1 220px' }}>
+                  <p style={{ fontWeight: 'bold', fontSize: '11px', margin: '0 0 6px 0', color: primaryColor, textTransform: 'uppercase' }}>Behaviour Rating</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {[
+                      { n: 5, label: 'Excellent' },
+                      { n: 4, label: 'Good' },
+                      { n: 3, label: 'Fair' },
+                      { n: 1, label: 'No Trait' },
+                    ].map((r) => (
+                      <span key={r.n} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        border: `1px solid ${hexToRgba(primaryColor, 0.35)}`,
+                        borderRadius: '999px', padding: '2px 8px', fontSize: '10px', fontFamily: baseFont,
+                      }}>
+                        <span style={{
+                          width: '14px', height: '14px', borderRadius: '50%',
+                          backgroundColor: hexToRgba(primaryColor, 0.15 + r.n * 0.12),
+                          color: primaryColor, fontWeight: 'bold', fontSize: '9px',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        }}>{r.n}</span>
+                        {r.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {subjectRows.length > 0 && (
+                <div style={{ flex: '1 1 320px' }}>
+                  <p style={{ fontWeight: 'bold', fontSize: '11px', margin: '0 0 6px 0', color: primaryColor, textTransform: 'uppercase' }}>Grading Scale</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {(termType === 'midterm' ? midGrades : grades).map((g: any, idx: number) => (
+                      <span key={idx} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        border: `1px solid ${hexToRgba(primaryColor, 0.35)}`,
+                        borderRadius: '4px', padding: '2px 8px', fontSize: '10px', fontFamily: baseFont,
+                      }}>
+                        <b style={{ color: primaryColor }}>
+                          {Math.round(g.min_score || g.end_of_term_min_mark || g.midterm_min_mark || 0)}–{Math.round(g.max_score || g.end_of_term_max_mark || g.midterm_max_mark || 0)}
+                        </b>
+                        {toTitleCase(g.remark || g.end_of_term_remark || g.midterm_remark)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            </div>
           </div>
         )}
 
         {/* ══ REMARKS & COMMENTS ══ */}
-        <div style={{ color: 'black', borderBottom: '2px solid black', borderTop: '0px solid black', padding: '1px', fontFamily: 'lato, courier, cursive' }}>
+        <div className="avoid-break" style={{ ...avoidBreak, color: 'black', borderBottom: '2px solid black', padding: '1px', fontFamily: baseFont }}>
           <div style={{ border: '1px solid black', borderRadius: '3px', paddingLeft: '5px', paddingBottom: '0px' }}>
 
             {settings.custom_comment_fields?.map((customField: string, idx: number) => (
