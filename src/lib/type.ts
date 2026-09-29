@@ -23,9 +23,22 @@ export interface User {
     position?: string | null;
     leadership_role?: string | null;
     wallet_balance?: string | number | null;
+    // Student fields
+    registration_number?: string;
+    current_class?: string | null;
+    // Parent fields
+    parent_id?: string;
     // Shared fields
     image?: string | null;
     title?: string | null;
+    // Student-only: parent credential block for the "log in via parent" page
+    parent?: {
+      id: number;
+      parent_id: string;
+      full_name: string;
+      username: string | null;
+      default_password: string | null;
+    } | null;
   };
 }
 
