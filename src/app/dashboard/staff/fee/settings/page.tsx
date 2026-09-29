@@ -25,6 +25,7 @@ import {
   CheckCircle,
   Shield,
   Mail,
+  RotateCcw,
 } from 'lucide-react';
 
 // ─── Interfaces & Defaults ─────────────────────────────────────────────────────
@@ -49,6 +50,7 @@ const DEFAULT_FORM: FeeSetting = {
   enable_auto_reminder: true,
   reminder_start_days_after_invoice: 7,
   reminder_interval_days: 5,
+  reversal_window_hours: 24,
   send_payment_receipt_email: true,
   send_invoice_whatsapp: true,
   whatsapp_bot_enabled: true,
@@ -202,6 +204,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, gateways, isSav
                 <label className={labelCls}>Invoice Due Days</label>
                 <input type="number" min="0" value={form.invoice_due_days_after_period_start} onChange={e => set('invoice_due_days_after_period_start', parseInt(e.target.value) || 0)} className={inputCls} />
                 <p className="text-xs text-slate-500 mt-1.5 font-medium">Number of days after the academic term's resumption date that invoices become officially overdue.</p>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100">
+                <label className={labelCls}>Reversal Window (Hours)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.reversal_window_hours}
+                  onChange={e => set('reversal_window_hours', parseInt(e.target.value) || 0)}
+                  className={inputCls}
+                />
+                <p className="text-xs text-slate-500 mt-1.5 font-medium">
+                  Hours after a payment is confirmed during which staff can still revert it. Set to <span className="font-bold">0</span> to allow reversals indefinitely.
+                </p>
               </div>
             </div>
           )}
@@ -477,6 +493,17 @@ export default function FeeSettingsPage() {
             <SettingRow icon={FileText} iconBg="bg-emerald-50 text-emerald-600" label="Auto-Generation" description="Create invoices when students enroll" value={<StatusBadge value={settings.auto_generate_invoice_on_enrollment} />} />
             <SettingRow icon={FileText} iconBg="bg-slate-50 text-slate-600" label="Partial Payments" description="Allow invoices to be paid in installments" value={<StatusBadge value={settings.allow_partial_payments} />} />
             <SettingRow icon={Clock} iconBg="bg-amber-50 text-amber-600" label="Invoice Grace Period" description="Days until invoices are marked overdue" value={<span className="font-mono font-bold text-xs text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">{settings.invoice_due_days_after_period_start} days</span>} />
+            <SettingRow
+              icon={RotateCcw}
+              iconBg="bg-rose-50 text-rose-600"
+              label="Reversal Window"
+              description="Hours staff can revert a confirmed payment (0 = unlimited)"
+              value={
+                <span className="font-mono font-bold text-xs text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+                  {settings.reversal_window_hours === 0 ? 'Unlimited' : `${settings.reversal_window_hours} hrs`}
+                </span>
+              }
+            />
             <SettingRow icon={Bell} iconBg="bg-blue-50 text-blue-600" label="Auto Reminders" description="Dispatch automated late fee emails" value={<StatusBadge value={settings.enable_auto_reminder} />} />
             <SettingRow icon={CalendarClock} iconBg="bg-indigo-50 text-indigo-600" label="Reminder Schedule" description="When to send the first and subsequent emails" value={
               <span className="font-mono font-bold text-xs text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">Start: Day {settings.reminder_start_days_after_invoice} | Rep: {settings.reminder_interval_days}d</span>

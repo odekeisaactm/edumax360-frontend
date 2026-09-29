@@ -414,6 +414,7 @@ export interface FeeSetting {
   enable_auto_reminder: boolean;
   reminder_start_days_after_invoice: number;
   reminder_interval_days: number;
+  reversal_window_hours: number;
   send_payment_receipt_email: boolean;
   send_invoice_whatsapp: boolean;
   whatsapp_bot_enabled: boolean;

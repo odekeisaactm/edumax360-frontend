@@ -525,7 +525,7 @@ export default function POSPage() {
             name: data.student.name,
             identifier: data.student.reg_number,
             display_class: `${data.student.student_class} ${data.student.class_section}`.trim(),
-            wallet_balance: parseFloat(data.student.wallet_balance) || 0,
+            wallet_balance: parseFloat(data.student.canteen_balance) || 0,
             image_url: data.student.image_url,
           });
 
