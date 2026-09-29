@@ -1,12 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { StaffSidebar } from '@/components/layout/StaffSidebar';
 import { StudentSidebar } from '@/components/layout/StudentSidebar';
 import { ParentSidebar } from '@/components/layout/ParentSidebar';
 import { Header } from '@/components/layout/Header';
+
+// Routes under /dashboard that render WITHOUT the sidebar + header chrome.
+// The page itself is responsible for its own auth gate and layout.
+const BARE_ROUTES = ['/dashboard/student'];
 
 export default function DashboardLayout({
   children,
@@ -15,10 +19,14 @@ export default function DashboardLayout({
 }) {
   const { user, loading, authReady } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const isBareRoute = BARE_ROUTES.some(
+    (r) => pathname === r || pathname.startsWith(r + '/')
+  );
+
   // Auth has finished initializing and there's no user — send them to login.
-  // Without this, an unauthenticated visit just spins here forever.
   useEffect(() => {
     if (authReady && !loading && !user) {
       router.replace('/login');
@@ -31,6 +39,11 @@ export default function DashboardLayout({
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
     );
+  }
+
+  // Bare route — render children alone, no sidebar, no header, no padding.
+  if (isBareRoute) {
+    return <>{children}</>;
   }
 
   const renderSidebar = () => {
