@@ -2,20 +2,21 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { feeAPI, academicCalendarAPI, academicAPI, api } from '@/lib/api';
+import { feeAPI, academicCalendarAPI, academicAPI, schoolInfoAPI, api } from '@/lib/api';
 import { Session, AcademicSessionPeriod, ClassModel } from '@/lib/types';
 import { getApiUrl } from '@/lib/getApiUrl';
 import {
   Filter, Loader2, BarChart2, PieChart,
-  TrendingUp, Clock, FileText, CheckCircle, AlertTriangle, X,
-  Download, FileSpreadsheet, Printer
+  TrendingUp, Layers, FileText, CheckCircle, AlertTriangle, X,
+  FileSpreadsheet, Printer, Users
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import PrintLetterhead from './PrintLetterhead';
 
 // ─── Dynamic Tab Imports ──────────────────────────────────────────────────────
 const CollectionsTab = dynamic(() => import('./tabs/CollectionsTab'), { loading: () => <TabSkeleton /> });
 const TrendsTab = dynamic(() => import('./tabs/TrendsTab'), { loading: () => <TabSkeleton /> });
-const AgingTab = dynamic(() => import('./tabs/AgingTab'), { loading: () => <TabSkeleton /> });
+const FeeBreakdownTab = dynamic(() => import('./tabs/FeeBreakdownTab'), { loading: () => <TabSkeleton /> });
 const ClassPerformanceTab = dynamic(() => import('./tabs/ClassPerformanceTab'), { loading: () => <TabSkeleton /> });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -31,9 +32,17 @@ function extractError(err: any): string {
   return err?.message || 'An unexpected error occurred.';
 }
 
+function cleanParams(p: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  Object.entries(p).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '' && v !== false) out[k] = v;
+  });
+  return out;
+}
+
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
-    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none print:hidden">
       {toasts.map(t => (
         <div key={t.id} className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border max-w-sm transition-all animate-in slide-in-from-right-4
           ${t.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
@@ -50,7 +59,32 @@ function TabSkeleton() {
   return <div className="h-96 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-indigo-200" /></div>;
 }
 
-type TabKey = 'collections' | 'trends' | 'performance' | 'aging';
+type TabKey = 'collections' | 'trends' | 'performance' | 'breakdown';
+type DebtType = 'all' | 'tuition_only' | 'ancillary_only';
+
+const REPORT_PATH: Record<TabKey, string> = {
+  collections: 'collections',
+  breakdown: 'fee-breakdown',
+  performance: 'class-performance',
+  trends: 'trends',
+};
+
+const BASE_TITLE: Record<TabKey, string> = {
+  collections: 'Collections & Clearance Report',
+  breakdown: 'Fee Breakdown Report',
+  performance: 'Class Performance Report',
+  trends: 'Payment Flow Trends',
+};
+
+const DEBT_LABEL: Record<DebtType, string> = {
+  all: 'Invoice + Ancillary Debt',
+  tuition_only: 'Invoice Only',
+  ancillary_only: 'Ancillary Debt Only',
+};
+
+// Every report response is stored with the tab (and group mode) it was
+// fetched for, so a tab can never render another tab's leftover shape.
+interface ReportState { tab: TabKey; groupBy: 'student' | 'parent'; body: any; }
 
 // ─── Main Parent Component ────────────────────────────────────────────────────
 export default function FeeReportsPage() {
@@ -71,6 +105,7 @@ export default function FeeReportsPage() {
   const [classes, setClasses] = useState<ClassModel[]>([]);
   const [sections, setSections] = useState<any[]>([]);
   const [feesList, setFeesList] = useState<any[]>([]);
+  const [schoolInfo, setSchoolInfo] = useState<any>(null);
 
   // ── "Super Filter" State ──
   const [filterSessionId, setFilterSessionId] = useState<string>('');
@@ -80,14 +115,16 @@ export default function FeeReportsPage() {
   const [filterSectionId, setFilterSectionId] = useState<string>('');
   const [specificFeeId, setSpecificFeeId] = useState<string>('');
 
-  const [debtType, setDebtType] = useState<'all' | 'tuition_only' | 'ancillary_only'>('all');
+  const [debtType, setDebtType] = useState<DebtType>('all');
   const [groupBy, setGroupBy] = useState<'student' | 'parent'>('student');
   const [thresholdPct, setThresholdPct] = useState<string>('');
+  const [includeWards, setIncludeWards] = useState<boolean>(false);
 
   // ── Tab Navigation & Report Data State ──
   const [activeTab, setActiveTab] = useState<TabKey>('collections');
   const [dataLoading, setDataLoading] = useState(false);
-  const [reportData, setReportData] = useState<any>(null);
+  const [report, setReport] = useState<ReportState | null>(null);
+  const [printedAt, setPrintedAt] = useState<string>(() => new Date().toLocaleString('en-GB'));
   const fetchRequestIdRef = useRef(0);
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -129,6 +166,23 @@ export default function FeeReportsPage() {
     init();
   }, [showToast]);
 
+  // School letterhead details for the printed report — fetched once.
+  useEffect(() => {
+    schoolInfoAPI.get().then(setSchoolInfo).catch(() => {});
+  }, []);
+
+  const logoUrl = useMemo(() => {
+    const p: string | undefined = schoolInfo?.logo;
+    if (!p) return undefined;
+    if (/^(https?:|data:|blob:)/.test(p)) return p;
+    return `${getApiUrl()}${p.startsWith('/') ? '' : '/'}${p}`;
+  }, [schoolInfo]);
+
+  // Warm the browser cache so the logo is ready the moment someone prints.
+  useEffect(() => {
+    if (logoUrl) { const img = new Image(); img.src = logoUrl; }
+  }, [logoUrl]);
+
   useEffect(() => {
     if (!loading && filterSessionId) {
       academicCalendarAPI.listSessionPeriods({ session_id: Number(filterSessionId) })
@@ -152,72 +206,72 @@ export default function FeeReportsPage() {
     }
   }, [specificFeeId, debtType]);
 
-  // ── FIX: reset reportData the INSTANT the tab changes, before the fetch
-  // fires. Without this, switching tabs briefly renders the previous
-  // tab's data through the new tab's template — harmless-looking NaNs in
-  // some cases, a hard crash in others (e.g. an object rendered where an
-  // array is expected). Every tab now always shows its own loading state
-  // instead of another tab's leftover shape. ──
+  // A family-bound fee (PTA, Yearbook...) has no per-student rows, so student
+  // grouping would come back empty — force the family rollup instead.
+  const selectedFee = useMemo(() => feesList.find(f => f.id?.toString() === specificFeeId), [feesList, specificFeeId]);
+  const feeIsFamilyBound = !!selectedFee?.parent_bound;
   useEffect(() => {
-    setReportData(null);
-  }, [activeTab]);
+    if (feeIsFamilyBound && groupBy !== 'parent') setGroupBy('parent');
+  }, [feeIsFamilyBound, groupBy]);
+
+  // ── One params builder shared by the fetch and the CSV export ──
+  const buildParams = useCallback((tab: TabKey): Record<string, any> => {
+    switch (tab) {
+      case 'collections':
+        return {
+          session_id: filterSessionId, period_id: filterPeriodId, cumulative: isCumulative,
+          class_id: filterClassId, section_id: filterSectionId, fee_id: specificFeeId,
+          debt_type: debtType, group_by: groupBy, threshold_pct: thresholdPct,
+          include_wards: groupBy === 'parent' && includeWards,
+        };
+      case 'breakdown':
+        return {
+          session_id: filterSessionId, period_id: filterPeriodId, cumulative: isCumulative,
+          class_id: filterClassId, section_id: filterSectionId, debt_type: debtType,
+        };
+      case 'performance':
+        return { session_id: filterSessionId, period_id: filterPeriodId, cumulative: isCumulative, debt_type: debtType };
+      case 'trends':
+      default:
+        return { session_id: filterSessionId, days: 30 };
+    }
+  }, [
+    filterSessionId, filterPeriodId, isCumulative, filterClassId, filterSectionId,
+    specificFeeId, debtType, groupBy, thresholdPct, includeWards,
+  ]);
 
   // ── Fetch Report Data ──
   const fetchReport = useCallback(async () => {
     if (!filterSessionId) return;
     const requestId = ++fetchRequestIdRef.current;
+    const tab = activeTab;
+    const gb = groupBy;
     setDataLoading(true);
 
     try {
-      let data = null;
-
-      if (activeTab === 'collections') {
-        const res = await feeAPI.getCollectionReport({
-          session_id: filterSessionId,
-          period_id: filterPeriodId,
-          cumulative: isCumulative,
-          class_id: filterClassId,
-          section_id: filterSectionId,
-          fee_id: specificFeeId,
-          debt_type: debtType,
-          group_by: groupBy,
-          threshold_pct: thresholdPct || undefined
-        });
-        data = res?.results ?? res;
-      } else if (activeTab === 'aging') {
-        data = await feeAPI.getAgingBuckets({ session_id: filterSessionId });
-      } else if (activeTab === 'trends') {
-        const res = await feeAPI.getPaymentTrends({ session_id: filterSessionId, days: 30 });
-        data = res?.results ?? res;
-      } else if (activeTab === 'performance') {
-        const res = await feeAPI.getClassPerformanceReport({
-          session_id: filterSessionId,
-          period_id: filterPeriodId,
-          cumulative: isCumulative,
-          debt_type: debtType,
-        });
-        data = res?.results ?? res;
-      }
-
+      const res = await api.get(`${getApiUrl()}/api/fee/reports/${REPORT_PATH[tab]}/`, {
+        params: cleanParams(buildParams(tab)),
+      });
       if (requestId !== fetchRequestIdRef.current) return;
-      setReportData(data);
-
+      setReport({ tab, groupBy: gb, body: res.data });
     } catch (err) {
       if (requestId !== fetchRequestIdRef.current) return;
       showToast('error', extractError(err));
     } finally {
       if (requestId === fetchRequestIdRef.current) setDataLoading(false);
     }
-  }, [
-    activeTab, filterSessionId, filterPeriodId, isCumulative, filterClassId,
-    filterSectionId, specificFeeId, debtType, groupBy, thresholdPct, showToast
-  ]);
+  }, [activeTab, groupBy, filterSessionId, buildParams, showToast]);
 
   useEffect(() => {
     if (!loading) fetchReport();
   }, [fetchReport, loading]);
 
-  // ── Dynamic title + export params, built from active filters ──
+  // Only ever hand a tab the response that was fetched for that tab.
+  const body = report && report.tab === activeTab ? report.body : null;
+  const rowList: any[] | null = body === null ? null : (Array.isArray(body?.results) ? body.results : []);
+  const dataGroupBy = report && report.tab === 'collections' ? report.groupBy : groupBy;
+
+  // ── Labels: filenames, print title, and the printed filter summary ──
   const filterLabels = useMemo(() => {
     const session = sessions.find(s => s.id.toString() === filterSessionId);
     const period = periods.find(p => p.id.toString() === filterPeriodId);
@@ -230,51 +284,51 @@ export default function FeeReportsPage() {
   }, [sessions, periods, classes, filterSessionId, filterPeriodId, filterClassId]);
 
   const reportTitle = useMemo(() => {
-    const base = activeTab === 'collections' ? 'Collections & Clearance Report'
-      : activeTab === 'performance' ? 'Class Performance Report'
-      : activeTab === 'trends' ? 'Payment Flow Trends'
-      : 'Aging / Overdue Analysis';
-    const parts = [base];
+    const parts = [BASE_TITLE[activeTab]];
     if (filterLabels.session_label) parts.push(filterLabels.session_label);
     if (filterLabels.period_label) parts.push(`${isCumulative ? 'From ' : ''}${filterLabels.period_label}`);
-    if (activeTab === 'collections' && filterLabels.class_label) parts.push(filterLabels.class_label);
-    if (activeTab === 'collections' && debtType !== 'all') parts.push(debtType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()));
+    if ((activeTab === 'collections' || activeTab === 'breakdown') && filterLabels.class_label) parts.push(filterLabels.class_label);
+    if ((activeTab === 'collections' || activeTab === 'breakdown') && debtType !== 'all') parts.push(debtType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()));
     if (activeTab === 'collections' && thresholdPct) parts.push(`Min ${thresholdPct}% Cleared`);
     return parts.join(' — ');
   }, [activeTab, filterLabels, isCumulative, debtType, thresholdPct]);
 
-  // ── CSV export: always the FULL filtered dataset, independent of any
-  // client-side pagination happening inside the tab. ──
-  const handleExportCsv = async () => {
-    if (activeTab === 'aging') return;
-    const endpointPath = activeTab === 'collections' ? 'collections'
-      : activeTab === 'performance' ? 'class-performance'
-      : 'trends';
+  const printFilters = useMemo(() => {
+    const f: string[] = [];
+    if (filterLabels.session_label) f.push(`Session ${filterLabels.session_label}`);
+    if (activeTab === 'trends') {
+      f.push('Last 30 days');
+      return f;
+    }
+    if (filterLabels.period_label) f.push(isCumulative ? `${filterLabels.period_label} and earlier terms` : filterLabels.period_label);
+    else f.push('All terms');
 
-    const params: Record<string, any> = {
-      session_id: filterSessionId,
+    if (activeTab === 'collections' || activeTab === 'breakdown') {
+      if (filterLabels.class_label) f.push(`Class: ${filterLabels.class_label}`);
+      const sec = sections.find(s => s.id?.toString() === filterSectionId);
+      if (sec) f.push(`Arm: ${sec.name}`);
+    }
+    if (activeTab === 'collections') {
+      if (selectedFee) f.push(`Fee: ${selectedFee.name}`);
+      f.push(`Grouped by ${groupBy === 'parent' ? 'parent' : 'student'}`);
+      if (thresholdPct) f.push(`Min ${thresholdPct}% cleared`);
+    }
+    if (debtType !== 'all') f.push(DEBT_LABEL[debtType]);
+    return f;
+  }, [activeTab, filterLabels, isCumulative, sections, filterSectionId, selectedFee, groupBy, thresholdPct, debtType]);
+
+  // ── CSV export: always the FULL filtered dataset ──
+  const handleExportCsv = async () => {
+    const params = cleanParams({
+      ...buildParams(activeTab),
       session_label: filterLabels.session_label,
       period_label: filterLabels.period_label,
       class_label: filterLabels.class_label,
-    };
-    if (activeTab === 'collections') {
-      Object.assign(params, {
-        period_id: filterPeriodId, cumulative: isCumulative, class_id: filterClassId,
-        section_id: filterSectionId, fee_id: specificFeeId, debt_type: debtType,
-        group_by: groupBy, threshold_pct: thresholdPct,
-      });
-    } else if (activeTab === 'performance') {
-      Object.assign(params, { period_id: filterPeriodId, cumulative: isCumulative, debt_type: debtType });
-    }
-    Object.keys(params).forEach(k => {
-      if (params[k] === undefined || params[k] === null || params[k] === '' || params[k] === false) {
-        delete params[k];
-      }
     });
     params.export = 'csv';
 
     try {
-      const res = await api.get(`${getApiUrl()}/api/fee/reports/${endpointPath}/`, {
+      const res = await api.get(`${getApiUrl()}/api/fee/reports/${REPORT_PATH[activeTab]}/`, {
         params,
         responseType: 'blob',
       });
@@ -290,11 +344,12 @@ export default function FeeReportsPage() {
       showToast('error', extractError(err));
     }
   };
-  // ── PDF export: browser print of the currently loaded (full, filtered)
-  // dataset. Each tab renders a `data-print-summary` block that this
-  // triggers via window.print(). ──
+
+  // ── PDF: browser print of the loaded (full, filtered) dataset, with the
+  // school letterhead. "Save as PDF" in the print dialog gives the file. ──
   const handleExportPdf = () => {
-    window.print();
+    setPrintedAt(new Date().toLocaleString('en-GB'));
+    setTimeout(() => window.print(), 80);
   };
 
   if (!canManage) {
@@ -310,8 +365,14 @@ export default function FeeReportsPage() {
     );
   }
 
+  const landscape = activeTab === 'collections' || activeTab === 'breakdown';
+  const tabBtn = (key: TabKey) =>
+    `flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === key ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`;
+  const selectCls = 'w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50';
+  const labelCls = 'block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5';
+
   return (
-    <div className="space-y-6 pb-20 max-w-7xl mx-auto px-4 sm:px-0 animate-in fade-in duration-300 print:p-0 print:max-w-none">
+    <div className="space-y-6 pb-20 max-w-7xl mx-auto px-4 sm:px-0 animate-in fade-in duration-300 print:p-0 print:pb-0 print:space-y-0 print:max-w-none">
       <ToastStack toasts={toasts} onDismiss={id => setToasts(p => p.filter(t => t.id !== id))} />
 
       {/* ── Header ── */}
@@ -322,17 +383,20 @@ export default function FeeReportsPage() {
           </div>
           <div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">Financial Reports</h1>
-            <p className="text-xs text-slate-500 mt-1 font-medium">Advanced analytics, aging, and collection performance.</p>
+            <p className="text-xs text-slate-500 mt-1 font-medium">Collections, fee breakdown, class performance and payment trends.</p>
           </div>
         </div>
 
-        {/* ── Export Toolbar — dynamic title, always the full filtered set ── */}
-        <div className="flex items-center gap-2">
-          {activeTab !== 'aging' && (
-            <button onClick={handleExportCsv} className="px-3.5 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5">
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Export CSV
-            </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {activeTab === 'collections' && groupBy === 'parent' && (
+            <label className="px-3.5 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={includeWards} onChange={e => setIncludeWards(e.target.checked)} className="accent-indigo-600" />
+              <Users className="w-3.5 h-3.5 text-slate-500" /> Show wards
+            </label>
           )}
+          <button onClick={handleExportCsv} className="px-3.5 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5">
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Export CSV
+          </button>
           <button onClick={handleExportPdf} className="px-3.5 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5">
             <Printer className="w-3.5 h-3.5 text-indigo-600" /> Print / PDF
           </button>
@@ -348,14 +412,14 @@ export default function FeeReportsPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Session</label>
-            <select value={filterSessionId} onChange={e => setFilterSessionId(e.target.value)} className="w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500">
+            <label className={labelCls}>Session</label>
+            <select value={filterSessionId} onChange={e => setFilterSessionId(e.target.value)} className={selectCls}>
               {sessions.map(s => <option key={s.id} value={s.id}>{s.start_year}/{s.end_year}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Term</label>
-            <select value={filterPeriodId} onChange={e => setFilterPeriodId(e.target.value)} className="w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500">
+            <label className={labelCls}>Term</label>
+            <select value={filterPeriodId} onChange={e => setFilterPeriodId(e.target.value)} className={selectCls}>
               <option value="">All Terms</option>
               {periods.filter(p => p.session?.id.toString() === filterSessionId).map(p => (
                 <option key={p.id} value={p.id}>{p.name || p.period?.name}</option>
@@ -364,15 +428,15 @@ export default function FeeReportsPage() {
           </div>
 
           <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Term Scope</label>
-            <select value={isCumulative ? 'true' : 'false'} onChange={e => setIsCumulative(e.target.value === 'true')} disabled={!filterPeriodId} className="w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50">
+            <label className={labelCls}>Term Scope</label>
+            <select value={isCumulative ? 'true' : 'false'} onChange={e => setIsCumulative(e.target.value === 'true')} disabled={!filterPeriodId} className={selectCls}>
               <option value="false">Selected Term Only</option>
               <option value="true">Selected Term Downward (Cumulative)</option>
             </select>
           </div>
           <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Debt Source</label>
-            <select value={debtType} onChange={e => setDebtType(e.target.value as any)} disabled={!!specificFeeId} className="w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50">
+            <label className={labelCls}>Debt Source</label>
+            <select value={debtType} onChange={e => setDebtType(e.target.value as DebtType)} disabled={activeTab === 'collections' && !!specificFeeId} className={selectCls}>
               <option value="all">Invoice + Ancillary Debt (Combined)</option>
               <option value="tuition_only">Invoice Only</option>
               <option value="ancillary_only">Ancillary Debt Only (Fines, etc.)</option>
@@ -380,37 +444,37 @@ export default function FeeReportsPage() {
           </div>
 
           <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Class</label>
-            <select value={filterClassId} onChange={e => setFilterClassId(e.target.value)} disabled={activeTab === 'performance'} className="w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50">
+            <label className={labelCls}>Class</label>
+            <select value={filterClassId} onChange={e => setFilterClassId(e.target.value)} disabled={activeTab === 'performance' || activeTab === 'trends'} className={selectCls}>
               <option value="">All Classes</option>
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Arm / Section</label>
-            <select value={filterSectionId} onChange={e => setFilterSectionId(e.target.value)} disabled={!filterClassId || availableSections.length === 0 || activeTab === 'performance'} className="w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50">
+            <label className={labelCls}>Arm / Section</label>
+            <select value={filterSectionId} onChange={e => setFilterSectionId(e.target.value)} disabled={!filterClassId || availableSections.length === 0 || activeTab === 'performance' || activeTab === 'trends'} className={selectCls}>
               <option value="">All Arms</option>
               {availableSections.map(sec => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Specific Fee Breakdown</label>
-            <select value={specificFeeId} onChange={e => setSpecificFeeId(e.target.value)} disabled={activeTab !== 'collections'} className="w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50">
-              <option value="">Total Invoice</option>
-              {feesList.map(fee => <option key={fee.id} value={fee.id}>{fee.name}</option>)}
+            <label className={labelCls}>Specific Fee</label>
+            <select value={specificFeeId} onChange={e => setSpecificFeeId(e.target.value)} disabled={activeTab !== 'collections'} className={selectCls}>
+              <option value="">All Fees</option>
+              {feesList.map(fee => <option key={fee.id} value={fee.id}>{fee.name}{fee.parent_bound ? ' (Family)' : ''}</option>)}
             </select>
           </div>
 
           <div className="flex gap-2">
             <div className="flex-1">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Group By</label>
-              <select value={groupBy} onChange={e => setGroupBy(e.target.value as any)} disabled={activeTab !== 'collections'} className="w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50">
+              <label className={labelCls}>Group By</label>
+              <select value={groupBy} onChange={e => setGroupBy(e.target.value as any)} disabled={activeTab !== 'collections' || feeIsFamilyBound} title={feeIsFamilyBound ? 'Family fees are always grouped by parent' : undefined} className={selectCls}>
                 <option value="student">Student</option>
                 <option value="parent">Parent (Family Rollup)</option>
               </select>
             </div>
             <div className="flex-1">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Min % Cleared</label>
+              <label className={labelCls}>Min % Cleared</label>
               <div className="relative">
                 <input type="number" min="0" max="100" placeholder="e.g. 100" value={thresholdPct} onChange={e => setThresholdPct(e.target.value)} disabled={activeTab !== 'collections'} className="w-full pl-3 pr-6 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-white outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50" />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
@@ -422,56 +486,65 @@ export default function FeeReportsPage() {
 
       {/* ── TABS NAVIGATION ── */}
       <div className="flex overflow-x-auto gap-2 p-1 bg-white rounded-xl border border-slate-200 shadow-sm w-fit print:hidden">
-        <button onClick={() => setActiveTab('collections')} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'collections' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
+        <button onClick={() => setActiveTab('collections')} className={tabBtn('collections')}>
           <FileText className="w-4 h-4" /> Collections & Clearance
         </button>
-        <button onClick={() => setActiveTab('trends')} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'trends' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
+        <button onClick={() => setActiveTab('trends')} className={tabBtn('trends')}>
           <TrendingUp className="w-4 h-4" /> Payment Flow Trends
         </button>
-        <button onClick={() => setActiveTab('performance')} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'performance' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
+        <button onClick={() => setActiveTab('performance')} className={tabBtn('performance')}>
           <PieChart className="w-4 h-4" /> Class Performance
         </button>
-        <button onClick={() => setActiveTab('aging')} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'aging' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
-          <Clock className="w-4 h-4" /> Aging / Overdue
+        <button onClick={() => setActiveTab('breakdown')} className={tabBtn('breakdown')}>
+          <Layers className="w-4 h-4" /> Fee Breakdown
         </button>
       </div>
 
-      {/* ── Print-only title header ── */}
-      <div className="hidden print:block px-1">
-        <h1 className="text-lg font-black text-slate-900">{reportTitle}</h1>
-        <p className="text-xs text-slate-500">Printed {new Date().toLocaleString('en-GB')}</p>
-      </div>
+      {/* ── Print-only letterhead: school logo + details, report title, filters ── */}
+      <PrintLetterhead
+        schoolInfo={schoolInfo}
+        logoUrl={logoUrl}
+        title={BASE_TITLE[activeTab]}
+        filters={printFilters}
+        generatedAt={printedAt}
+      />
 
       {/* ── TAB CONTENT RENDERING ── */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm min-h-[400px] relative print:border-0 print:shadow-none print:rounded-none" ref={printRef}>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm min-h-[400px] relative print:border-0 print:shadow-none print:rounded-none print:min-h-0" ref={printRef}>
         {dataLoading && (
           <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-10 flex items-center justify-center rounded-2xl print:hidden">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
           </div>
         )}
 
-        <div className="p-1">
-          {/* Only the active tab's own reportData is ever passed here — see the
-              reset-on-tab-change effect above, which guarantees reportData is
-              null (and each tab shows its own loading/empty state) until the
-              fetch for THIS tab has actually resolved. */}
+        <div className="p-1 print:p-0">
           {activeTab === 'collections' && (
             <CollectionsTab
-              data={reportData}
-              groupBy={groupBy}
+              data={rowList}
+              totals={body?.totals}
+              familyTotals={body?.family_totals}
+              groupBy={dataGroupBy}
               reportTitle={reportTitle}
             />
           )}
-          {activeTab === 'trends' && <TrendsTab data={reportData} reportTitle={reportTitle} />}
-          {activeTab === 'performance' && <ClassPerformanceTab data={reportData} reportTitle={reportTitle} />}
-          {activeTab === 'aging' && <AgingTab data={reportData} reportTitle={reportTitle} />}
+          {activeTab === 'trends' && <TrendsTab data={rowList} reportTitle={reportTitle} />}
+          {activeTab === 'performance' && <ClassPerformanceTab data={rowList} totals={body?.totals} reportTitle={reportTitle} />}
+          {activeTab === 'breakdown' && <FeeBreakdownTab data={body} reportTitle={reportTitle} />}
         </div>
       </div>
 
       <style>{`
         @media print {
-          @page { margin: 1.2cm; }
+          @page {
+            size: A4 ${landscape ? 'landscape' : 'portrait'};
+            margin: 1.2cm 1.2cm 1.6cm 1.2cm;
+            @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 9px; color: #94a3b8; }
+          }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          thead { display: table-header-group; }
+          tfoot.print-once { display: table-row-group; }
+          tr { break-inside: avoid; page-break-inside: avoid; }
+          tbody.print-group { break-inside: avoid; page-break-inside: avoid; }
         }
       `}</style>
     </div>

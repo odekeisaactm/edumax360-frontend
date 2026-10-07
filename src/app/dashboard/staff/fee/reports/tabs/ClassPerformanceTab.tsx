@@ -4,28 +4,26 @@ import React, { useMemo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 import { FileText, AlertTriangle } from 'lucide-react';
 
+const n = (v: any): number => {
+  const x = typeof v === 'string' ? parseFloat(v) : Number(v);
+  return Number.isFinite(x) ? x : 0;
+};
+
 function fmtMoney(amount: string | number): string {
-  const num = typeof amount === 'string' ? parseFloat(amount) : (amount || 0);
-  return '₦' + num.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return '₦' + n(amount).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function ClassPerformanceTab({ data, reportTitle }: { data: any[] | null; reportTitle: string }) {
+export default function ClassPerformanceTab({ data, totals, reportTitle }: { data: any[] | null; totals?: any; reportTitle: string }) {
   const rows: any[] = Array.isArray(data) ? data : [];
 
-  // FIX: `[...rows].sort(...)` instead of `rows.sort(...)`. Sorting the
-  // array in place mutates React state directly — React 18 Strict Mode
-  // deep-freezes state, so calling .sort() on it throws
-  // "Cannot assign to read only property '0'". Chart order is by class
-  // `order` (Nursery 1, Nursery 2, ... JSS 3, ...), a real school
-  // sequence, not by revenue — revenue-sorting a class list reads oddly
-  // to staff scanning it top to bottom.
+  // Sort a COPY — sorting state in place throws under React 18 Strict Mode.
   const chartData = useMemo(() => {
     return [...rows]
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .map(d => ({
         name: d.name,
-        Expected: parseFloat(d.net_expected || '0'),
-        Paid: parseFloat(d.balance) > 0 ? parseFloat(d.paid || '0') : parseFloat(d.net_expected || '0'),
+        Expected: n(d.net_expected),
+        Paid: n(d.balance) > 0 ? n(d.paid) : n(d.net_expected),
       }));
   }, [rows]);
 
@@ -35,6 +33,25 @@ export default function ClassPerformanceTab({ data, reportTitle }: { data: any[]
     if (rows.length === 0) return 0;
     return Math.max(...rows.map(r => r.default_rate || 0));
   }, [rows]);
+
+  // Grand total: backend value (full set); falls back to summing the rows.
+  const grand = useMemo(() => {
+    const src = totals ?? {
+      gross_billed: rows.reduce((s, r) => s + n(r.gross_billed), 0),
+      discounts: rows.reduce((s, r) => s + n(r.discounts), 0),
+      waivers: rows.reduce((s, r) => s + n(r.waivers), 0),
+      paid: rows.reduce((s, r) => s + n(r.paid), 0),
+      balance: rows.reduce((s, r) => s + n(r.balance), 0),
+      student_count: rows.reduce((s, r) => s + n(r.student_count), 0),
+    };
+    return {
+      students: n(src.student_count),
+      billed: n(src.gross_billed),
+      conc: n(src.discounts) + n(src.waivers),
+      paid: n(src.paid),
+      balance: n(src.balance),
+    };
+  }, [totals, rows]);
 
   if (data === null) {
     return <div className="py-24 flex items-center justify-center text-slate-300 text-sm font-medium">Loading…</div>;
@@ -56,8 +73,10 @@ export default function ClassPerformanceTab({ data, reportTitle }: { data: any[]
     return `₦${val}`;
   };
 
+  const th = 'px-4 py-2.5 text-[10px] font-black text-slate-500 uppercase tracking-widest print:px-3 print:py-2.5';
+
   return (
-    <div className="p-6 animate-in fade-in duration-300">
+    <div className="p-6 animate-in fade-in duration-300 print:p-0">
       <div className="mb-6 border-b border-slate-100 pb-4 flex items-center justify-between print:hidden">
         <div>
           <h3 className="text-sm font-bold text-slate-800">Expected vs. Collected — Per Class</h3>
@@ -68,7 +87,7 @@ export default function ClassPerformanceTab({ data, reportTitle }: { data: any[]
         </span>
       </div>
 
-      <div className="h-[340px] w-full">
+      <div className="h-[340px] w-full print:h-[280px]" style={{ breakInside: 'avoid' }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -93,31 +112,31 @@ export default function ClassPerformanceTab({ data, reportTitle }: { data: any[]
       )}
 
       <div className="mt-6 overflow-x-auto">
-        <table className="w-full text-left text-sm whitespace-nowrap">
-          <thead className="bg-slate-50 border-b-2 border-slate-200">
+        <table className="w-full text-left text-sm whitespace-nowrap print:text-[11px] print-table">
+          <thead className="bg-slate-50 border-b-2 border-slate-200 print:border-slate-900">
             <tr>
-              <th className="px-4 py-2.5 text-[10px] font-black text-slate-500 uppercase tracking-widest">Class</th>
-              <th className="px-4 py-2.5 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Students</th>
-              <th className="px-4 py-2.5 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Gross Billed</th>
-              <th className="px-4 py-2.5 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Concessions</th>
-              <th className="px-4 py-2.5 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Collected</th>
-              <th className="px-4 py-2.5 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Balance</th>
-              <th className="px-4 py-2.5 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Default Rate</th>
+              <th className={th}>Class</th>
+              <th className={`${th} text-right`}>Students</th>
+              <th className={`${th} text-right`}>Gross Billed</th>
+              <th className={`${th} text-right`}>Concessions</th>
+              <th className={`${th} text-right`}>Collected</th>
+              <th className={`${th} text-right`}>Balance</th>
+              <th className={`${th} text-center`}>Default Rate</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {tableRows.map(r => {
-              const concessions = parseFloat(r.discounts || '0') + parseFloat(r.waivers || '0');
+              const concessions = n(r.discounts) + n(r.waivers);
               const isWorst = r.default_rate > 30;
               return (
                 <tr key={r.id} className={isWorst ? 'bg-rose-50/40 hover:bg-rose-50' : 'hover:bg-slate-50'}>
-                  <td className="px-4 py-2.5 font-bold text-slate-800">{r.name}</td>
-                  <td className="px-4 py-2.5 text-right font-medium text-slate-500">{r.student_count}</td>
-                  <td className="px-4 py-2.5 text-right font-medium text-slate-500">{fmtMoney(r.gross_billed)}</td>
-                  <td className="px-4 py-2.5 text-right font-bold text-emerald-600">-{fmtMoney(concessions)}</td>
-                  <td className="px-4 py-2.5 text-right font-bold text-indigo-600">{fmtMoney(r.paid)}</td>
-                  <td className="px-4 py-2.5 text-right font-black text-rose-600">{fmtMoney(r.balance)}</td>
-                  <td className="px-4 py-2.5 text-center">
+                  <td className="px-4 py-2.5 print:px-3 font-bold text-slate-800">{r.name}</td>
+                  <td className="px-4 py-2.5 print:px-3 text-right font-medium text-slate-500">{r.student_count}</td>
+                  <td className="px-4 py-2.5 print:px-3 text-right font-medium text-slate-500">{fmtMoney(r.gross_billed)}</td>
+                  <td className="px-4 py-2.5 print:px-3 text-right font-bold text-emerald-600">-{fmtMoney(concessions)}</td>
+                  <td className="px-4 py-2.5 print:px-3 text-right font-bold text-indigo-600">{fmtMoney(r.paid)}</td>
+                  <td className="px-4 py-2.5 print:px-3 text-right font-black text-rose-600">{fmtMoney(r.balance)}</td>
+                  <td className="px-4 py-2.5 print:px-3 text-center">
                     <span className={`px-2 py-0.5 text-[10px] font-black rounded-md border ${isWorst ? 'bg-rose-100 text-rose-700 border-rose-300' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
                       {r.default_rate}%
                     </span>
@@ -126,6 +145,17 @@ export default function ClassPerformanceTab({ data, reportTitle }: { data: any[]
               );
             })}
           </tbody>
+          <tfoot className="print-once">
+            <tr className="bg-slate-900 text-white font-black print:bg-slate-100 print:text-slate-900 print:border-t-2 print:border-slate-900">
+              <td className="px-4 py-3 print:px-3 text-[10px] uppercase tracking-widest">Grand total</td>
+              <td className="px-4 py-3 print:px-3 text-right">{grand.students}</td>
+              <td className="px-4 py-3 print:px-3 text-right">{fmtMoney(grand.billed)}</td>
+              <td className="px-4 py-3 print:px-3 text-right">-{fmtMoney(grand.conc)}</td>
+              <td className="px-4 py-3 print:px-3 text-right">{fmtMoney(grand.paid)}</td>
+              <td className="px-4 py-3 print:px-3 text-right">{fmtMoney(grand.balance)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
