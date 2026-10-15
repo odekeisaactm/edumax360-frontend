@@ -708,6 +708,41 @@ update: async (id: number, data: Partial<StaffFormValues> | globalThis.FormData)
     const response = await api.post<ApiResponse<DuplicateCheckResult>>('/api/human-resource/utils/check-duplicate/', data);
     return response.data.data!;
   },
+
+ toggleStatus: async (id: number, status: string) => {
+    const response = await api.post(`/api/human-resource/staff/${id}/toggle-status/`, { status });
+    return response.data?.data;
+  },
+  resetPassword: async (id: number, payload: { password_type: string; custom_password?: string }) => {
+    const response = await api.post(`/api/human-resource/staff/${id}/reset-password/`, payload);
+    return response.data?.data;
+  },
+  changeUsername: async (id: number, username: string) => {
+    const response = await api.post(`/api/human-resource/staff/${id}/change-username/`, { username });
+    return response.data?.data;
+  },
+
+  createAccount: async (id: number, payload: { username?: string; password?: string }) => {
+    const response = await api.post(`/api/human-resource/staff/${id}/create-account/`, payload);
+    return response.data?.data;
+  },
+};
+
+// ==================== STAFF FINGERPRINTS API ====================
+
+export const staffFingerprintsAPI = {
+  list: async (staffId: number) => {
+    const response = await api.get(`/api/human-resource/staff/${staffId}/fingerprints/`);
+    // Handle DRF response structure
+    return response.data?.data || [];
+  },
+  add: async (staffId: number, payload: any) => {
+    const response = await api.post(`/api/human-resource/staff/${staffId}/fingerprints/`, payload);
+    return response.data?.data;
+  },
+  delete: async (fpId: number) => {
+    await api.delete(`/api/human-resource/fingerprints/${fpId}/`);
+  },
 };
 
 // ==================== CUSTOM FIELDS API ====================

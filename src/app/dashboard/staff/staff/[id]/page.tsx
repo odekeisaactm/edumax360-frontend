@@ -5,6 +5,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { staffAPI, hrSettingsAPI, documentsAPI, leaveAPI, customFieldsAPI } from '@/lib/api';
 import { Staff, HRSettings, StaffDocument, StaffLeave } from '@/lib/types';
+import AccountTab from './components/tabs/AccountTab';
+import FingerprintsTab from './components/tabs/FingerprintsTab';
 import {
   Users, ArrowLeft, Edit3, Trash2, Mail, Phone, MapPin, Calendar,
   Building2, Briefcase, FileText, Clock, AlertCircle, Loader2,
@@ -64,9 +66,10 @@ const TABS = [
   { id: 'personal',   label: 'Personal'    },
   { id: 'employment', label: 'Employment'  },
   { id: 'documents',  label: 'Documents'   },
+  { id: 'fingerprints', label: 'Fingerprints' },
   { id: 'leave',      label: 'Leave'       },
+  { id: 'account',    label: 'Account'     },
 ];
-
 // ─── Sub-components ─────────────────────────────────────────────────────────────
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -896,16 +899,17 @@ export default function StaffDetailPage() {
             </div>
           </div>
 
-          {/* Stats pills */}
+           {/* Stats pills */}
           <div className="flex sm:flex-col gap-2 flex-shrink-0">
             <div className="px-3 py-2 bg-slate-50 rounded-xl border border-slate-100 text-center min-w-[72px]">
               <p className="text-lg font-bold text-slate-800">{documents.length}</p>
               <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Documents</p>
             </div>
             <div className="px-3 py-2 bg-slate-50 rounded-xl border border-slate-100 text-center min-w-[72px]">
-              <p className="text-lg font-bold text-slate-800">{leaves.length}</p>
-              <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Leaves</p>
+              <p className="text-lg font-bold text-slate-800">{(staff as any).fingerprints_count || 0}</p> {/* ADD THIS */}
+              <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Fingerprints</p>
             </div>
+
           </div>
         </div>
       </div>
@@ -1052,6 +1056,23 @@ export default function StaffDetailPage() {
                 </InfoCard>
               )}
             </div>
+          )}
+
+          {/* ── FINGERPRINTS ── */}
+          {activeTab === 'fingerprints' && (
+            <FingerprintsTab
+              staff={staff}
+              refreshStaff={loadData}
+            />
+          )}
+
+          {/* ── ACCOUNT ── */}
+          {activeTab === 'account' && (
+            <AccountTab
+              staff={staff}
+              refreshStaff={loadData}
+              onDelete={() => router.push('/dashboard/staff/staff')}
+            />
           )}
 
           {/* ── DOCUMENTS ── */}
