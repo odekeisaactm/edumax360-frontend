@@ -377,19 +377,25 @@ export default function DefaultScoreTemplate({
           <tbody>
             {subjectRows.map((sub: any, i: number) => {
               const s = sub.scores;
-              const scoreColor = getScoreColor(s?.total);
+              const isMidterm = termType === 'midterm';
+
+              const displayTotal  = isMidterm ? s?.midterm_total  : s?.total;
+              const displayGrade  = isMidterm ? s?.midterm_grade  : s?.grade;
+              const displayRemark = isMidterm ? s?.midterm_remark : s?.remark;
+              const scoreColor    = getScoreColor(displayTotal);
+
               return (
                 <tr key={sub.id} style={{ backgroundColor: i % 2 === 0 ? '#fff' : secondaryColor }}>
                   <td style={tdLeft}>{sub.name}</td>
                   {scoreCols.map((col: any) => (
                     <td key={col.id} style={tdBase}>{getScore(col.name, s)}</td>
                   ))}
-                  <td style={{ ...tdBase, fontWeight: 700, color: primaryColor }}>{s?.total ?? '—'}</td>
+                  <td style={{ ...tdBase, fontWeight: 700, color: primaryColor }}>{displayTotal ?? '—'}</td>
                   <td style={tdBase}>{s?.highest_in_class ?? '—'}</td>
                   <td style={tdBase}>{s?.lowest_in_class ?? '—'}</td>
                   <td style={tdBase}>{s?.class_average ?? s?.average_score ?? '—'}</td>
-                  <td style={{ ...tdBase, fontWeight: 700, color: scoreColor, textTransform: 'uppercase' }}>{s?.grade ?? '—'}</td>
-                  <td style={{ ...tdBase, fontWeight: 600, color: scoreColor, textTransform: 'uppercase' }}>{s?.remark ?? '—'}</td>
+                  <td style={{ ...tdBase, fontWeight: 700, color: scoreColor, textTransform: 'uppercase' }}>{displayGrade ?? '—'}</td>
+                  <td style={{ ...tdBase, fontWeight: 600, color: scoreColor, textTransform: 'uppercase' }}>{displayRemark ?? '—'}</td>
                 </tr>
               );
             })}
