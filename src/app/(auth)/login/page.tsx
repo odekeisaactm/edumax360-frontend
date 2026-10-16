@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { User, Lock } from 'lucide-react';
+import PaySubscriptionModal from '@/components/billing/PaySubscriptionModal';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,6 +16,7 @@ export default function LoginPage() {
     rememberMe: false,
   });
   const [error, setError] = useState<string | null>(null);
+  const [payModal, setPayModal] = useState<any | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -64,6 +66,10 @@ export default function LoginPage() {
       }
 
     } catch (err: any) {
+      if (err.paymentRequired && err.payload) {
+        setPayModal(err.payload);
+        return;
+      }
       setError(err.message || 'Login failed. Please try again.');
     }
   };
@@ -221,6 +227,17 @@ export default function LoginPage() {
           </section>
         </div>
       </div>
+
+      {payModal && (
+        <PaySubscriptionModal
+          blockType={payModal.block_type}
+          amountOwed={payModal.amount_owed}
+          wards={payModal.wards || []}
+          parentRef={formData.username}
+          payerEmail=""
+          onClose={() => setPayModal(null)}
+        />
+      )}
     </div>
   );
 }

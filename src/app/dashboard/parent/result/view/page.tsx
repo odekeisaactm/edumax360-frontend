@@ -138,6 +138,7 @@ export default function ParentResultViewPage() {
   // ── Fee Locking States ──
   const [feeBlocked, setFeeBlocked] = useState(false);
   const [feeReason, setFeeReason] = useState("");
+  const [blockType, setBlockType] = useState<string>('school_fee');
 
   const showToast = (type: 'success' | 'error' | 'warn', message: string) => {
     const id = ++_toastId;
@@ -176,6 +177,7 @@ export default function ParentResultViewPage() {
       if (err.response && err.response.status === 402) {
         setFeeBlocked(true);
         setFeeReason(err.response.data.reason || "Outstanding fees prevent access to this result.");
+        setBlockType(err.response.data.block_type || 'school_fee');
       } else {
         setError(extractError(err));
       }
@@ -274,12 +276,25 @@ export default function ParentResultViewPage() {
               </p>
             </div>
             <div className="flex flex-col gap-3">
-              <Link
-                href="/dashboard/parent/fees"
-                className="w-full flex items-center justify-center gap-2 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-indigo-200"
-              >
-                <Receipt className="w-5 h-5" /> View Invoices & Pay
-              </Link>
+              {blockType === 'parent_subscription' || blockType === 'student_subscription' ? (
+                <Link
+                  href="/dashboard/parent/subscription/pay"
+                  className="w-full flex items-center justify-center gap-2 py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-xl hover:from-amber-600 hover:to-orange-600 transition-all shadow-md"
+                >
+                  <Receipt className="w-5 h-5" /> Pay Subscription
+                </Link>
+              ) : blockType === 'school_subscription' ? (
+                <div className="w-full py-3.5 bg-slate-100 text-slate-500 font-bold rounded-xl text-center text-sm">
+                  Contact school administration
+                </div>
+              ) : (
+                <Link
+                  href="/dashboard/parent/fees"
+                  className="w-full flex items-center justify-center gap-2 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md shadow-indigo-200"
+                >
+                  <Receipt className="w-5 h-5" /> View Invoices & Pay
+                </Link>
+              )}
               <button
                 onClick={() => router.back()}
                 className="w-full flex items-center justify-center gap-2 py-3.5 bg-white text-slate-700 border border-slate-200 font-bold rounded-xl hover:bg-slate-50 transition-colors"

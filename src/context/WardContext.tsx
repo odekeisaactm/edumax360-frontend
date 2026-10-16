@@ -32,7 +32,6 @@ export function WardProvider({ children }: { children: ReactNode }) {
   const refreshWards = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      // Use your exact endpoint
       const response = await api.get('/api/student/parents/my-wards/');
       const wardsList = response.data?.data || response.data || [];
       setWards(wardsList);
@@ -54,12 +53,12 @@ export function WardProvider({ children }: { children: ReactNode }) {
     } catch (err: any) {
       const status = err?.response?.status;
 
-      // Session expired / invalid token — do NOT treat this as "parent has no wards".
-      // Send them to login instead of falling through to the empty-wards UI.
-      if (status === 401 || status === 403) {
+      // Only redirect on 401 (real session death). Never on 403 —
+      // 403 could be a gate block and redirecting causes a loop.
+      if (status === 401) {
         localStorage.removeItem('selectedWardId');
         window.location.href = '/login';
-        return; // bail out before finally flips loading to false — we're navigating away
+        return;
       }
 
       console.error("Failed to fetch wards", err);

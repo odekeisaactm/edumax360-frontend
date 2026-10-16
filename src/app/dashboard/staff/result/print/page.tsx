@@ -235,9 +235,13 @@ export default function PrintSelectionPage() {
         }
       }, 3000);
 
-    } catch (err) {
+    } catch (err: any) {
       setIsPolling(false);
-      showToast('error', extractError(err));
+      if (err.response?.status === 403 && err.response.data?.block_type) {
+        showToast('error', err.response.data.detail || 'Bulk download blocked.');
+      } else {
+        showToast('error', extractError(err));
+      }
     }
   };
 

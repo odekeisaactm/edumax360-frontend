@@ -121,21 +121,29 @@ api.interceptors.response.use(
 
 // Authentication API
 export const authAPI = {
-  login: async (data: LoginRequest): Promise<LoginResponse> => {
+    login: async (data: LoginRequest): Promise<LoginResponse> => {
     try {
       const response = await api.post<ApiResponse<LoginResponse>>('/api/auth/login/', data);
 
       if (response.data.data) {
-        // Store tokens
         localStorage.setItem('access_token', response.data.data.token);
         localStorage.setItem('refresh_token', response.data.data.refresh);
-
         return response.data.data!;
       } else {
         throw new Error(response.data.error || 'Login failed');
       }
     } catch (error: any) {
-      throw new Error(error.response?.data?.error || error.message || 'Login failed');
+      const body = error.response?.data;
+
+      // Subscription / payment gate — preserve full body for modal
+      if (error.response?.status === 403 && body?.payment_required) {
+        const err: any = new Error(body.error || 'Payment required.');
+        err.paymentRequired = true;
+        err.payload = body; // { block_type, amount_owed, wards, ... }
+        throw err;
+      }
+
+      throw new Error(body?.error || error.message || 'Login failed');
     }
   },
 

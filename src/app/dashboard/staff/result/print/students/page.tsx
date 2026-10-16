@@ -44,6 +44,26 @@ function extractError(err: any): string {
   return err?.message || 'An unexpected error occurred.';
 }
 
+// Parses a Blob error response back to JSON so we can read reason/detail
+async function extractBlobError(err: any): Promise<string | null> {
+  try {
+    const data = err?.response?.data;
+    if (!data) return null;
+    if (data instanceof Blob) {
+      const text = await data.text();
+      const parsed = JSON.parse(text);
+      return parsed?.reason || parsed?.detail || parsed?.message || null;
+    }
+    if (typeof data === 'object') {
+      return data.reason || data.detail || data.message || null;
+    }
+    if (typeof data === 'string') return data;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
     <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
@@ -144,8 +164,14 @@ export default function PrintStudentListPage() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-    } catch (err) {
-      showToast('error', extractError(err));
+    } catch (err: any) {
+      // Blob response — parse JSON inside
+      const reason = await extractBlobError(err);
+      if (err.response?.status === 403 && reason) {
+        showToast('error', reason);
+      } else {
+        showToast('error', extractError(err));
+      }
     }
   };
 
@@ -156,7 +182,6 @@ export default function PrintStudentListPage() {
     setDownloadStatusMessage('Queuing download task...');
 
     try {
-      // 1. Trigger the background task
       const response = await api.post('/api/result/detail/bulk-download-pdf/', {
         class_config_id: data.class_config_id,
         period_id: data.period_id,
@@ -165,7 +190,6 @@ export default function PrintStudentListPage() {
 
       const taskId = response.data.task_id;
 
-      // 2. Start polling
       const pollInterval = setInterval(async () => {
         try {
           const statusRes = await api.get(`/api/result/detail/bulk-download-status/?task_id=${taskId}`, {
@@ -174,12 +198,10 @@ export default function PrintStudentListPage() {
 
           const contentType = statusRes.headers['content-type'];
 
-          // If backend returns the ZIP file (success state)
           if (contentType && contentType.includes('application/zip')) {
             clearInterval(pollInterval);
             setDownloadingAll(false);
 
-            // Attempt to extract filename from headers
             const disposition = statusRes.headers['content-disposition'];
             let filename = 'results.zip';
             if (disposition && disposition.indexOf('attachment') !== -1) {
@@ -189,7 +211,6 @@ export default function PrintStudentListPage() {
               }
             }
 
-            // Trigger the browser download
             const url = window.URL.createObjectURL(new Blob([statusRes.data]));
             const link = document.createElement('a');
             link.href = url;
@@ -201,7 +222,6 @@ export default function PrintStudentListPage() {
 
             showToast('success', 'Bulk download complete!');
           } else {
-            // Still processing: Parse Blob back to JSON to read status message
             const text = await statusRes.data.text();
             const responseData = JSON.parse(text);
 
@@ -218,11 +238,16 @@ export default function PrintStudentListPage() {
           setDownloadingAll(false);
           showToast('error', 'Error checking download status.');
         }
-      }, 3000); // Poll every 3 seconds
+      }, 3000);
 
-    } catch (err) {
+    } catch (err: any) {
       setDownloadingAll(false);
-      showToast('error', extractError(err));
+      const reason = await extractBlobError(err);
+      if (err.response?.status === 403 && reason) {
+        showToast('error', reason);
+      } else {
+        showToast('error', extractError(err));
+      }
     }
   };
 

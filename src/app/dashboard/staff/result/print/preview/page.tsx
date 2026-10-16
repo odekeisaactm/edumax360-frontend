@@ -13,6 +13,10 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface PrintData {
+  subscription_blocked?: boolean;
+  subscription_block_reason?: string;
+  subscription_block_type?: string;
+  subscription_block_amount?: string;
   student: {
     id: number;
     first_name: string;
@@ -182,8 +186,12 @@ export default function ResultPreviewPage() {
 
       setData(printData.data);
       setActiveTemplates(templatesData.data);
-    } catch (err) {
-      setError(extractError(err));
+    } catch (err: any) {
+      if (err.response?.status === 403 && err.response.data?.block_type) {
+        setError(err.response.data.reason || 'Access blocked — subscription outstanding.');
+      } else {
+        setError(extractError(err));
+      }
     } finally {
       setLoading(false);
     }
@@ -191,10 +199,24 @@ export default function ResultPreviewPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handlePrint = () => window.print();
+  // ─── Blocked helper ───
+  const isBlocked = !!data?.subscription_blocked;
+  const blockReason = data?.subscription_block_reason || 'Subscription payment required.';
+
+  const handlePrint = () => {
+    if (isBlocked) {
+      showToast('error', blockReason);
+      return;
+    }
+    window.print();
+  };
 
   // ─── Modal Triggers ───
   const triggerEmail = () => {
+    if (isBlocked) {
+      showToast('error', blockReason);
+      return;
+    }
     if (data?.result.is_last_term) {
       setPendingAction('email');
       setShowOptionModal(true);
@@ -204,6 +226,10 @@ export default function ResultPreviewPage() {
   };
 
   const triggerDownload = () => {
+    if (isBlocked) {
+      showToast('error', blockReason);
+      return;
+    }
     if (data?.result.is_last_term) {
       setPendingAction('download');
       setShowOptionModal(true);
@@ -223,6 +249,10 @@ export default function ResultPreviewPage() {
 
   // ─── Executers ───
   const executeDownloadPDF = async (mode: ReportMode) => {
+    if (isBlocked) {
+      showToast('error', blockReason);
+      return;
+    }
     setIsDownloading(true);
     try {
       if (mode === 'term' || mode === 'both') {
@@ -257,8 +287,12 @@ export default function ResultPreviewPage() {
       }
 
       showToast('success', 'PDF(s) downloaded successfully');
-    } catch (err) {
-      showToast('error', extractError(err) || 'Failed to download PDF');
+    } catch (err: any) {
+      if (err.response?.status === 403 && err.response.data?.reason) {
+        showToast('error', err.response.data.reason);
+      } else {
+        showToast('error', extractError(err) || 'Failed to download PDF');
+      }
     } finally {
       setIsDownloading(false);
     }
@@ -266,6 +300,10 @@ export default function ResultPreviewPage() {
 
   const executeSendEmail = async (mode: ReportMode) => {
     if (!studentId || !periodId) return;
+    if (isBlocked) {
+      showToast('error', blockReason);
+      return;
+    }
     setIsEmailing(true);
     try {
       await api.post('/api/result/detail/send-email/', {
@@ -275,8 +313,14 @@ export default function ResultPreviewPage() {
         mail_type: mode,
       });
       showToast('success', 'Result emailed to parent successfully!');
-    } catch (err) {
-      showToast('error', extractError(err));
+    } catch (err: any) {
+      if (err.response?.status === 403 && err.response.data?.reason) {
+        showToast('error', err.response.data.reason);
+      } else if (err.response?.status === 403 && err.response.data?.block_type) {
+        showToast('error', err.response.data.detail || 'Email blocked.');
+      } else {
+        showToast('error', extractError(err));
+      }
     } finally {
       setIsEmailing(false);
     }
@@ -366,7 +410,7 @@ export default function ResultPreviewPage() {
           )}
 
           {/* View Cumulative Button for Last Term */}
-          {TemplateComponent && data.result.is_last_term && (
+          {TemplateComponent && data.result.is_last_term && !isBlocked && (
             <button
               onClick={() => router.push(`/dashboard/staff/result/archive/cumulative/preview?student_id=${studentId}&session_id=${data.result.session_id}&class_config_id=${data.student.class_config_id}&students=${studentIdsParam}`)}
               className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-100 text-amber-800 text-sm font-bold rounded-lg hover:bg-amber-200 transition-colors ml-2"
@@ -383,7 +427,10 @@ export default function ResultPreviewPage() {
               <button
                 onClick={triggerEmail}
                 disabled={isEmailing}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                className={`inline-flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 ${
+                  isBlocked ? 'bg-slate-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                }`}
+                title={isBlocked ? blockReason : ''}
               >
                 {isEmailing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
                 <span className="hidden sm:inline">{isEmailing ? 'Sending...' : 'Email'}</span>
@@ -392,7 +439,10 @@ export default function ResultPreviewPage() {
               <button
                 onClick={triggerDownload}
                 disabled={isDownloading}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                className={`inline-flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 ${
+                  isBlocked ? 'bg-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+                title={isBlocked ? blockReason : ''}
               >
                 {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                 <span className="hidden sm:inline">{isDownloading ? 'Downloading...' : 'Download'}</span>
@@ -400,7 +450,12 @@ export default function ResultPreviewPage() {
 
               <button
                 onClick={handlePrint}
-                className="inline-flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
+                className={`inline-flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
+                  isBlocked
+                    ? 'border-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+                title={isBlocked ? blockReason : ''}
               >
                 <Printer className="h-4 w-4" />
                 <span className="hidden sm:inline">Print</span>
@@ -428,7 +483,6 @@ export default function ResultPreviewPage() {
                 This is the final term. Which report(s) would you like to {pendingAction}?
               </p>
 
-              {/* Radio Options */}
               <div className="space-y-3">
                 {[
                   { id: 'term', title: 'Term Report Only', desc: `Sends only the standard ${data.result.period_name} report.` },
@@ -484,7 +538,7 @@ export default function ResultPreviewPage() {
       {/* ── Template Component ── */}
       <div className="print:mt-0 px-2 sm:px-0 overflow-x-auto">
         {TemplateComponent ? (
-          <div className="min-w-[800px]"> {/* Ensures template doesn't squish too much on very small screens, allowing horizontal scroll instead */}
+          <div className="min-w-[800px]">
             <TemplateComponent
               student={data.student}
               result={data.result}
