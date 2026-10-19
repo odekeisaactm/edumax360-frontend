@@ -102,7 +102,8 @@ export default function DefaultScoreTemplate({
   const bCats    = behaviorCatProp?.length  ? behaviorCatProp  : dummyBehavior.categories;
   const bRatings = behaviorRatingsProp && Object.keys(behaviorRatingsProp).length ? behaviorRatingsProp : dummyBehaviorRatings;
   const comments = commentsProp    ?? dummyComments;
-  const grades   = gradeListProp?.length    ? gradeListProp    : dummyGradeList;
+  const activeGradeList = termType === 'midterm' ? midtermGradeListProp : gradeListProp;
+  const grades   = activeGradeList?.length    ? activeGradeList    : dummyGradeList;
   const fields   = fieldListProp?.length    ? fieldListProp    : dummyFieldList;
 
   const headerColor    = hex(settings.header_color,    '#2c5f8d');
