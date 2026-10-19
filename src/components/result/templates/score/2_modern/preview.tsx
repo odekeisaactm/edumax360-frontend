@@ -147,13 +147,15 @@ export default function ModernScoreTemplate({
     return fields;
   }, [fields, termType]);
 
-  const headerDensity = useMemo(() => {
+    const headerDensity = useMemo(() => {
     const totalChars = scoreCols.reduce((sum: number, c: any) => sum + (c.name?.length ?? 0), 0);
     const count = scoreCols.length;
-    if (count > 8 || totalChars > 70) return 'vertical';
-    if (count > 6 || totalChars > 50) return 'compact';
+    // Force vertical for midterm if 4 or more columns to prevent horizontal squeeze
+    if (termType === 'midterm' && count >= 4) return 'vertical';
+    if (count > 5 || totalChars > 50) return 'vertical';
+    if (count > 4) return 'compact';
     return 'normal';
-  }, [scoreCols]);
+  }, [scoreCols, termType]);
 
   const getScore = (colName: string, scores: any): string => {
     if (!scores?.fields) return '—';
@@ -224,7 +226,7 @@ export default function ModernScoreTemplate({
     maxWidth: headerDensity === 'vertical' ? 24 : undefined,
   };
   const thLeft: React.CSSProperties = { ...thStyle, textAlign: 'left', writingMode: 'horizontal-tb', transform: 'none', height: undefined };
-  const tdBase: React.CSSProperties = { padding: '4px 6px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: 12, color: '#1e293b' };
+  const tdBase: React.CSSProperties = { padding: '4px 6px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: 12, color: '#1e293b', lineHeight: 1.4, verticalAlign: 'middle' };
   const tdLeft: React.CSSProperties = { ...tdBase, textAlign: 'left', fontWeight: 600 };
 
   const sectionHeader: React.CSSProperties = {
