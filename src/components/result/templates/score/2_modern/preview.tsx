@@ -101,6 +101,7 @@ export default function ModernScoreTemplate({
   comments:           commentsProp,
   termType            = 'end_of_term',
   gradeList:          gradeListProp,
+  midtermGradeList:   midtermGradeListProp,
   schoolInfo:         schoolInfoProp,
   fieldList:          fieldListProp,
   subjectList:        subjectListProp,
@@ -347,7 +348,10 @@ export default function ModernScoreTemplate({
                 const displayTotal  = isMidterm ? s?.midterm_total  : s?.total;
                 const displayGrade  = isMidterm ? s?.midterm_grade  : s?.grade;
                 const displayRemark = isMidterm ? s?.midterm_remark : s?.remark;
-                const scoreColor    = getScoreColor(displayTotal);
+             // Scale midterm score to 100 so 18/20 becomes 90% (Blue), not 18% (Red)
+                const maxMark = isMidterm ? (settings.midterm_max_score || 20) : 100;
+                const scaledScore = displayTotal ? (Number(displayTotal) / maxMark) * 100 : null;
+                const scoreColor = getScoreColor(scaledScore);
 
                 return (
                   <tr key={sub.id} style={{ backgroundColor: i % 2 === 0 ? '#fff' : secondaryColor }}>
