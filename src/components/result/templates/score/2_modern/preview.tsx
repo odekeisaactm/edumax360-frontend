@@ -337,7 +337,7 @@ export default function ModernScoreTemplate({
                     </th>
                   );
                 })}
-                <th style={thStyle}>Total<br /><span style={{ fontSize: 8.5, fontWeight: 400, opacity: 0.75 }}>(100)</span></th>
+                <th style={thStyle}>Total<br /><span style={{ fontSize: 8.5, fontWeight: 400, opacity: 0.75 }}>({(termType === 'midterm' ? settings.midterm_max_score : 100) || 100})</span></th>
                 <th style={thStyle}>Grade</th>
                 <th style={thStyle}>Remark</th>
               </tr>

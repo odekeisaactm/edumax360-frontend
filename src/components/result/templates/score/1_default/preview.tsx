@@ -370,7 +370,7 @@ export default function DefaultScoreTemplate({
                   {col.name}<br /><span style={{ fontSize: 9, fontWeight: 400, opacity: 0.75 }}>/{col.max_mark}</span>
                 </th>
               ))}
-              <th style={thStyle}>Total<br /><span style={{ fontSize: 9, fontWeight: 400, opacity: 0.75 }}>/100</span></th>
+              <th style={thStyle}>Total<br /><span style={{ fontSize: 8.5, fontWeight: 400, opacity: 0.75 }}>(100)</span></th>
               <th style={thStyle}>Highest</th>
               <th style={thStyle}>Lowest</th>
               <th style={thStyle}>Class Avg</th>
