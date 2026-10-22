@@ -60,8 +60,8 @@ export default function ModernTextTemplate({
   settings = {},
   comments = {},
   termType = 'end_of_term',
-  ratingOptions,          // Explicitly destructuring these
-  rating_options,         // to ensure React catches them
+  ratingOptions,
+  rating_options,
   behaviorCategories,
   behavior_categories,
   behaviorRatings,
@@ -75,6 +75,9 @@ export default function ModernTextTemplate({
   const bCats = behaviorCategories || behavior_categories || props.behaviorCategories || props.behavior_categories || [];
   const bRatings = behaviorRatings || behavior_ratings || props.behaviorRatings || props.behavior_ratings || {};
   const sInfo = schoolInfo || school_info || props.schoolInfo || props.school_info || {};
+
+  // ── THE FIX: DEFINE isPreview HERE ──
+  const isPreview = !student?.id;
 
   // ── EXTRACT TEXT RATING OPTIONS DIRECTLY FROM DATABASE JSON ──
   let rawOptions =
