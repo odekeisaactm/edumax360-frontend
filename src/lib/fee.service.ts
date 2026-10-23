@@ -297,9 +297,29 @@ export const feeSettingsAPI = {
 // ============================================================
 
 export const discountsAPI = {
-  list: async (params?: { search?: string; occurrence?: string; discount_type?: string }): Promise<Discount[]> => {
-    const response = await api.get(`${FEE_API_BASE}/discounts/`, { params });
-    return response.data?.results || response.data || [];
+   list: async (params?: { search?: string; occurrence?: string; discount_type?: string }): Promise<Discount[]> => {
+    let allResults: Discount[] = [];
+    let url: string | null = `${FEE_API_BASE}/discounts/`;
+    let queryParams: any = { ...params };
+
+    while (url) {
+      const response = await api.get(url, { params: queryParams });
+
+      // Paginated DRF response — accumulate and follow `next`
+      if (response.data?.results) {
+        allResults = allResults.concat(response.data.results);
+        url = response.data.next || null;
+      } else {
+        // Non-paginated fallback — return whatever we got and stop
+        allResults = Array.isArray(response.data) ? response.data : [];
+        break;
+      }
+
+      // `next` already carries the params in its querystring — don't re-send them
+      queryParams = {};
+    }
+
+    return allResults;
   },
 
   create: async (data: Partial<Discount>): Promise<Discount> => {
