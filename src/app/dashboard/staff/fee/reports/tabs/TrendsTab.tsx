@@ -3,19 +3,26 @@
 import React, { useMemo } from 'react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Brush } from 'recharts';
 import { TrendingUp } from 'lucide-react';
+import CashBanner from './CashBanner';
 
 function fmtMoney(amount: string | number): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : (amount || 0);
   return '₦' + num.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function TrendsTab({ data, reportTitle }: { data: any[] | null; reportTitle: string }) {
+export default function TrendsTab({ data, reportTitle, summary, sessionLabel }: {
+  data: any[] | null; reportTitle: string; summary?: any; sessionLabel?: string;
+}) {
   const rows: any[] = Array.isArray(data) ? data : [];
 
   const chartData = useMemo(() => rows.map(d => ({ date: d.date, amount: parseFloat(d.amount || '0') })), [rows]);
 
   const total = useMemo(() => chartData.reduce((s, d) => s + d.amount, 0), [chartData]);
   const daysWithCollections = useMemo(() => chartData.filter(d => d.amount > 0).length, [chartData]);
+  // Show the year in tick labels only when the range crosses a year boundary.
+  const crossesYear = chartData.length > 1 && chartData[0].date?.slice(0, 4) !== chartData[chartData.length - 1].date?.slice(0, 4);
+  const tickDate = (val: any) => (val ? String(val).slice(crossesYear ? 2 : 5) : '');
+  const scopeLabel = sessionLabel ? `Session ${sessionLabel}` : 'All sessions';
 
   if (data === null) {
     return <div className="py-24 flex items-center justify-center text-slate-300 text-sm font-medium">Loading…</div>;
@@ -43,18 +50,20 @@ export default function TrendsTab({ data, reportTitle }: { data: any[] | null; r
         <div>
           <h3 className="text-sm font-bold text-slate-800">Collection Flow Over Time</h3>
           <p className="text-xs text-slate-500">
-            Confirmed payments by date — every day in the window is shown, including zero-collection days.
+            Confirmed payments by receipt date — every day in the window is shown, including zero-collection days.
             Drag the handles below the chart to zoom into a range.
           </p>
         </div>
         <div className="text-right shrink-0 ml-4">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total in Window</p>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{sessionLabel ? `Applied to ${sessionLabel}` : 'Total Received'}</p>
           <p className="text-lg font-black text-indigo-700">{fmtMoney(total)}</p>
           <p className="text-[10px] text-slate-400 font-medium">{daysWithCollections} of {chartData.length} days had activity</p>
         </div>
       </div>
 
-      <div className="h-[420px]">
+      <CashBanner summary={summary} scopeLabel={scopeLabel} variant="chart" />
+
+      <div className="h-[420px] mt-2">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <defs>
@@ -64,7 +73,7 @@ export default function TrendsTab({ data, reportTitle }: { data: any[] | null; r
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={(val) => val ? val.slice(5) : ''} />
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={tickDate} minTickGap={16} />
             <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={formatYAxis} />
             <Tooltip formatter={(val: any) => [fmtMoney(val), 'Collected']} labelStyle={{ fontWeight: 'bold', color: '#1e293b' }} />
             <Area type="monotone" dataKey="amount" stroke="#4f46e5" strokeWidth={2.5} fillOpacity={1} fill="url(#colorAmountTrends)" />
@@ -73,7 +82,7 @@ export default function TrendsTab({ data, reportTitle }: { data: any[] | null; r
               height={26}
               stroke="#4f46e5"
               travellerWidth={8}
-              tickFormatter={(val) => val ? String(val).slice(5) : ''}
+              tickFormatter={tickDate}
             />
           </AreaChart>
         </ResponsiveContainer>

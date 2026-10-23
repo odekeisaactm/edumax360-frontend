@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Users, FileText, ShieldMinus, ChevronLeft, ChevronRight } from 'lucide-react';
+import CashBanner from './CashBanner';
 
 const n = (v: any): number => {
   const x = typeof v === 'string' ? parseFloat(v) : Number(v);
@@ -74,8 +75,9 @@ function TotalRow({ label, sums, className = '', pad = 'py-3', showPct = true }:
 const PAGE_SIZE = 25;
 const TH = 'px-3 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest';
 
-export default function CollectionsTab({ data, totals, familyTotals, groupBy, reportTitle }: {
+export default function CollectionsTab({ data, totals, familyTotals, groupBy, reportTitle, cash, summary, scopeLabel }: {
   data: any[] | null; totals?: any; familyTotals?: any; groupBy: string; reportTitle: string;
+  cash?: boolean; summary?: any; scopeLabel?: string;
 }) {
   const [page, setPage] = useState(1);
 
@@ -99,6 +101,196 @@ export default function CollectionsTab({ data, totals, familyTotals, groupBy, re
     return <div className="py-24 flex items-center justify-center text-slate-300 text-sm font-medium">Loading…</div>;
   }
 
+  const screenTotalCls = 'bg-slate-900 text-white font-black';
+  const screenSubCls = 'bg-slate-100 text-slate-800 font-black border-t-2 border-slate-300';
+  const screenFamilyCls = 'bg-purple-50 text-purple-900 font-bold';
+  const printTotalCls = 'bg-slate-100 text-slate-900 font-black border-t-2 border-slate-900';
+  const printFamilyCls = 'text-slate-700 font-bold border-t border-slate-300';
+
+  // ───────── Date-range mode: money RECEIVED in the window ─────────
+  // Billed / balance / % cleared have no meaning for a window, so only
+  // the collected amount is shown.
+  if (cash) {
+    const cashNoun = groupBy === 'parent' ? 'families' : 'students';
+    const cashCount = totals?.count ?? rows.length;
+    const cashTotal = n(totals?.paid);
+    const cashFamily = familyTotals ? n(familyTotals.paid) : 0;
+    const cashPageTotal = pageRows.reduce((s, r) => s + n(r.paid), 0);
+    const cashTH = 'px-3 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest';
+
+    return (
+      <div className="flex flex-col h-full animate-in fade-in duration-300">
+        <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 rounded-t-xl print:hidden">
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">Collections Received</h3>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
+              {cashCount} {cashNoun} paid • Grouped by {groupBy}
+            </p>
+          </div>
+        </div>
+
+        <CashBanner summary={summary} scopeLabel={scopeLabel || 'All sessions'} variant="table" />
+
+        {rows.length === 0 && cashFamily === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+            <FileText className="h-10 w-10 mb-3 text-slate-300" />
+            <h3 className="font-semibold text-slate-700 mb-1">No collections in this period</h3>
+            <p className="text-sm font-medium">No money was applied to invoices or debts for the selected filters.</p>
+          </div>
+        ) : (
+          <>
+            {/* On-screen (paginated) */}
+            <div className="overflow-x-auto print:hidden">
+              <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead className="bg-slate-50 border-b-2 border-slate-200 sticky top-0 z-10">
+                  <tr>
+                    <th className={cashTH}>Name</th>
+                    <th className={cashTH}>Class</th>
+                    <th className={`${cashTH} text-right`}>Collected</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {pageRows.map((row: any) => {
+                    const children: any[] = row.children || [];
+                    return (
+                      <React.Fragment key={`cash-${row.id}`}>
+                        <tr className={groupBy === 'parent' ? 'bg-[#e9ecef] border-t border-slate-300' : 'hover:bg-slate-50'}>
+                          <td className="px-3 py-3 align-top">
+                            <div className="flex items-center gap-2">
+                              {groupBy === 'parent' && <Users className="h-4 w-4 text-slate-700 shrink-0" />}
+                              <span className="font-bold text-slate-800">{toTitleCase(row.name)}</span>
+                            </div>
+                            {children.length === 0 && <WardsLine wards={row.wards} className={groupBy === 'parent' ? 'pl-6 mt-1 max-w-md' : 'mt-1 max-w-md'} />}
+                          </td>
+                          <td className="px-3 py-3 text-[11px] font-bold text-slate-400 uppercase align-top">{groupBy === 'parent' ? '' : row.class_name}</td>
+                          <td className="px-3 py-3 text-right font-black text-indigo-600 align-top">{fmtMoney(row.paid)}</td>
+                        </tr>
+                        {children.map((child: any) => (
+                          <tr key={`cash-c-${row.id}-${child.id}`} className="hover:bg-slate-50">
+                            <td className="px-3 py-2.5 pl-10 font-bold text-slate-700">{toTitleCase(child.name)}</td>
+                            <td className="px-3 py-2.5 text-[11px] font-bold text-slate-400 uppercase">{child.class_name}</td>
+                            <td className="px-3 py-2.5 text-right font-medium text-slate-600">{fmtMoney(child.paid)}</td>
+                          </tr>
+                        ))}
+                        {n(row.family_paid) > 0 && (
+                          <tr className="bg-purple-50/20">
+                            <td className="px-3 py-2.5 pl-10">
+                              <div className="flex items-center gap-2">
+                                <ShieldMinus className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                                <span className="font-bold text-purple-900 text-xs">Family Shared Fees</span>
+                              </div>
+                            </td>
+                            <td></td>
+                            <td className="px-3 py-2.5 text-right text-xs font-medium text-purple-700">{fmtMoney(row.family_paid)}</td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  {totalPages > 1 && (
+                    <tr className="bg-slate-50 border-t-2 border-slate-300 text-slate-500 font-bold">
+                      <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={2}>This page ({pageRows.length})</td>
+                      <td className="px-3 py-2 text-right">{fmtMoney(cashPageTotal)}</td>
+                    </tr>
+                  )}
+                  <tr className={cashFamily > 0 ? screenSubCls : screenTotalCls}>
+                    <td className="px-3 py-3 text-[10px] uppercase tracking-widest" colSpan={2}>
+                      {cashFamily > 0 ? `Student fees total (${cashCount} ${cashNoun})` : `Grand total (${cashCount} ${cashNoun})`}
+                    </td>
+                    <td className="px-3 py-3 text-right">{fmtMoney(cashTotal)}</td>
+                  </tr>
+                  {cashFamily > 0 && (
+                    <>
+                      <tr className={screenFamilyCls}>
+                        <td className="px-3 py-2.5 text-[10px] uppercase tracking-widest" colSpan={2}>Family fees (collected from parents)</td>
+                        <td className="px-3 py-2.5 text-right">{fmtMoney(cashFamily)}</td>
+                      </tr>
+                      <tr className={screenTotalCls}>
+                        <td className="px-3 py-3 text-[10px] uppercase tracking-widest" colSpan={2}>Combined total</td>
+                        <td className="px-3 py-3 text-right">{fmtMoney(cashTotal + cashFamily)}</td>
+                      </tr>
+                    </>
+                  )}
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Print / PDF: the FULL filtered set */}
+            <div className="hidden print:block">
+              <table className="w-full text-left text-[11px] print-table">
+                <thead>
+                  <tr className="bg-slate-50 border-b-2 border-slate-900">
+                    <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-wider">Name</th>
+                    <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-wider">Class</th>
+                    <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-wider text-right">Collected</th>
+                  </tr>
+                </thead>
+                {rows.map((row: any) => {
+                  const children: any[] = row.children || [];
+                  return (
+                    <tbody key={`cash-pg-${row.id}`} className="print-group">
+                      <tr className={groupBy === 'parent' ? 'bg-slate-100 border-t border-slate-300' : 'border-b border-slate-200'}>
+                        <td className="px-3 py-2">
+                          <span className="font-bold text-slate-900">{toTitleCase(row.name)}</span>
+                          {children.length === 0 && <WardsLine wards={row.wards} className="mt-0.5" />}
+                        </td>
+                        <td className="px-3 py-2 text-slate-400">{groupBy === 'parent' ? '' : row.class_name}</td>
+                        <td className="px-3 py-2 text-right font-bold">{fmtMoney(row.paid)}</td>
+                      </tr>
+                      {children.map((child: any) => (
+                        <tr key={`cash-pc-${row.id}-${child.id}`} className="border-b border-slate-100 text-slate-600">
+                          <td className="px-3 py-1.5 pl-8">↳ {toTitleCase(child.name)}</td>
+                          <td className="px-3 py-1.5 text-slate-400">{child.class_name}</td>
+                          <td className="px-3 py-1.5 text-right">{fmtMoney(child.paid)}</td>
+                        </tr>
+                      ))}
+                      {n(row.family_paid) > 0 && (
+                        <tr className="border-b border-slate-100 text-slate-500 italic">
+                          <td className="px-3 py-1.5 pl-8" colSpan={2}>↳ Family shared fees</td>
+                          <td className="px-3 py-1.5 text-right">{fmtMoney(row.family_paid)}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  );
+                })}
+                <tfoot className="print-once">
+                  <tr className={printTotalCls}>
+                    <td className="px-3 py-2.5 text-[10px] uppercase tracking-widest" colSpan={2}>{cashFamily > 0 ? 'Student fees total' : 'Grand total'}</td>
+                    <td className="px-3 py-2.5 text-right">{fmtMoney(cashTotal)}</td>
+                  </tr>
+                  {cashFamily > 0 && (
+                    <>
+                      <tr className={printFamilyCls}>
+                        <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={2}>Family fees (collected from parents)</td>
+                        <td className="px-3 py-2 text-right">{fmtMoney(cashFamily)}</td>
+                      </tr>
+                      <tr className={printTotalCls}>
+                        <td className="px-3 py-2.5 text-[10px] uppercase tracking-widest" colSpan={2}>Combined total</td>
+                        <td className="px-3 py-2.5 text-right">{fmtMoney(cashTotal + cashFamily)}</td>
+                      </tr>
+                    </>
+                  )}
+                </tfoot>
+              </table>
+            </div>
+
+            {totalPages > 1 && (
+              <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between print:hidden">
+                <span className="text-xs font-bold text-slate-500">Page {page} of {totalPages} ({rows.length} total)</span>
+                <div className="flex items-center gap-1">
+                  <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="p-2 bg-white border border-slate-300 rounded shadow-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"><ChevronLeft className="w-4 h-4" /></button>
+                  <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)} className="p-2 bg-white border border-slate-300 rounded shadow-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"><ChevronRight className="w-4 h-4" /></button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
   if (rows.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400">
@@ -111,12 +303,6 @@ export default function CollectionsTab({ data, totals, familyTotals, groupBy, re
 
   const noun = groupBy === 'parent' ? 'families' : 'students';
   const count = totals?.count ?? rows.length;
-
-  const screenTotalCls = 'bg-slate-900 text-white font-black';
-  const screenSubCls = 'bg-slate-100 text-slate-800 font-black border-t-2 border-slate-300';
-  const screenFamilyCls = 'bg-purple-50 text-purple-900 font-bold';
-  const printTotalCls = 'bg-slate-100 text-slate-900 font-black border-t-2 border-slate-900';
-  const printFamilyCls = 'text-slate-700 font-bold border-t border-slate-300';
 
   return (
     <div className="flex flex-col h-full animate-in fade-in duration-300">

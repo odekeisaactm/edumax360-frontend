@@ -40,6 +40,30 @@ function cleanParams(p: Record<string, any>): Record<string, any> {
   return out;
 }
 
+// ─── Date helpers (local time, YYYY-MM-DD) ────────────────────────────────────
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** offset 0 = this month (ends today), -1 = last month, etc. */
+function monthRange(offset = 0): { start: string; end: string } {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  const last = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
+  return { start: iso(first), end: iso(offset === 0 && now < last ? now : last) };
+}
+
+function last30Days(): { start: string; end: string } {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
+  return { start: iso(from), end: iso(now) };
+}
+
+function fmtDate(s: string): string {
+  const d = new Date(`${s}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+const MAX_RANGE_DAYS = 366;
+
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
     <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none print:hidden">
@@ -120,6 +144,12 @@ export default function FeeReportsPage() {
   const [thresholdPct, setThresholdPct] = useState<string>('');
   const [includeWards, setIncludeWards] = useState<boolean>(false);
 
+  // Collection-date range (PaymentReceiptModel.date). Trends always uses it;
+  // Collections and Fee Breakdown use it only when "Filter by collection date" is on.
+  const [startDate, setStartDate] = useState<string>(() => monthRange(0).start);
+  const [endDate, setEndDate] = useState<string>(() => monthRange(0).end);
+  const [useDates, setUseDates] = useState<boolean>(false);
+
   // ── Tab Navigation & Report Data State ──
   const [activeTab, setActiveTab] = useState<TabKey>('collections');
   const [dataLoading, setDataLoading] = useState(false);
@@ -184,15 +214,21 @@ export default function FeeReportsPage() {
   }, [logoUrl]);
 
   useEffect(() => {
-    if (!loading && filterSessionId) {
-      academicCalendarAPI.listSessionPeriods({ session_id: Number(filterSessionId) })
-        .then(res => {
-          setPeriods(res);
-          if (res.length > 0 && !res.find(p => p.id.toString() === filterPeriodId)) {
-            setFilterPeriodId(res[0].id.toString());
-          }
-        });
+    if (loading) return;
+    // "All Sessions": terms belong to a session, so there is no term to pick.
+    if (!filterSessionId) {
+      setPeriods([]);
+      setFilterPeriodId('');
+      setIsCumulative(false);
+      return;
     }
+    academicCalendarAPI.listSessionPeriods({ session_id: Number(filterSessionId) })
+      .then(res => {
+        setPeriods(res);
+        if (res.length > 0 && !res.find(p => p.id.toString() === filterPeriodId)) {
+          setFilterPeriodId(res[0].id.toString());
+        }
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterSessionId, loading]);
 
@@ -214,35 +250,52 @@ export default function FeeReportsPage() {
     if (feeIsFamilyBound && groupBy !== 'parent') setGroupBy('parent');
   }, [feeIsFamilyBound, groupBy]);
 
+  // ── Date-range state for the active tab ──
+  // Class Performance never uses dates (family fees can't be attributed to a class).
+  const wantsDates = activeTab === 'trends' || ((activeTab === 'collections' || activeTab === 'breakdown') && useDates);
+  const rangeDays = startDate && endDate ? (new Date(`${endDate}T00:00:00`).getTime() - new Date(`${startDate}T00:00:00`).getTime()) / 86400000 : NaN;
+  const dateError = !wantsDates ? ''
+    : (!startDate || !endDate) ? 'Pick a start and an end date.'
+    : rangeDays < 0 ? 'Start date is after the end date.'
+    : rangeDays > MAX_RANGE_DAYS ? `Range cannot exceed ${MAX_RANGE_DAYS} days.`
+    : '';
+  const datesActive = wantsDates && !dateError;
+  // Collections / Breakdown switch to "money received" tables when dates are on.
+  const cashMode = datesActive && activeTab !== 'trends';
+
   // ── One params builder shared by the fetch and the CSV export ──
   const buildParams = useCallback((tab: TabKey): Record<string, any> => {
+    const dates = datesActive ? { start_date: startDate, end_date: endDate } : {};
     switch (tab) {
       case 'collections':
         return {
           session_id: filterSessionId, period_id: filterPeriodId, cumulative: isCumulative,
           class_id: filterClassId, section_id: filterSectionId, fee_id: specificFeeId,
-          debt_type: debtType, group_by: groupBy, threshold_pct: thresholdPct,
+          debt_type: debtType, group_by: groupBy, threshold_pct: cashMode ? '' : thresholdPct,
           include_wards: groupBy === 'parent' && includeWards,
+          ...dates,
         };
       case 'breakdown':
         return {
           session_id: filterSessionId, period_id: filterPeriodId, cumulative: isCumulative,
           class_id: filterClassId, section_id: filterSectionId, debt_type: debtType,
+          ...dates,
         };
       case 'performance':
         return { session_id: filterSessionId, period_id: filterPeriodId, cumulative: isCumulative, debt_type: debtType };
       case 'trends':
       default:
-        return { session_id: filterSessionId, days: 30 };
+        return { session_id: filterSessionId, ...(datesActive ? dates : { days: 30 }) };
     }
   }, [
     filterSessionId, filterPeriodId, isCumulative, filterClassId, filterSectionId,
     specificFeeId, debtType, groupBy, thresholdPct, includeWards,
+    datesActive, cashMode, startDate, endDate,
   ]);
 
   // ── Fetch Report Data ──
   const fetchReport = useCallback(async () => {
-    if (!filterSessionId) return;
+    if (dateError) return;
     const requestId = ++fetchRequestIdRef.current;
     const tab = activeTab;
     const gb = groupBy;
@@ -260,7 +313,7 @@ export default function FeeReportsPage() {
     } finally {
       if (requestId === fetchRequestIdRef.current) setDataLoading(false);
     }
-  }, [activeTab, groupBy, filterSessionId, buildParams, showToast]);
+  }, [activeTab, groupBy, dateError, buildParams, showToast]);
 
   useEffect(() => {
     if (!loading) fetchReport();
@@ -285,19 +338,21 @@ export default function FeeReportsPage() {
 
   const reportTitle = useMemo(() => {
     const parts = [BASE_TITLE[activeTab]];
-    if (filterLabels.session_label) parts.push(filterLabels.session_label);
-    if (filterLabels.period_label) parts.push(`${isCumulative ? 'From ' : ''}${filterLabels.period_label}`);
+    parts.push(filterLabels.session_label || 'All Sessions');
+    if (datesActive) parts.push(`Received ${startDate} to ${endDate}`);
+    if (activeTab !== 'trends' && filterLabels.period_label) parts.push(`${isCumulative ? 'From ' : ''}${filterLabels.period_label}`);
     if ((activeTab === 'collections' || activeTab === 'breakdown') && filterLabels.class_label) parts.push(filterLabels.class_label);
     if ((activeTab === 'collections' || activeTab === 'breakdown') && debtType !== 'all') parts.push(debtType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()));
     if (activeTab === 'collections' && thresholdPct) parts.push(`Min ${thresholdPct}% Cleared`);
     return parts.join(' — ');
-  }, [activeTab, filterLabels, isCumulative, debtType, thresholdPct]);
+  }, [activeTab, filterLabels, isCumulative, debtType, thresholdPct, datesActive, startDate, endDate]);
 
   const printFilters = useMemo(() => {
     const f: string[] = [];
-    if (filterLabels.session_label) f.push(`Session ${filterLabels.session_label}`);
+    f.push(filterLabels.session_label ? `Session ${filterLabels.session_label}` : 'All sessions');
+    if (datesActive) f.push(`Money received ${fmtDate(startDate)} – ${fmtDate(endDate)}`);
     if (activeTab === 'trends') {
-      f.push('Last 30 days');
+      if (!datesActive) f.push('Last 30 days');
       return f;
     }
     if (filterLabels.period_label) f.push(isCumulative ? `${filterLabels.period_label} and earlier terms` : filterLabels.period_label);
@@ -315,7 +370,7 @@ export default function FeeReportsPage() {
     }
     if (debtType !== 'all') f.push(DEBT_LABEL[debtType]);
     return f;
-  }, [activeTab, filterLabels, isCumulative, sections, filterSectionId, selectedFee, groupBy, thresholdPct, debtType]);
+  }, [activeTab, filterLabels, isCumulative, sections, filterSectionId, selectedFee, groupBy, thresholdPct, debtType, datesActive, startDate, endDate]);
 
   // ── CSV export: always the FULL filtered dataset ──
   const handleExportCsv = async () => {
@@ -365,6 +420,7 @@ export default function FeeReportsPage() {
     );
   }
 
+  const scopeLabel = filterLabels.session_label ? `Session ${filterLabels.session_label}` : 'All sessions';
   const landscape = activeTab === 'collections' || activeTab === 'breakdown';
   const tabBtn = (key: TabKey) =>
     `flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === key ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`;
@@ -414,12 +470,13 @@ export default function FeeReportsPage() {
           <div>
             <label className={labelCls}>Session</label>
             <select value={filterSessionId} onChange={e => setFilterSessionId(e.target.value)} className={selectCls}>
+              <option value="">All Sessions</option>
               {sessions.map(s => <option key={s.id} value={s.id}>{s.start_year}/{s.end_year}</option>)}
             </select>
           </div>
           <div>
             <label className={labelCls}>Term</label>
-            <select value={filterPeriodId} onChange={e => setFilterPeriodId(e.target.value)} className={selectCls}>
+            <select value={filterPeriodId} onChange={e => setFilterPeriodId(e.target.value)} disabled={!filterSessionId} className={selectCls}>
               <option value="">All Terms</option>
               {periods.filter(p => p.session?.id.toString() === filterSessionId).map(p => (
                 <option key={p.id} value={p.id}>{p.name || p.period?.name}</option>
@@ -476,12 +533,56 @@ export default function FeeReportsPage() {
             <div className="flex-1">
               <label className={labelCls}>Min % Cleared</label>
               <div className="relative">
-                <input type="number" min="0" max="100" placeholder="e.g. 100" value={thresholdPct} onChange={e => setThresholdPct(e.target.value)} disabled={activeTab !== 'collections'} className="w-full pl-3 pr-6 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-white outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50" />
+                <input type="number" min="0" max="100" placeholder="e.g. 100" value={thresholdPct} onChange={e => setThresholdPct(e.target.value)} disabled={activeTab !== 'collections' || cashMode} className="w-full pl-3 pr-6 py-2 text-xs font-bold border border-slate-200 rounded-lg bg-white outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50" />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
               </div>
             </div>
           </div>
         </div>
+
+        {/* ── Collection-date range (hidden on Class Performance) ── */}
+        {activeTab !== 'performance' && (
+          <div className="border-t border-slate-100 pt-4 flex flex-wrap items-end gap-4">
+            {activeTab !== 'trends' && (
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none pb-2">
+                <input type="checkbox" checked={useDates} onChange={e => setUseDates(e.target.checked)} className="accent-indigo-600" />
+                Filter by collection date
+              </label>
+            )}
+            <div className="w-40">
+              <label className={labelCls}>Received from</label>
+              <input type="date" value={startDate} max={endDate || undefined} onChange={e => setStartDate(e.target.value)}
+                disabled={activeTab !== 'trends' && !useDates} className={selectCls} />
+            </div>
+            <div className="w-40">
+              <label className={labelCls}>Received to</label>
+              <input type="date" value={endDate} min={startDate || undefined} onChange={e => setEndDate(e.target.value)}
+                disabled={activeTab !== 'trends' && !useDates} className={selectCls} />
+            </div>
+            <div className="flex flex-wrap gap-2 pb-0.5">
+              {([
+                ['This month', () => monthRange(0)],
+                ['Last month', () => monthRange(-1)],
+                ['Last 30 days', last30Days],
+              ] as [string, () => { start: string; end: string }][]).map(([label, fn]) => (
+                <button key={label} type="button"
+                  disabled={activeTab !== 'trends' && !useDates}
+                  onClick={() => { const r = fn(); setStartDate(r.start); setEndDate(r.end); }}
+                  className="px-3 py-2 text-[11px] font-bold border border-slate-200 rounded-lg bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                  {label}
+                </button>
+              ))}
+            </div>
+            {dateError && <p className="text-[11px] font-bold text-rose-600 pb-2.5">{dateError}</p>}
+            {!dateError && activeTab !== 'trends' && (
+              <p className="text-[11px] font-medium text-slate-500 pb-2.5 max-w-md">
+                {useDates
+                  ? 'Showing money received in this period. Billed, balance and % cleared are not shown.'
+                  : 'Off: cumulative totals for the selected session/term.'}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── TABS NAVIGATION ── */}
@@ -525,11 +626,14 @@ export default function FeeReportsPage() {
               familyTotals={body?.family_totals}
               groupBy={dataGroupBy}
               reportTitle={reportTitle}
+              cash={body?.mode === 'cash'}
+              summary={body?.summary}
+              scopeLabel={scopeLabel}
             />
           )}
-          {activeTab === 'trends' && <TrendsTab data={rowList} reportTitle={reportTitle} />}
+          {activeTab === 'trends' && <TrendsTab data={rowList} reportTitle={reportTitle} summary={body?.summary} sessionLabel={filterLabels.session_label} />}
           {activeTab === 'performance' && <ClassPerformanceTab data={rowList} totals={body?.totals} reportTitle={reportTitle} />}
-          {activeTab === 'breakdown' && <FeeBreakdownTab data={body} reportTitle={reportTitle} />}
+          {activeTab === 'breakdown' && <FeeBreakdownTab data={body} reportTitle={reportTitle} scopeLabel={scopeLabel} />}
         </div>
       </div>
 

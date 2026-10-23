@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Layers } from 'lucide-react';
+import CashBanner from './CashBanner';
 
 const n = (v: any): number => {
   const x = typeof v === 'string' ? parseFloat(v) : Number(v);
@@ -24,7 +25,7 @@ const TH = 'px-4 py-3 text-[10px] font-black text-slate-500 uppercase tracking-w
 
 /** Fee-by-fee breakdown: Student fees / Family fees / Other debts.
  *  Totals only — it does not matter which parent or student paid. */
-export default function FeeBreakdownTab({ data, reportTitle }: { data: any; reportTitle: string }) {
+export default function FeeBreakdownTab({ data, reportTitle, scopeLabel }: { data: any; reportTitle: string; scopeLabel?: string }) {
   // `'groups' in data` guards against another tab's response briefly landing here.
   if (data === null || data === undefined || typeof data !== 'object' || !Array.isArray(data.groups)) {
     return <div className="py-24 flex items-center justify-center text-slate-300 text-sm font-medium">Loading…</div>;
@@ -32,6 +33,71 @@ export default function FeeBreakdownTab({ data, reportTitle }: { data: any; repo
 
   const groups: any[] = data.groups;
   const totals = data.totals;
+
+  // Date-range mode: money RECEIVED in the window — collected amount only.
+  if (data.mode === 'cash') {
+    const cashTotals = totals || { paid: 0 };
+    return (
+      <div className="flex flex-col animate-in fade-in duration-300">
+        <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 rounded-t-xl print:hidden">
+          <h3 className="text-sm font-bold text-slate-800">Fee Breakdown — Money Received</h3>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
+            Collected per fee • all students and families combined
+          </p>
+        </div>
+
+        <CashBanner summary={data.summary} scopeLabel={scopeLabel || 'All sessions'} variant="table" />
+
+        {groups.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+            <Layers className="h-10 w-10 mb-3 text-slate-300" />
+            <h3 className="font-semibold text-slate-700 mb-1">No collections in this period</h3>
+            <p className="text-sm font-medium">No money was applied to fees or debts for the selected filters.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap print:text-[11px] print-table">
+              <thead className="bg-slate-50 border-b-2 border-slate-200 print:border-slate-900">
+                <tr>
+                  <th className={TH}>Fee</th>
+                  <th className={`${TH} text-right`}>Collected</th>
+                </tr>
+              </thead>
+
+              {groups.map((g: any) => (
+                <tbody key={g.key} className="print-group divide-y divide-slate-100 print:divide-slate-200">
+                  <tr className="bg-slate-100">
+                    <td colSpan={2} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 print:px-3">
+                      {g.label}
+                    </td>
+                  </tr>
+                  {g.rows.map((r: any) => (
+                    <tr key={`${g.key}-${r.id}`} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 print:px-3 print:py-2 font-bold text-slate-800">{r.name}</td>
+                      <td className="px-4 py-3 print:px-3 print:py-2 text-right font-bold text-indigo-600 print:text-slate-800">{fmtMoney(r.paid)}</td>
+                    </tr>
+                  ))}
+                  {g.rows.length > 1 && (
+                    <tr className="bg-slate-50 font-black text-slate-800">
+                      <td className="px-4 py-2.5 print:px-3 text-[10px] uppercase tracking-widest">{g.label} subtotal</td>
+                      <td className="px-4 py-2.5 print:px-3 text-right">{fmtMoney(g.subtotal.paid)}</td>
+                    </tr>
+                  )}
+                </tbody>
+              ))}
+
+              <tfoot className="print-once">
+                <tr className="bg-slate-900 text-white font-black print:bg-slate-100 print:text-slate-900 print:border-t-2 print:border-slate-900">
+                  <td className="px-4 py-3.5 print:px-3 print:py-2.5 text-[10px] uppercase tracking-widest">Grand total</td>
+                  <td className="px-4 py-3.5 print:px-3 text-right">{fmtMoney(cashTotals.paid)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (groups.length === 0) {
     return (
