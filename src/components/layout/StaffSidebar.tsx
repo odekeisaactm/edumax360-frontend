@@ -355,13 +355,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               current: isCurrentPath('/dashboard/staff/assessment/topics'),
               requiredPermissions: ['assessment_center.view_topicmodel'],
             },
-            {
-              name: 'Question Import',
-              href: '/dashboard/staff/assessment/question-import',
-              icon: <Upload className="h-4 w-4" />,
-              current: isCurrentPath('/dashboard/staff/assessment/question-import'),
-              requiredPermissions: ['assessment_center.add_questionmodel'],
-            },
+
           ],
         },
         {

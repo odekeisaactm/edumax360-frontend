@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { questionBanksAPI, questionsAPI } from '@/lib/api';
@@ -167,6 +167,7 @@ function BulkUploadModal({ open, bank, onClose, onUploadComplete }: {
   const [errorReportLoading, setErrorReportLoading] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollCountRef = useRef<number>(0);
 
   // Stop polling whenever the modal closes or unmounts
   useEffect(() => {
@@ -175,6 +176,7 @@ function BulkUploadModal({ open, bank, onClose, onUploadComplete }: {
         clearInterval(pollRef.current);
         pollRef.current = null;
       }
+      pollCountRef.current = 0;
     }
     return () => {
       if (pollRef.current) {
@@ -237,11 +239,22 @@ function BulkUploadModal({ open, bank, onClose, onUploadComplete }: {
     setUploading(true);
     setUploadError(null);
     setUploadStatus(null);
+    pollCountRef.current = 0;
 
     try {
       const res = await questionBanksAPI.bulkUpload(bank.id, uploadFile);
 
       pollRef.current = setInterval(async () => {
+        pollCountRef.current += 1;
+
+        // Timeout after 5 minutes (150 * 2s)
+        if (pollCountRef.current > 150) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setUploadError('Upload timed out. The server may be busy. Please check the list later.');
+          setUploading(false);
+          return;
+        }
+
         try {
           const status = await questionBanksAPI.getBulkUploadStatus(res.upload_id);
           setUploadStatus(status);
@@ -255,7 +268,6 @@ function BulkUploadModal({ open, bank, onClose, onUploadComplete }: {
           }
         } catch (pollErr) {
           console.error('Status poll error:', pollErr);
-          // Don't stop polling on transient network error — skip this tick
         }
       }, 2000);
 
@@ -282,6 +294,7 @@ function BulkUploadModal({ open, bank, onClose, onUploadComplete }: {
     setUploadFile(null);
     setUploadError(null);
     setFileError(null);
+    pollCountRef.current = 0;
   };
 
   const progressPct = uploadStatus
@@ -736,8 +749,21 @@ function QuestionFormModal({ open, editing, bankId, onClose, onSaved }: {
         const existingOpts = editing.options || {};
         setOptions(existingOpts as Record<string, string>);
         setCorrectAnswer(editing.correct_answer || '');
-        const count = Object.keys(existingOpts).length;
+
+        const keys = Object.keys(existingOpts);
+        const count = keys.length;
         if (count >= 2) setNumberOfOptions(count);
+
+        // Detect label type from existing options
+        if (keys.length > 0) {
+          const firstKey = keys[0];
+          if (/^[a-z]$/.test(firstKey)) setOptionLabelType('abc');
+          else if (/^\d+$/.test(firstKey)) setOptionLabelType('123');
+          else if (['i', 'ii', 'iii', 'iv', 'v', 'vi'].includes(firstKey)) setOptionLabelType('roman');
+          else setOptionLabelType('ABC');
+        } else {
+          setOptionLabelType('ABC');
+        }
       } else if (type === 'true_false') {
         setCorrectAnswer(editing.correct_answer || '');
       } else {
@@ -1296,6 +1322,7 @@ export default function QuestionBankDetailPage() {
   const params  = useParams();
   const router  = useRouter();
   const { hasPermission, user } = useAuth();
+  const [mounted, setMounted] = useState(false);
   const bankId  = parseInt(params.id as string);
 
   const [bank, setBank]           = useState<QuestionBank | null>(null);
@@ -1313,6 +1340,10 @@ export default function QuestionBankDetailPage() {
 
   const [toasts, setToasts]       = useState<ToastItem[]>([]);
   const [activeTab, setActiveTab] = useState<string>('all');
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const canView   = user?.is_superuser || hasPermission('assessment_center.view_questionmodel');
   const canCreate = user?.is_superuser || hasPermission('assessment_center.add_questionmodel');
@@ -1337,11 +1368,8 @@ export default function QuestionBankDetailPage() {
   const dismissToast = (id: number) => setToasts(p => p.filter(t => t.id !== id));
 
   // ── Fetch ──
-  useEffect(() => {
-    if (canView && bankId) fetchBankDetails();
-  }, [canView, bankId]);
-
-  const fetchBankDetails = async () => {
+  const fetchBankDetails = useCallback(async () => {
+    if (!canView || !bankId) return;
     setLoading(true);
     setFetchError(null);
     try {
@@ -1354,7 +1382,11 @@ export default function QuestionBankDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [bankId, canView]);
+
+  useEffect(() => {
+    if (mounted) fetchBankDetails();
+  }, [mounted, fetchBankDetails]);
 
   // ── Handlers ──
   const handleSaved = (q: Question, isNew: boolean) => {
@@ -1391,6 +1423,14 @@ export default function QuestionBankDetailPage() {
       setIsDeleting(false);
     }
   };
+
+  if (!mounted) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center gap-3 text-slate-400">
+        <Loader2 className="h-6 w-6 animate-spin text-violet-600" />
+      </div>
+    );
+  }
 
   // ── Guard: no permission ──
   if (!canView) {
@@ -1435,6 +1475,22 @@ export default function QuestionBankDetailPage() {
       </div>
     );
   }
+
+  // Static Tailwind classes for stat chips
+  const statCards = [
+    { label: 'Subject',         value: bank?.subject_name || '—',       icon: BookMarked, bg: 'bg-blue-50', text: 'text-blue-600' },
+    { label: 'Class',           value: bank?.class_name || '—',         icon: GraduationCap, bg: 'bg-purple-50', text: 'text-purple-600' },
+    { label: 'Total Questions', value: stats?.total_questions ?? questions.length, icon: Hash, bg: 'bg-violet-50', text: 'text-violet-600' },
+    {
+      label: 'Difficulty',
+      value: bank?.difficulty_level
+        ? bank.difficulty_level.charAt(0).toUpperCase() + bank.difficulty_level.slice(1)
+        : 'Medium',
+      icon: Target,
+      bg: 'bg-amber-50',
+      text: 'text-amber-600',
+    },
+  ];
 
   return (
     <div className="space-y-6 pb-8">
@@ -1506,22 +1562,10 @@ export default function QuestionBankDetailPage() {
 
       {/* ── Stat Chips ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'Subject',         value: bank?.subject_name || '—',       icon: BookMarked,  color: 'blue'   },
-          { label: 'Class',           value: bank?.class_name || '—',         icon: GraduationCap, color: 'purple' },
-          { label: 'Total Questions', value: stats?.total_questions ?? questions.length, icon: Hash, color: 'violet' },
-          {
-            label: 'Difficulty',
-            value: bank?.difficulty_level
-              ? bank.difficulty_level.charAt(0).toUpperCase() + bank.difficulty_level.slice(1)
-              : 'Medium',
-            icon: Target,
-            color: 'amber',
-          },
-        ].map(({ label, value, icon: Icon, color }) => (
+        {statCards.map(({ label, value, icon: Icon, bg, text }) => (
           <div key={label} className="bg-white rounded-2xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-${color}-50`}>
-              <Icon className={`h-4 w-4 text-${color}-600`} />
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${bg}`}>
+              <Icon className={`h-4 w-4 ${text}`} />
             </div>
             <div className="min-w-0">
               <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wide">{label}</p>

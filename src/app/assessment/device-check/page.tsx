@@ -16,7 +16,27 @@ import {
   Ban,
 } from 'lucide-react';
 
+// Standardized error parser
+function extractError(err: any): string {
+  const d = err?.response?.data;
+  if (d) {
+    if (typeof d === 'string') return d;
+    if (d.detail) return String(d.detail);
+    if (d.error) return String(d.error);
+    if (d.message) return String(d.message);
+    if (d.non_field_errors?.length) return d.non_field_errors[0];
+    if (typeof d === 'object') {
+      const msgs = Object.entries(d)
+        .map(([f, v]: [string, any]) => `${f.replace(/_/g, ' ')}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
+        .join('\n');
+      if (msgs) return msgs;
+    }
+  }
+  return err?.message || 'An unexpected error occurred.';
+}
+
 export default function DeviceCheckPage() {
+  const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [requesting, setRequesting] = useState(false);
@@ -25,11 +45,24 @@ export default function DeviceCheckPage() {
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  // NEW: device name state for approval request
+  // SSR-safe browser name
+  const [browserName, setBrowserName] = useState('Unknown');
+
+  // Device name state for approval request
   const [suggestedDeviceName, setSuggestedDeviceName] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
 
   useEffect(() => {
+    setMounted(true);
+
+    // Safely extract browser name on the client side only
+    if (typeof window !== 'undefined') {
+      const match = navigator.userAgent.match(/(?:Chrome|Firefox|Safari|Edge)\/[\d.]+/);
+      if (match) setBrowserName(match[0]);
+      else if (navigator.userAgent.includes('Safari')) setBrowserName('Safari');
+      else setBrowserName('Web Browser');
+    }
+
     checkDevice();
   }, []);
 
@@ -47,7 +80,8 @@ export default function DeviceCheckPage() {
       setDeviceStatus(status);
     } catch (error: any) {
       console.error('Error checking device:', error);
-      setError(error.message || 'Failed to check device status');
+      setError(extractError(error));
+      setDeviceStatus(null);
     } finally {
       setLoading(false);
     }
@@ -87,15 +121,7 @@ export default function DeviceCheckPage() {
       setTimeout(() => setShowSuccess(false), 5000);
     } catch (error: any) {
       console.error('Error requesting approval:', error);
-
-      let errorMessage = 'Failed to request approval';
-      if (error.response?.data?.error) {
-        errorMessage = error.response.data.error;
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-
-      setError(errorMessage);
+      setError(extractError(error));
     } finally {
       setRequesting(false);
     }
@@ -106,6 +132,23 @@ export default function DeviceCheckPage() {
     await checkDevice();
     setChecking(false);
   };
+
+  if (!mounted || loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
+        <div className="text-center space-y-4">
+          <div className="relative">
+            <div className="animate-spin rounded-full h-20 w-20 border-4 border-gray-200 border-t-blue-600 mx-auto"></div>
+            <Shield className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 h-8 w-8 text-blue-600" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Checking Device...</h2>
+            <p className="text-gray-600 mt-1">Please wait while we verify your device</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Derive header gradient based on status
   const headerGradient = (() => {
@@ -126,23 +169,6 @@ export default function DeviceCheckPage() {
       default:         return <Shield className="h-8 w-8 text-white" />;
     }
   })();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
-        <div className="text-center space-y-4">
-          <div className="relative">
-            <div className="animate-spin rounded-full h-20 w-20 border-4 border-gray-200 border-t-blue-600 mx-auto"></div>
-            <Shield className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 h-8 w-8 text-blue-600" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">Checking Device...</h2>
-            <p className="text-gray-600 mt-1">Please wait while we verify your device</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
@@ -195,6 +221,23 @@ export default function DeviceCheckPage() {
                     <p className="text-sm text-red-700 mt-1">{error}</p>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* FALLBACK: If API fails to return a status */}
+            {!deviceStatus && !error && (
+              <div className="text-center space-y-4 py-8">
+                <XCircle className="h-12 w-12 text-gray-400 mx-auto" />
+                <h2 className="text-xl font-bold text-gray-900">Status Unknown</h2>
+                <p className="text-gray-600">
+                  We couldn't determine your device's authorization status.
+                </p>
+                <button
+                  onClick={handleRecheck}
+                  className="inline-flex items-center gap-2 px-6 py-2 bg-gray-900 text-white font-medium rounded-xl hover:bg-gray-800 transition-colors"
+                >
+                  <RefreshCw className="h-4 w-4" /> Try Again
+                </button>
               </div>
             )}
 
@@ -342,13 +385,13 @@ export default function DeviceCheckPage() {
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-1">Device ID</p>
                   <p className="text-sm font-mono text-gray-900 truncate">
-                    {fingerprint.substring(0, 20)}...
+                    {fingerprint ? `${fingerprint.substring(0, 20)}...` : 'Loading...'}
                   </p>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-1">Browser</p>
                   <p className="text-sm text-gray-900 truncate">
-                    {navigator.userAgent.match(/(?:Chrome|Firefox|Safari|Edge)\/[\d.]+/)?.[0] || 'Unknown'}
+                    {browserName}
                   </p>
                 </div>
               </div>

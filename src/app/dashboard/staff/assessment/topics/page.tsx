@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { topicsAPI, academicAPI } from '@/lib/api';
+import { topicsAPI, api, academicAPI } from '@/lib/api';
 import { Topic, TopicFormValues, Subject, ClassModel } from '@/lib/types';
 import {
   BookOpen,
@@ -20,7 +20,15 @@ import {
   Tag,
   GraduationCap,
   Layers,
+  RefreshCw,
 } from 'lucide-react';
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
+interface AllowedClass {
+  id: number; // The actual ClassModel ID
+  name: string;
+  subjects: { id: number; name: string }[];
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 let _toastId = 0;
@@ -54,7 +62,7 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
           {t.type === 'success'
             ? <Check className="h-4 w-4 flex-shrink-0 mt-0.5 text-green-600" />
             : <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-red-500" />}
-          <p className="text-sm font-medium flex-1 leading-snug whitespace-pre-line">{t.message}</p>
+          <p className="text-sm font-medium flex-1 leading-snug whitespace-pre-wrap">{t.message}</p>
           <button onClick={() => onDismiss(t.id)} className="opacity-50 hover:opacity-100 flex-shrink-0 ml-2">
             <X className="h-3.5 w-3.5" />
           </button>
@@ -98,14 +106,13 @@ function ConfirmModal({ open, topicTitle, isDeleting, onConfirm, onCancel }: {
 }
 
 // ─── Topic Form Modal ─────────────────────────────────────────────────────────
-const inputCls = "w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white";
+const inputCls = "w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent bg-white";
 const labelCls = "block text-sm font-semibold text-slate-700 mb-1.5";
 
-function TopicFormModal({ open, editing, subjects, classes, onClose, onSave }: {
+function TopicFormModal({ open, editing, allowedClasses, onClose, onSave }: {
   open: boolean;
   editing: Topic | null;
-  subjects: Subject[];
-  classes: ClassModel[];
+  allowedClasses: AllowedClass[];
   onClose: () => void;
   onSave: (data: TopicFormValues) => Promise<void>;
 }) {
@@ -115,17 +122,32 @@ function TopicFormModal({ open, editing, subjects, classes, onClose, onSave }: {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Cascading state
+  const [selectedClassId, setSelectedClassId] = useState<number | ''>('');
+
+  // Derived subjects based on selected class
+  const availableSubjects = useMemo(() => {
+    if (!selectedClassId) return [];
+    const cls = allowedClasses.find(c => c.id === selectedClassId);
+    return cls ? cls.subjects : [];
+  }, [selectedClassId, allowedClasses]);
+
   useEffect(() => {
     if (open) {
       if (editing) {
+        const classId = typeof editing.student_class === 'object' ? (editing.student_class as any).id : editing.student_class;
+        const subjectId = typeof editing.subject === 'object' ? (editing.subject as any).id : editing.subject;
+
         setFormData({
           title: editing.title,
           description: editing.description || '',
-          subject: typeof editing.subject === 'object' ? (editing.subject as any).id : editing.subject,
-          student_class: typeof editing.student_class === 'object' ? (editing.student_class as any).id : editing.student_class,
+          subject: subjectId,
+          student_class: classId,
         });
+        setSelectedClassId(classId);
       } else {
         setFormData({ title: '', description: '', subject: 0, student_class: 0 });
+        setSelectedClassId('');
       }
       setError(null);
     }
@@ -133,10 +155,17 @@ function TopicFormModal({ open, editing, subjects, classes, onClose, onSave }: {
 
   if (!open) return null;
 
+  const handleClassChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value ? parseInt(e.target.value) : '';
+    setSelectedClassId(val);
+    setFormData(prev => ({ ...prev, student_class: val || 0, subject: 0 })); // Reset subject
+  };
+
   const handleSubmit = async () => {
     if (!formData.title.trim()) { setError('Topic title is required.'); return; }
-    if (!formData.subject) { setError('Please select a subject.'); return; }
     if (!formData.student_class) { setError('Please select a class.'); return; }
+    if (!formData.subject) { setError('Please select a subject.'); return; }
+
     setIsSubmitting(true);
     setError(null);
     try {
@@ -173,7 +202,7 @@ function TopicFormModal({ open, editing, subjects, classes, onClose, onSave }: {
           {error && (
             <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
               <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-red-500" />
-              <span className="whitespace-pre-line">{error}</span>
+              <span className="whitespace-pre-wrap">{error}</span>
             </div>
           )}
 
@@ -201,26 +230,33 @@ function TopicFormModal({ open, editing, subjects, classes, onClose, onSave }: {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
+              <label className={labelCls}>Class <span className="text-red-500">*</span></label>
+              <select
+                value={selectedClassId}
+                onChange={handleClassChange}
+                className={inputCls}
+              >
+                <option value="">Select Class</option>
+                {allowedClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {allowedClasses.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">No classes assigned to you.</p>
+              )}
+            </div>
+            <div>
               <label className={labelCls}>Subject <span className="text-red-500">*</span></label>
               <select
                 value={formData.subject || ''}
                 onChange={e => setFormData({ ...formData, subject: parseInt(e.target.value) })}
                 className={inputCls}
+                disabled={!selectedClassId}
               >
-                <option value="">Select Subject</option>
-                {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                <option value="">{!selectedClassId ? 'Select class first' : 'Select Subject'}</option>
+                {availableSubjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
-            </div>
-            <div>
-              <label className={labelCls}>Class <span className="text-red-500">*</span></label>
-              <select
-                value={formData.student_class || ''}
-                onChange={e => setFormData({ ...formData, student_class: parseInt(e.target.value) })}
-                className={inputCls}
-              >
-                <option value="">Select Class</option>
-                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              {selectedClassId && availableSubjects.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">No subjects assigned for this class.</p>
+              )}
             </div>
           </div>
         </div>
@@ -231,7 +267,7 @@ function TopicFormModal({ open, editing, subjects, classes, onClose, onSave }: {
             className="px-4 py-2 text-sm border border-slate-200 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
             Cancel
           </button>
-          <button onClick={handleSubmit} disabled={isSubmitting}
+          <button onClick={handleSubmit} disabled={isSubmitting || !formData.subject}
             className="px-5 py-2 text-sm bg-gradient-to-r from-violet-600 to-purple-600 text-white font-semibold rounded-xl hover:from-violet-700 hover:to-purple-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-violet-200">
             {isSubmitting
               ? <><Loader2 className="h-4 w-4 animate-spin" /> {editing ? 'Updating...' : 'Creating...'}</>
@@ -246,11 +282,12 @@ function TopicFormModal({ open, editing, subjects, classes, onClose, onSave }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function TopicsPage() {
   const { hasPermission, user } = useAuth();
+  const [mounted, setMounted] = useState(false);
 
   const [topics, setTopics] = useState<Topic[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [classes, setClasses] = useState<ClassModel[]>([]);
+  const [allowedClasses, setAllowedClasses] = useState<AllowedClass[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [editingTopic, setEditingTopic] = useState<Topic | null>(null);
@@ -269,6 +306,10 @@ export default function TopicsPage() {
   const canEdit   = user?.is_superuser || hasPermission('assessment_center.change_topicmodel');
   const canDelete = user?.is_superuser || hasPermission('assessment_center.delete_topicmodel');
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // ── Toasts ──
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;
@@ -278,37 +319,75 @@ export default function TopicsPage() {
   const dismissToast = (id: number) => setToasts(p => p.filter(t => t.id !== id));
 
   // ── Fetch ──
-  useEffect(() => {
-    if (canView) fetchAll();
-  }, [canView]);
-
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
+    if (!canView) return;
     setLoading(true);
+    setPageError(null);
     try {
-      const [topicsData, subjectsData, classesData] = await Promise.all([
+      const [topicsData, uploadableRes, classesRes] = await Promise.all([
         topicsAPI.list({}),
-        academicAPI.listSubjects({ is_active: true }),
+        api.get('/api/academic/class-subjects/uploadable/', { params: { result_type: 'score' } }),
         academicAPI.listClasses({ is_active: true }),
       ]);
+
       setTopics(topicsData);
-      setSubjects(subjectsData);
-      setClasses(classesData);
+
+      // 1. Process allowed classes & subjects
+      const rawClasses = uploadableRes.data?.data?.classes || [];
+      const baseClasses = classesRes || [];
+
+      const grouped = new Map<string, AllowedClass>();
+
+      rawClasses.forEach((cls: any) => {
+        const cName = cls.class_name;
+
+        // Find the actual base ClassModel ID by matching the name
+        const baseClass = baseClasses.find((c: any) => c.name === cName);
+        const classId = baseClass ? baseClass.id : cls.id; // Fallback to config id
+
+        if (!grouped.has(cName)) {
+          grouped.set(cName, { id: classId, name: cName, subjects: [] });
+        }
+
+        const g = grouped.get(cName)!;
+        cls.subjects.forEach((sub: any) => {
+          if (!g.subjects.some(s => s.id === sub.id)) {
+            g.subjects.push({ id: sub.id, name: sub.name });
+          }
+        });
+      });
+
+      // Sort classes alphabetically and sort subjects within each class
+      const allowed = Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name));
+      allowed.forEach(a => a.subjects.sort((x, y) => x.name.localeCompare(y.name)));
+
+      setAllowedClasses(allowed);
+
     } catch (err: any) {
-      showToast('error', extractError(err));
+      setPageError(extractError(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [canView]);
+
+  useEffect(() => {
+    if (mounted) fetchAll();
+  }, [mounted, fetchAll]);
 
   // ── Helpers ──
   const getSubjectName = (subjectId: number | Subject): string => {
     if (typeof subjectId === 'object' && subjectId !== null) return (subjectId as any).name || 'Unknown';
-    return subjects.find(s => s.id === subjectId)?.name || 'Unknown';
+    for (const cls of allowedClasses) {
+      const sub = cls.subjects.find(s => s.id === subjectId);
+      if (sub) return sub.name;
+    }
+    return 'Unknown';
   };
 
   const getClassName = (classId: number | ClassModel): string => {
     if (typeof classId === 'object' && classId !== null) return (classId as any).name || 'Unknown';
-    return classes.find(c => c.id === classId)?.name || 'Unknown';
+    const cls = allowedClasses.find(c => c.id === classId);
+    return cls ? cls.name : 'Unknown';
   };
 
   const getSubjectId = (s: number | Subject): number =>
@@ -326,9 +405,15 @@ export default function TopicsPage() {
     return true;
   });
 
-  // ── Stats ──
+  // ── Stats (Static Tailwind Classes) ──
   const uniqueSubjects = new Set(topics.map(t => getSubjectId(t.subject))).size;
   const uniqueClasses  = new Set(topics.map(t => getClassId(t.student_class))).size;
+
+  const statCards = [
+    { label: 'Total Topics', value: topics.length, icon: BookOpen, bg: 'bg-violet-50', text: 'text-violet-600' },
+    { label: 'Subjects Covered', value: uniqueSubjects, icon: Tag, bg: 'bg-purple-50', text: 'text-purple-600' },
+    { label: 'Classes Covered', value: uniqueClasses, icon: GraduationCap, bg: 'bg-indigo-50', text: 'text-indigo-600' },
+  ];
 
   // ── Handlers ──
   const handleSave = async (data: TopicFormValues) => {
@@ -361,6 +446,14 @@ export default function TopicsPage() {
     }
   };
 
+  if (!mounted) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
+      </div>
+    );
+  }
+
   // ── Access denied ──
   if (!canView) {
     return (
@@ -376,8 +469,8 @@ export default function TopicsPage() {
     );
   }
 
-  // Exact column sizing guarantees alignment for headers and rows
-  const gridClasses = "grid grid-cols-[minmax(0,1fr)_180px_140px_90px_40px] items-center gap-4";
+  // Simplified grid for the new layout
+  const gridClasses = "grid grid-cols-[minmax(0,1fr)_100px] items-center gap-4";
 
   return (
     <div className="space-y-6 pb-8">
@@ -394,8 +487,7 @@ export default function TopicsPage() {
       <TopicFormModal
         open={showForm}
         editing={editingTopic}
-        subjects={subjects}
-        classes={classes}
+        allowedClasses={allowedClasses}
         onClose={() => { setShowForm(false); setEditingTopic(null); }}
         onSave={handleSave}
       />
@@ -423,14 +515,10 @@ export default function TopicsPage() {
 
       {/* ── Stat Chips ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {[
-        { label: 'Total Topics', value: topics.length, icon: BookOpen, color: 'violet' },
-          { label: 'Subjects Covered', value: uniqueSubjects, icon: Tag, color: 'purple' },
-          { label: 'Classes Covered', value: uniqueClasses, icon: GraduationCap, color: 'indigo' },
-        ].map(({ label, value, icon: Icon, color }) => (
+        {statCards.map(({ label, value, icon: Icon, bg, text }) => (
           <div key={label} className="bg-white rounded-2xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-${color}-50`}>
-              <Icon className={`h-4 w-4 text-${color}-600`} />
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${bg}`}>
+              <Icon className={`h-4 w-4 ${text}`} />
             </div>
             <div className="min-w-0">
               <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wide truncate">{label}</p>
@@ -442,7 +530,8 @@ export default function TopicsPage() {
 
       {/* ── List Card ── */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
-        <div className="min-w-[800px]">
+        <div className="min-w-[600px]">
+
           {/* Search + Filters */}
           <div className="flex flex-col sm:flex-row gap-3 px-5 py-4 border-b border-slate-100">
             <div className="relative flex-1">
@@ -456,28 +545,28 @@ export default function TopicsPage() {
               />
             </div>
             <select
-              value={filterSubject}
-              onChange={e => setFilterSubject(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent text-slate-700 bg-white">
-              <option value="">All Subjects</option>
-              {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            <select
               value={filterClass}
               onChange={e => setFilterClass(e.target.value)}
               className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent text-slate-700 bg-white">
               <option value="">All Classes</option>
-              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {allowedClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <select
+              value={filterSubject}
+              onChange={e => setFilterSubject(e.target.value)}
+              className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent text-slate-700 bg-white">
+              <option value="">All Subjects</option>
+              {/* Build a unique list of subjects from allowedClasses for the filter */}
+              {Array.from(new Map(allowedClasses.flatMap(c => c.subjects).map(s => [s.id, s])).values()).map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
             </select>
           </div>
 
           {/* Table header */}
           <div className={`${gridClasses} px-5 py-3 bg-slate-50/60 border-b border-slate-100`}>
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Topic</span>
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Subject</span>
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Class</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Topic Details</span>
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Actions</span>
-            <span></span>
           </div>
 
           {/* Rows */}
@@ -485,6 +574,14 @@ export default function TopicsPage() {
             <div className="flex items-center justify-center py-16 gap-3 text-slate-400">
               <Loader2 className="h-5 w-5 animate-spin" />
               <span className="text-sm">Loading topics...</span>
+            </div>
+          ) : pageError ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+               <AlertCircle className="h-8 w-8 text-red-400" />
+               <p className="text-sm text-red-600 max-w-sm text-center">{pageError}</p>
+               <button onClick={fetchAll} className="mt-2 text-sm text-violet-600 font-semibold flex items-center gap-1 hover:text-violet-700">
+                 <RefreshCw className="h-3.5 w-3.5" /> Try Again
+               </button>
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
@@ -509,34 +606,30 @@ export default function TopicsPage() {
                   <div key={topic.id}>
                     <div className={`${gridClasses} px-5 py-4 hover:bg-slate-50/50 transition-colors`}>
 
-                      {/* Topic name */}
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-8 h-8 rounded-xl bg-violet-50 flex items-center justify-center flex-shrink-0">
+                      {/* Topic Title & Badges */}
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-violet-50 flex items-center justify-center flex-shrink-0 mt-0.5">
                           <Layers className="h-4 w-4 text-violet-500" />
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-semibold text-slate-900 truncate">{topic.title}</p>
-                          {topic.created_by_name && (
-                            <p className="text-xs text-slate-400 truncate">by {topic.created_by_name}</p>
-                          )}
+                        <div className="min-w-0 flex flex-col gap-1">
+                          <p className="font-semibold text-slate-900 truncate leading-tight text-base">
+                            {topic.title}
+                          </p>
+                          <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-semibold rounded-md border border-blue-100 whitespace-nowrap">
+                              {getSubjectName(topic.subject)}
+                            </span>
+                            <span className="px-2 py-0.5 bg-purple-50 text-purple-700 text-[10px] font-semibold rounded-md border border-purple-100 whitespace-nowrap">
+                              {getClassName(topic.student_class)}
+                            </span>
+                            {topic.created_by_name && (
+                              <span className="text-[10px] text-slate-400 truncate ml-1">by {topic.created_by_name}</span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
-                      {/* Subject badge */}
-                      <div className="min-w-0 truncate">
-                        <span className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-full whitespace-nowrap">
-                          {getSubjectName(topic.subject)}
-                        </span>
-                      </div>
-
-                      {/* Class badge */}
-                      <div className="min-w-0 truncate">
-                        <span className="px-2.5 py-1 bg-purple-50 text-purple-700 text-xs font-semibold rounded-full whitespace-nowrap">
-                          {getClassName(topic.student_class)}
-                        </span>
-                      </div>
-
-                      {/* Action buttons */}
+                      {/* Actions */}
                       <div className="flex items-center justify-end gap-1">
                         {canEdit && (
                           <button onClick={() => { setEditingTopic(topic); setShowForm(true); }} title="Edit"
@@ -550,13 +643,9 @@ export default function TopicsPage() {
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
-                      </div>
-
-                      {/* Expand toggle */}
-                      <div>
                         <button
                           onClick={() => setExpandedId(isExpanded ? null : topic.id)}
-                          className="p-2 rounded-lg text-slate-400 bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all w-full flex justify-center">
+                          className="p-2 rounded-lg text-slate-400 bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-all ml-1">
                           {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                         </button>
                       </div>
@@ -570,7 +659,7 @@ export default function TopicsPage() {
                           <p className="text-slate-800 font-medium">{topic.title}</p>
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                          <div>
+                          <div className="col-span-2 sm:col-span-3">
                             <p className="text-xs text-slate-400 font-medium mb-1">Description</p>
                             <p className="text-slate-700">{topic.description || <span className="italic text-slate-400">No description</span>}</p>
                           </div>
@@ -592,7 +681,7 @@ export default function TopicsPage() {
           )}
 
           {/* Footer count */}
-          {!loading && filtered.length > 0 && (
+          {!loading && !pageError && filtered.length > 0 && (
             <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/40">
               <p className="text-xs text-slate-400">
                 Showing <span className="font-semibold text-slate-600">{filtered.length}</span> of{' '}

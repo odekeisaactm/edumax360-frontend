@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { questionBanksAPI, academicAPI, topicsAPI } from '@/lib/api';
-import { QuestionBank, QuestionBankFormValues, Subject, ClassModel, Topic } from '@/lib/types';
+import { questionBanksAPI, api, topicsAPI } from '@/lib/api';
+import { QuestionBank, QuestionBankFormValues, Topic } from '@/lib/types';
 import {
   Library,
   Plus,
@@ -17,14 +17,21 @@ import {
   Search,
   Eye,
   BookMarked,
-  GraduationCap,
   Target,
   ChevronDown,
   ChevronUp,
   Loader2,
   Hash,
   Layers,
+  RefreshCw,
 } from 'lucide-react';
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
+interface AllowedClass {
+  id: number;
+  name: string;
+  subjects: { id: number; name: string }[];
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 let _toastId = 0;
@@ -105,11 +112,10 @@ function ConfirmModal({ open, bankName, isDeleting, onConfirm, onCancel }: {
 const inputCls = "w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent bg-white";
 const labelCls = "block text-sm font-semibold text-slate-700 mb-1.5";
 
-function BankFormModal({ open, editing, subjects, classes, topics, onClose, onSave }: {
+function BankFormModal({ open, editing, allowedClasses, topics, onClose, onSave }: {
   open: boolean;
   editing: QuestionBank | null;
-  subjects: Subject[];
-  classes: ClassModel[];
+  allowedClasses: AllowedClass[];
   topics: Topic[];
   onClose: () => void;
   onSave: (data: QuestionBankFormValues) => Promise<void>;
@@ -121,21 +127,45 @@ function BankFormModal({ open, editing, subjects, classes, topics, onClose, onSa
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Cascading state
+  const [selectedClassId, setSelectedClassId] = useState<number | ''>('');
+
+  // Derived subjects based on selected class
+  const availableSubjects = useMemo(() => {
+    if (!selectedClassId) return [];
+    const cls = allowedClasses.find(c => c.id === selectedClassId);
+    return cls ? cls.subjects : [];
+  }, [selectedClassId, allowedClasses]);
+
+  // Filter topics by selected subject/class in form
+  const formTopics = useMemo(() => {
+    return topics.filter(t => {
+      const tSubject = typeof t.subject === 'object' ? (t.subject as any).id : t.subject;
+      const tClass = typeof t.student_class === 'object' ? (t.student_class as any).id : t.student_class;
+      if (formData.subject && tSubject !== formData.subject) return false;
+      if (formData.student_class && tClass !== formData.student_class) return false;
+      return true;
+    });
+  }, [topics, formData.subject, formData.student_class]);
+
   useEffect(() => {
     if (open) {
       if (editing) {
+        const classId = typeof editing.student_class === 'object' ? (editing.student_class as any).id : editing.student_class;
         setFormData({
           name: editing.name,
           description: editing.description || '',
           subject: typeof editing.subject === 'object' ? (editing.subject as any).id : editing.subject,
-          student_class: typeof editing.student_class === 'object' ? (editing.student_class as any).id : editing.student_class,
+          student_class: classId,
           topic: editing.topic ? (typeof editing.topic === 'object' ? (editing.topic as any).id : editing.topic) : null,
           school_section: editing.school_section ? (typeof editing.school_section === 'object' ? (editing.school_section as any).id : editing.school_section) : null,
           difficulty_level: editing.difficulty_level || 'medium',
           is_active: editing.is_active,
         });
+        setSelectedClassId(classId);
       } else {
         setFormData({ name: '', description: '', subject: 0, student_class: 0, topic: null, school_section: null, difficulty_level: 'medium', is_active: true });
+        setSelectedClassId('');
       }
       setError(null);
     }
@@ -143,10 +173,16 @@ function BankFormModal({ open, editing, subjects, classes, topics, onClose, onSa
 
   if (!open) return null;
 
+  const handleClassChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value ? parseInt(e.target.value) : '';
+    setSelectedClassId(val);
+    setFormData(prev => ({ ...prev, student_class: val || 0, subject: 0, topic: null })); // Reset subject and topic
+  };
+
   const handleSubmit = async () => {
     if (!formData.name.trim()) { setError('Bank name is required.'); return; }
-    if (!formData.subject) { setError('Please select a subject.'); return; }
     if (!formData.student_class) { setError('Please select a class.'); return; }
+    if (!formData.subject) { setError('Please select a subject.'); return; }
     setIsSubmitting(true);
     setError(null);
     try {
@@ -157,15 +193,6 @@ function BankFormModal({ open, editing, subjects, classes, topics, onClose, onSa
       setIsSubmitting(false);
     }
   };
-
-  // Filter topics by selected subject/class in form
-  const formTopics = topics.filter(t => {
-    const tSubject = typeof t.subject === 'object' ? (t.subject as any).id : t.subject;
-    const tClass = typeof t.student_class === 'object' ? (t.student_class as any).id : t.student_class;
-    if (formData.subject && tSubject !== formData.subject) return false;
-    if (formData.student_class && tClass !== formData.student_class) return false;
-    return true;
-  });
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -214,25 +241,28 @@ function BankFormModal({ open, editing, subjects, classes, topics, onClose, onSa
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>Subject <span className="text-red-500">*</span></label>
-              <select value={formData.subject || ''} className={inputCls}
-                onChange={e => setFormData({ ...formData, subject: parseInt(e.target.value), topic: null })}>
-                <option value="">Select Subject</option>
-                {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              <label className={labelCls}>Class <span className="text-red-500">*</span></label>
+              <select value={selectedClassId} onChange={handleClassChange} className={inputCls}>
+                <option value="">Select Class</option>
+                {allowedClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+              {allowedClasses.length === 0 && <p className="text-xs text-amber-600 mt-1">No classes assigned to you.</p>}
             </div>
             <div>
-              <label className={labelCls}>Class <span className="text-red-500">*</span></label>
-              <select value={formData.student_class || ''} className={inputCls}
-                onChange={e => setFormData({ ...formData, student_class: parseInt(e.target.value), topic: null })}>
-                <option value="">Select Class</option>
-                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <label className={labelCls}>Subject <span className="text-red-500">*</span></label>
+              <select value={formData.subject || ''} className={inputCls}
+                onChange={e => setFormData({ ...formData, subject: parseInt(e.target.value), topic: null })}
+                disabled={!selectedClassId}>
+                <option value="">{!selectedClassId ? 'Select class first' : 'Select Subject'}</option>
+                {availableSubjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
+              {selectedClassId && availableSubjects.length === 0 && <p className="text-xs text-amber-600 mt-1">No subjects assigned.</p>}
             </div>
             <div>
               <label className={labelCls}>Topic <span className="text-slate-400 font-normal">(optional)</span></label>
               <select value={formData.topic || ''} className={inputCls}
-                onChange={e => setFormData({ ...formData, topic: e.target.value ? parseInt(e.target.value) : null })}>
+                onChange={e => setFormData({ ...formData, topic: e.target.value ? parseInt(e.target.value) : null })}
+                disabled={!formData.subject}>
                 <option value="">No specific topic</option>
                 {formTopics.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
               </select>
@@ -268,7 +298,7 @@ function BankFormModal({ open, editing, subjects, classes, topics, onClose, onSa
             className="px-4 py-2 text-sm border border-slate-200 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
             Cancel
           </button>
-          <button onClick={handleSubmit} disabled={isSubmitting}
+          <button onClick={handleSubmit} disabled={isSubmitting || !formData.subject}
             className="px-5 py-2 text-sm bg-gradient-to-r from-violet-600 to-purple-600 text-white font-semibold rounded-xl hover:from-violet-700 hover:to-purple-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-violet-200">
             {isSubmitting
               ? <><Loader2 className="h-4 w-4 animate-spin" /> {editing ? 'Updating...' : 'Creating...'}</>
@@ -300,12 +330,13 @@ function DifficultyBadge({ level }: { level?: string | null }) {
 export default function QuestionBanksPage() {
   const router = useRouter();
   const { hasPermission, user } = useAuth();
+  const [mounted, setMounted] = useState(false);
 
   const [questionBanks, setQuestionBanks] = useState<QuestionBank[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [classes, setClasses] = useState<ClassModel[]>([]);
+  const [allowedClasses, setAllowedClasses] = useState<AllowedClass[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [editingBank, setEditingBank] = useState<QuestionBank | null>(null);
@@ -325,6 +356,10 @@ export default function QuestionBanksPage() {
   const canEdit   = user?.is_superuser || hasPermission('assessment_center.change_questionbankmodel');
   const canDelete = user?.is_superuser || hasPermission('assessment_center.delete_questionbankmodel');
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // ── Toasts ──
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = ++_toastId;
@@ -334,29 +369,58 @@ export default function QuestionBanksPage() {
   const dismissToast = (id: number) => setToasts(p => p.filter(t => t.id !== id));
 
   // ── Fetch ──
-  useEffect(() => {
-    if (canView) fetchAll();
-  }, [canView]);
-
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
+    if (!canView) return;
     setLoading(true);
+    setPageError(null);
     try {
-      const [banksData, subjectsData, classesData, topicsData] = await Promise.all([
-        questionBanksAPI.list({}),
-        academicAPI.listSubjects({ is_active: true }),
-        academicAPI.listClasses({ is_active: true }),
-        topicsAPI.list({}),
+      const [banksData, uploadableRes, classesRes, topicsData] = await Promise.all([
+        questionBanksAPI.list({}), // Backend is filtered!
+        api.get('/api/academic/class-subjects/uploadable/', { params: { result_type: 'score' } }),
+        api.get('/api/academic/classes/', { params: { is_active: true } }), // Need base IDs
+        topicsAPI.list({}), // Backend is filtered!
       ]);
+
       setQuestionBanks(banksData);
-      setSubjects(subjectsData);
-      setClasses(classesData);
       setTopics(topicsData);
+
+      // Process allowed classes & subjects
+      const rawClasses = uploadableRes.data?.data?.classes || [];
+      const baseClasses = classesRes.data?.data || classesRes.data || [];
+
+      const grouped = new Map<string, AllowedClass>();
+
+      rawClasses.forEach((cls: any) => {
+        const cName = cls.class_name;
+        const baseClass = baseClasses.find((c: any) => c.name === cName);
+        const classId = baseClass ? baseClass.id : cls.student_class_id;
+
+        if (!grouped.has(cName)) {
+          grouped.set(cName, { id: classId, name: cName, subjects: [] });
+        }
+
+        const g = grouped.get(cName)!;
+        cls.subjects.forEach((sub: any) => {
+          if (!g.subjects.some(s => s.id === sub.id)) {
+            g.subjects.push({ id: sub.id, name: sub.name });
+          }
+        });
+      });
+
+      const allowed = Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name));
+      allowed.forEach(a => a.subjects.sort((x, y) => x.name.localeCompare(y.name)));
+      setAllowedClasses(allowed);
+
     } catch (err: any) {
-      showToast('error', extractError(err));
+      setPageError(extractError(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [canView]);
+
+  useEffect(() => {
+    if (mounted) fetchAll();
+  }, [mounted, fetchAll]);
 
   // ── Helpers ──
   const getId = (v: any) => typeof v === 'object' && v !== null ? v.id : v;
@@ -378,9 +442,16 @@ export default function QuestionBanksPage() {
     return true;
   });
 
-  // ── Stats ──
+  // ── Stats (Static Tailwind Classes) ──
   const totalQuestions = questionBanks.reduce((sum, b) => sum + (b.question_count || 0), 0);
   const activeBanks = questionBanks.filter(b => b.is_active).length;
+
+  const statCards = [
+    { label: 'Total Banks', value: questionBanks.length, icon: Library, bg: 'bg-violet-50', text: 'text-violet-600' },
+    { label: 'Active Banks', value: activeBanks, icon: Layers, bg: 'bg-purple-50', text: 'text-purple-600' },
+    { label: 'Total Questions', value: totalQuestions, icon: Hash, bg: 'bg-indigo-50', text: 'text-indigo-600' },
+    { label: 'Subjects', value: new Set(questionBanks.map(b => getId(b.subject))).size, icon: BookMarked, bg: 'bg-fuchsia-50', text: 'text-fuchsia-600' },
+  ];
 
   // ── Handlers ──
   const handleSave = async (data: QuestionBankFormValues) => {
@@ -416,6 +487,14 @@ export default function QuestionBanksPage() {
     }
   };
 
+  if (!mounted) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
+      </div>
+    );
+  }
+
   if (!canView) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
@@ -430,8 +509,8 @@ export default function QuestionBanksPage() {
     );
   }
 
-  // Exact column sizing guarantees alignment for headers and rows
-  const gridClasses = "grid grid-cols-[minmax(0,1fr)_160px_160px_100px_120px_40px] items-center gap-4";
+  // Simplified grid for the new layout
+  const gridClasses = "grid grid-cols-[minmax(0,1fr)_120px_120px] items-center gap-4";
 
   return (
     <div className="space-y-6 pb-8">
@@ -448,8 +527,7 @@ export default function QuestionBanksPage() {
       <BankFormModal
         open={showForm}
         editing={editingBank}
-        subjects={subjects}
-        classes={classes}
+        allowedClasses={allowedClasses}
         topics={topics}
         onClose={() => { setShowForm(false); setEditingBank(null); }}
         onSave={handleSave}
@@ -478,15 +556,10 @@ export default function QuestionBanksPage() {
 
       {/* ── Stat Chips ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'Total Banks', value: questionBanks.length, icon: Library, color: 'violet' },
-          { label: 'Active Banks', value: activeBanks, icon: Layers, color: 'purple' },
-          { label: 'Total Questions', value: totalQuestions, icon: Hash, color: 'indigo' },
-          { label: 'Subjects', value: new Set(questionBanks.map(b => getId(b.subject))).size, icon: BookMarked, color: 'fuchsia' },
-        ].map(({ label, value, icon: Icon, color }) => (
+        {statCards.map(({ label, value, icon: Icon, bg, text }) => (
           <div key={label} className="bg-white rounded-2xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-${color}-50`}>
-              <Icon className={`h-4 w-4 text-${color}-600`} />
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${bg}`}>
+              <Icon className={`h-4 w-4 ${text}`} />
             </div>
             <div className="min-w-0">
               <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wide truncate">{label}</p>
@@ -497,189 +570,187 @@ export default function QuestionBanksPage() {
       </div>
 
       {/* ── List Card ── */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
+        <div className="min-w-[700px]">
 
-        {/* Search + Filters (GRID instead of flex-wrap) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 px-5 py-4 border-b border-slate-100">
-          <div className="relative w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Search question banks..."
-              className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent" />
-          </div>
-          <select value={filterSubject} onChange={e => { setFilterSubject(e.target.value); setFilterTopic(''); }}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 text-slate-700 bg-white truncate">
-            <option value="">All Subjects</option>
-            {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <select value={filterClass} onChange={e => { setFilterClass(e.target.value); setFilterTopic(''); }}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 text-slate-700 bg-white truncate">
-            <option value="">All Classes</option>
-            {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select value={filterTopic} onChange={e => setFilterTopic(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 text-slate-700 bg-white truncate"
-            disabled={filteredTopicsForBar.length === 0}>
-            <option value="">All Topics</option>
-            {filteredTopicsForBar.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
-          </select>
-        </div>
-
-        {/* Table wrapper for mobile scrolling */}
-        <div className="overflow-x-auto">
-          <div className="min-w-[900px]">
-            {/* Table header */}
-            <div className={`${gridClasses} px-5 py-3 bg-slate-50/60 border-b border-slate-100`}>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Bank</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Subject</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Class</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Questions</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Actions</span>
-              <span></span>
+          {/* Search + Filters */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 px-5 py-4 border-b border-slate-100">
+            <div className="relative w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                placeholder="Search question banks..."
+                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent" />
             </div>
+            <select value={filterClass} onChange={e => { setFilterClass(e.target.value); setFilterTopic(''); }}
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 text-slate-700 bg-white truncate">
+              <option value="">All Classes</option>
+              {allowedClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <select value={filterSubject} onChange={e => { setFilterSubject(e.target.value); setFilterTopic(''); }}
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 text-slate-700 bg-white truncate">
+              <option value="">All Subjects</option>
+              {Array.from(new Map(allowedClasses.flatMap(c => c.subjects).map(s => [s.id, s])).values()).map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <select value={filterTopic} onChange={e => setFilterTopic(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 text-slate-700 bg-white truncate"
+              disabled={filteredTopicsForBar.length === 0}>
+              <option value="">All Topics</option>
+              {filteredTopicsForBar.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
+            </select>
+          </div>
 
-            {/* Rows */}
-            {loading ? (
-              <div className="flex items-center justify-center py-16 gap-3 text-slate-400">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                <span className="text-sm">Loading question banks...</span>
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-3">
-                <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center">
-                  <Library className="h-7 w-7 text-slate-300" />
-                </div>
-                <p className="text-sm font-semibold text-slate-500">
-                  {searchTerm || filterSubject || filterClass || filterTopic ? 'No banks match your filters' : 'No question banks yet'}
-                </p>
-                {canCreate && !searchTerm && !filterSubject && !filterClass && !filterTopic && (
-                  <button onClick={() => { setEditingBank(null); setShowForm(true); }}
-                    className="mt-1 text-sm text-violet-600 font-semibold hover:text-violet-700 flex items-center gap-1">
-                    <Plus className="h-3.5 w-3.5" /> Add your first question bank
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-50">
-                {filtered.map(bank => {
-                  const isExpanded = expandedId === bank.id;
-                  return (
-                    <div key={bank.id}>
-                      <div className={`${gridClasses} px-5 py-4 hover:bg-slate-50/50 transition-colors`}>
+          {/* Table header */}
+          <div className={`${gridClasses} px-5 py-3 bg-slate-50/60 border-b border-slate-100`}>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Bank Details</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Questions</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Actions</span>
+          </div>
 
-                        {/* Bank name */}
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-8 h-8 rounded-xl bg-violet-50 flex items-center justify-center flex-shrink-0">
-                            <Library className="h-4 w-4 text-violet-500" />
+          {/* Rows */}
+          {loading ? (
+            <div className="flex items-center justify-center py-16 gap-3 text-slate-400">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-sm">Loading question banks...</span>
+            </div>
+          ) : pageError ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+               <AlertCircle className="h-8 w-8 text-red-400" />
+               <p className="text-sm text-red-600 max-w-sm text-center">{pageError}</p>
+               <button onClick={fetchAll} className="mt-2 text-sm text-violet-600 font-semibold flex items-center gap-1 hover:text-violet-700">
+                 <RefreshCw className="h-3.5 w-3.5" /> Try Again
+               </button>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center">
+                <Library className="h-7 w-7 text-slate-300" />
+              </div>
+              <p className="text-sm font-semibold text-slate-500">
+                {searchTerm || filterSubject || filterClass || filterTopic ? 'No banks match your filters' : 'No question banks yet'}
+              </p>
+              {canCreate && !searchTerm && !filterSubject && !filterClass && !filterTopic && (
+                <button onClick={() => { setEditingBank(null); setShowForm(true); }}
+                  className="mt-1 text-sm text-violet-600 font-semibold hover:text-violet-700 flex items-center gap-1">
+                  <Plus className="h-3.5 w-3.5" /> Add your first question bank
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-50">
+              {filtered.map(bank => {
+                const isExpanded = expandedId === bank.id;
+                return (
+                  <div key={bank.id}>
+                    <div className={`${gridClasses} px-5 py-4 hover:bg-slate-50/50 transition-colors`}>
+
+                      {/* Bank Title & Badges */}
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-violet-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <Library className="h-4 w-4 text-violet-500" />
+                        </div>
+                        <div className="min-w-0 flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-slate-900 truncate leading-tight text-base">
+                              {bank.name}
+                            </p>
+                            {!bank.is_active && (
+                              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-md">INACTIVE</span>
+                            )}
                           </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-semibold text-slate-900 truncate">{bank.name}</p>
-                              {!bank.is_active && (
-                                <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-md">INACTIVE</span>
-                              )}
-                            </div>
+                          <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-semibold rounded-md border border-blue-100 whitespace-nowrap">
+                              {bank.subject_name || '—'}
+                            </span>
+                            <span className="px-2 py-0.5 bg-purple-50 text-purple-700 text-[10px] font-semibold rounded-md border border-purple-100 whitespace-nowrap">
+                              {bank.class_name || '—'}
+                            </span>
                             {bank.topic_title && (
-                              <p className="text-xs text-slate-400 truncate">Topic: {bank.topic_title}</p>
+                              <span className="text-[10px] text-slate-400 truncate ml-1">Topic: {bank.topic_title}</span>
                             )}
                           </div>
                         </div>
+                      </div>
 
-                        {/* Subject */}
-                        <div className="min-w-0 truncate">
-                          <span className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-full whitespace-nowrap">
-                            {bank.subject_name || '—'}
-                          </span>
-                        </div>
+                      {/* Question count */}
+                      <div className="text-sm font-semibold text-slate-700 whitespace-nowrap">
+                        {bank.question_count ?? 0} <span className="text-slate-400 font-normal text-xs">qs</span>
+                      </div>
 
-                        {/* Class */}
-                        <div className="min-w-0 truncate">
-                          <span className="px-2.5 py-1 bg-purple-50 text-purple-700 text-xs font-semibold rounded-full whitespace-nowrap">
-                            {bank.class_name || '—'}
-                          </span>
-                        </div>
-
-                        {/* Question count */}
-                        <span className="text-sm font-semibold text-slate-700 whitespace-nowrap">
-                          {bank.question_count ?? 0} <span className="text-slate-400 font-normal text-xs">qs</span>
-                        </span>
-
-                        {/* Actions */}
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => router.push(`/dashboard/staff/assessment/question-banks/${bank.id}`)}
-                            title="View questions"
-                            className="p-2 rounded-lg text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100 transition-all">
-                            <Eye className="h-3.5 w-3.5" />
+                      {/* Actions */}
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => router.push(`/dashboard/staff/assessment/question-banks/${bank.id}`)}
+                          title="View questions"
+                          className="p-2 rounded-lg text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100 transition-all">
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                        {canEdit && (
+                          <button onClick={() => { setEditingBank(bank); setShowForm(true); }} title="Edit"
+                            className="p-2 rounded-lg text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all">
+                            <Edit3 className="h-3.5 w-3.5" />
                           </button>
-                          {canEdit && (
-                            <button onClick={() => { setEditingBank(bank); setShowForm(true); }} title="Edit"
-                              className="p-2 rounded-lg text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all">
-                              <Edit3 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                          {canDelete && (
-                            <button onClick={() => { setDeletingBank(bank); setShowDeleteModal(true); }} title="Delete"
-                              className="p-2 rounded-lg text-red-500 bg-red-50 border border-red-100 hover:bg-red-100 transition-all">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Expand */}
+                        )}
+                        {canDelete && (
+                          <button onClick={() => { setDeletingBank(bank); setShowDeleteModal(true); }} title="Delete"
+                            className="p-2 rounded-lg text-red-500 bg-red-50 border border-red-100 hover:bg-red-100 transition-all">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <button onClick={() => setExpandedId(isExpanded ? null : bank.id)}
-                          className="p-2 rounded-lg text-slate-400 bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all">
+                          className="p-2 rounded-lg text-slate-400 bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-all ml-1">
                           {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                         </button>
                       </div>
+                    </div>
 
-                      {/* Expanded details */}
-                      {isExpanded && (
-                        <div className="ml-14 mr-5 mb-4 p-4 bg-slate-50 rounded-xl border border-slate-100 text-sm space-y-3">
-                          {bank.description && (
-                            <div>
-                              <p className="text-xs text-slate-400 font-medium mb-1">Description</p>
-                              <p className="text-slate-700">{bank.description}</p>
-                            </div>
-                          )}
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                            <div>
-                              <p className="text-xs text-slate-400 font-medium mb-1">Difficulty</p>
-                              <DifficultyBadge level={bank.difficulty_level} />
-                            </div>
-                            <div>
-                              <p className="text-xs text-slate-400 font-medium mb-1">Status</p>
-                              <span className={`text-xs font-semibold ${bank.is_active ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                {bank.is_active ? 'Active' : 'Inactive'}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-xs text-slate-400 font-medium mb-1">Created</p>
-                              <p className="text-slate-700">{new Date(bank.created_at).toLocaleDateString()}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-slate-400 font-medium mb-1">Created By</p>
-                              <p className="text-slate-700">{bank.created_by_name || '—'}</p>
-                            </div>
+                    {/* Expanded details */}
+                    {isExpanded && (
+                      <div className="ml-14 mr-5 mb-4 p-4 bg-slate-50 rounded-xl border border-slate-100 text-sm space-y-3">
+                        {bank.description && (
+                          <div>
+                            <p className="text-xs text-slate-400 font-medium mb-1">Description</p>
+                            <p className="text-slate-700">{bank.description}</p>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                          <div>
+                            <p className="text-xs text-slate-400 font-medium mb-1">Difficulty</p>
+                            <DifficultyBadge level={bank.difficulty_level} />
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-400 font-medium mb-1">Status</p>
+                            <span className={`text-xs font-semibold ${bank.is_active ? 'text-emerald-600' : 'text-slate-400'}`}>
+                              {bank.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-400 font-medium mb-1">Created</p>
+                            <p className="text-slate-700">{new Date(bank.created_at).toLocaleDateString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-400 font-medium mb-1">Created By</p>
+                            <p className="text-slate-700">{bank.created_by_name || '—'}</p>
                           </div>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
-        {/* Footer count */}
-        {!loading && filtered.length > 0 && (
-          <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/40">
-            <p className="text-xs text-slate-400">
-              Showing <span className="font-semibold text-slate-600">{filtered.length}</span> of{' '}
-              <span className="font-semibold text-slate-600">{questionBanks.length}</span> question banks
-            </p>
-          </div>
-        )}
+          {/* Footer count */}
+          {!loading && !pageError && filtered.length > 0 && (
+            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/40">
+              <p className="text-xs text-slate-400">
+                Showing <span className="font-semibold text-slate-600">{filtered.length}</span> of{' '}
+                <span className="font-semibold text-slate-600">{questionBanks.length}</span> question banks
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
