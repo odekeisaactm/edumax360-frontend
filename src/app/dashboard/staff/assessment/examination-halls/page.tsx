@@ -39,6 +39,12 @@ function extractError(err: any): string {
   return err?.message || 'An unexpected error occurred.';
 }
 
+const resolveSectionId = (val: any): number | null => {
+  if (!val) return null;
+  if (typeof val === 'object') return val.id;
+  return val;
+};
+
 // ─── Toast Stack ───────────────────────────────────────────────────────────────
 function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   return (
@@ -109,10 +115,11 @@ function HallModal({ editing, schoolSections, isSaving, onSave, onClose }: {
           code: editing.code,
           capacity: editing.capacity,
           location: editing.location || '',
-          school_section: typeof editing.school_section === 'number' ? editing.school_section : null,
+          facilities: editing.facilities || '',
+          school_section: resolveSectionId(editing.school_section),
           is_active: editing.is_active,
         }
-      : { name: '', code: '', capacity: 0, location: '', school_section: null, is_active: true }
+      : { name: '', code: '', capacity: 0, location: '', facilities: '', school_section: null, is_active: true }
   );
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -182,7 +189,7 @@ function HallModal({ editing, schoolSections, isSaving, onSave, onClose }: {
               <div>
                 <label className={labelCls}>Capacity <span className="text-red-400 normal-case">*</span></label>
                 <input required type="number" min={1}
-                  value={form.capacity || ''}
+                  value={form.capacity === 0 ? '' : form.capacity}
                   onChange={e => set('capacity', parseInt(e.target.value) || 0)}
                   placeholder="e.g. 100" className={inputCls} />
                 <p className="text-xs text-slate-400 mt-1">Maximum students per exam</p>
@@ -202,12 +209,18 @@ function HallModal({ editing, schoolSections, isSaving, onSave, onClose }: {
               </div>
             </div>
 
-            {/* Location */}
+            {/* Location + Facilities */}
             <div>
               <label className={labelCls}>Location</label>
-              <input type="text" value={form.location}
+              <input type="text" value={form.location || ''}
                 onChange={e => set('location', e.target.value)}
                 placeholder="e.g. Ground Floor, Block A" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Facilities</label>
+              <textarea value={form.facilities || ''}
+                onChange={e => set('facilities', e.target.value)}
+                placeholder="e.g. Projector, AC, 50 desks" rows={2} className={inputCls} />
             </div>
 
             {/* Active toggle */}
@@ -247,6 +260,7 @@ function HallModal({ editing, schoolSections, isSaving, onSave, onClose }: {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function ExaminationHallsPage() {
   const { hasPermission, user } = useAuth();
+  const [mounted, setMounted] = useState(false);
 
   const [halls, setHalls] = useState<ExaminationHall[]>([]);
   const [schoolSections, setSchoolSections] = useState<SchoolSection[]>([]);
@@ -266,6 +280,10 @@ export default function ExaminationHallsPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const canView   = user?.is_superuser || hasPermission('assessment_center.view_examinationhallmodel');
   const canCreate = user?.is_superuser || hasPermission('assessment_center.add_examinationhallmodel');
@@ -293,11 +311,13 @@ export default function ExaminationHallsPage() {
     } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { if (canView) fetchData(); }, [fetchData, canView]);
+  useEffect(() => {
+    if (mounted && canView) fetchData();
+  }, [fetchData, mounted, canView]);
 
   const getSectionName = (hall: ExaminationHall): string => {
     if (!hall.school_section) return 'All Sections';
-    if (typeof hall.school_section === 'object') return (hall.school_section as SchoolSection).name;
+    if (typeof hall.school_section === 'object' && hall.school_section !== null) return (hall.school_section as SchoolSection).name;
     const section = schoolSections.find(s => s.id === hall.school_section);
     return section?.name ?? 'Unknown';
   };
@@ -345,17 +365,24 @@ export default function ExaminationHallsPage() {
       h.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (h.location || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchActive = !showActiveOnly || h.is_active;
-    const matchSection = !filterSection || (
-      typeof h.school_section === 'object'
-        ? (h.school_section as unknown as SchoolSection)?.id === filterSection
-        : h.school_section === filterSection
-    );
+
+    const sectionId = resolveSectionId(h.school_section);
+    const matchSection = !filterSection || sectionId === filterSection;
+
     return matchSearch && matchActive && matchSection;
   });
 
   const totalActive   = halls.filter(h => h.is_active).length;
   const totalCapacity = halls.reduce((sum, h) => sum + h.capacity, 0);
   const totalGlobal   = halls.filter(h => !h.school_section).length;
+
+  if (!mounted) {
+    return (
+      <div className="min-h-[600px] flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   if (!canView) return (
     <div className="min-h-[600px] flex items-center justify-center">
@@ -477,12 +504,12 @@ export default function ExaminationHallsPage() {
               <Building2 className="h-7 w-7 text-blue-300" />
             </div>
             <h3 className="font-semibold text-slate-700 mb-1">
-              {searchTerm || filterSection ? 'No halls match your filters' : 'No examination halls yet'}
+              {searchTerm || filterSection || showActiveOnly ? 'No halls match your filters' : 'No examination halls yet'}
             </h3>
             <p className="text-sm text-slate-400 mb-5">
-              {searchTerm || filterSection ? 'Try different keywords or filters.' : 'Add your first examination hall to get started.'}
+              {searchTerm || filterSection || showActiveOnly ? 'Try different keywords or filters.' : 'Add your first examination hall to get started.'}
             </p>
-            {!searchTerm && !filterSection && canCreate && (
+            {!searchTerm && !filterSection && !showActiveOnly && canCreate && (
               <button onClick={openCreate}
                 className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-sm font-semibold rounded-xl hover:from-blue-700 hover:to-cyan-700 transition-all shadow-md shadow-blue-200">
                 <Plus className="h-4 w-4" /> Add Hall
@@ -491,20 +518,24 @@ export default function ExaminationHallsPage() {
           </div>
         ) : (
           <>
-            {/* Table header */}
-            <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] items-center gap-4 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
+            {/*
+              FIXED COLUMN ALIGNMENT
+              Using minmax for the first column and fixed widths for the rest
+              ensures the header and rows line up perfectly.
+            */}
+            <div className="grid grid-cols-[minmax(250px,1fr)_140px_100px_120px_100px_110px] items-center gap-4 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Hall</span>
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Location</span>
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-center">Capacity</span>
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Section</span>
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Actions</span>
             </div>
 
             <div className="divide-y divide-slate-50">
               {filtered.map(hall => (
                 <div key={hall.id}>
-                  <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] items-center gap-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
+                  <div className="grid grid-cols-[minmax(250px,1fr)_140px_100px_120px_100px_110px] items-center gap-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
 
                     {/* Name + code */}
                     <div className="flex items-center gap-3 min-w-0">
@@ -520,7 +551,7 @@ export default function ExaminationHallsPage() {
                     {/* Location */}
                     <div className="flex items-center gap-1.5 text-sm text-slate-600 whitespace-nowrap">
                       {hall.location
-                        ? <><MapPin className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" /><span className="truncate max-w-[120px]">{hall.location}</span></>
+                        ? <><MapPin className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" /><span className="truncate">{hall.location}</span></>
                         : <span className="text-slate-400 text-xs italic">Not set</span>}
                     </div>
 
@@ -531,29 +562,33 @@ export default function ExaminationHallsPage() {
                     </div>
 
                     {/* Section */}
-                    {isGlobal(hall) ? (
-                      <span className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg whitespace-nowrap">
-                        <Globe className="h-3 w-3" /> Global
-                      </span>
-                    ) : (
-                      <span className="text-xs text-slate-600 whitespace-nowrap truncate max-w-[100px]">
-                        {getSectionName(hall)}
-                      </span>
-                    )}
+                    <div className="truncate">
+                      {isGlobal(hall) ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg whitespace-nowrap">
+                          <Globe className="h-3 w-3" /> Global
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-600 truncate">
+                          {getSectionName(hall)}
+                        </span>
+                      )}
+                    </div>
 
                     {/* Status */}
-                    {hall.is_active ? (
-                      <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full whitespace-nowrap">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-semibold rounded-full whitespace-nowrap">
-                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> Inactive
-                      </span>
-                    )}
+                    <div>
+                      {hall.is_active ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-semibold rounded-full whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> Inactive
+                        </span>
+                      )}
+                    </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-end gap-1">
                       {canEdit && (
                         <button onClick={() => openEdit(hall)} title="Edit"
                           className="p-2 rounded-lg text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all">
@@ -601,6 +636,12 @@ export default function ExaminationHallsPage() {
                               <MapPin className="h-3 w-3" /> Location
                             </span>
                             <p className="mt-1 text-slate-600">{hall.location}</p>
+                          </div>
+                        )}
+                        {hall.facilities && (
+                          <div className="col-span-2 sm:col-span-4">
+                            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Facilities</span>
+                            <p className="mt-1 text-slate-600">{hall.facilities}</p>
                           </div>
                         )}
                         {hall.created_at && (

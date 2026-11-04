@@ -125,6 +125,8 @@ function getDeviceIcon(type: string) {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function DevicesPage() {
   const { hasPermission, user } = useAuth();
+  const [mounted, setMounted] = useState(false);
+
   const [activeTab, setActiveTab] = useState<TabType>('devices');
   const [devices, setDevices] = useState<AuthorizedDevice[]>([]);
   const [pendingRequests, setPendingRequests] = useState<DeviceApprovalRequest[]>([]);
@@ -172,6 +174,10 @@ export default function DevicesPage() {
     is_active: true,
   });
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Permission checks
   const canView   = user?.is_superuser || hasPermission('assessment_center.view_authorizeddevicemodel');
   const canCreate = user?.is_superuser || hasPermission('assessment_center.add_authorizeddevicemodel');
@@ -186,7 +192,7 @@ export default function DevicesPage() {
   };
   const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  // ── Fingerprint init (UNTOUCHED) ──
+  // ── Fingerprint init ──
   useEffect(() => {
     const initFingerprint = async () => {
       try {
@@ -201,12 +207,12 @@ export default function DevicesPage() {
   }, []);
 
   useEffect(() => {
-    if (canView) {
+    if (mounted && canView) {
       fetchData();
     }
-  }, [canView, activeTab]);
+  }, [mounted, canView, activeTab]);
 
-  // ── isCurrentDeviceAuthorized (UNTOUCHED) ──
+  // ── isCurrentDeviceAuthorized ──
   const isCurrentDeviceAuthorized = (): boolean => {
     if (!currentDeviceFingerprint) return false;
     return devices.some(device =>
@@ -216,7 +222,7 @@ export default function DevicesPage() {
     );
   };
 
-  // ── fetchData (UNTOUCHED) ──
+  // ── fetchData ──
   const fetchData = async () => {
     setLoading(true);
     setError(null);
@@ -232,21 +238,19 @@ export default function DevicesPage() {
       }
     } catch (error: any) {
       console.error('Fetch error:', error);
-      setError(error.message || 'Failed to fetch data');
+      setError(extractError(error));
     } finally {
       setLoading(false);
     }
   };
 
-  // ── handleCaptureCurrentDevice (UNTOUCHED) ──
+  // ── handleCaptureCurrentDevice ──
   const handleCaptureCurrentDevice = async () => {
     setCapturingDevice(true);
     setError(null);
     try {
       const fingerprint = await getDeviceFingerprint();
-      console.log('Captured fingerprint:', fingerprint);
       const response = await authorizedDevicesAPI.captureCurrentDevice(fingerprint);
-      console.log('Device info:', response);
       setFormData({
         device_name: response.device_info.suggested_name || '',
         device_type: response.device_info.device_type,
@@ -259,13 +263,13 @@ export default function DevicesPage() {
       setShowForm(true);
     } catch (error: any) {
       console.error('Capture error:', error);
-      setError(error.response?.data?.error || error.message || 'Failed to capture device information');
+      setError(extractError(error));
     } finally {
       setCapturingDevice(false);
     }
   };
 
-  // ── handleSubmit (UNTOUCHED) ──
+  // ── handleSubmit ──
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -277,11 +281,11 @@ export default function DevicesPage() {
       };
       let result: AuthorizedDevice;
       if (editingDevice) {
-        result = await authorizedDevicesAPI.update(editingDevice.id, formData);
+        result = await authorizedDevicesAPI.update(editingDevice.id, submitData);
         setDevices(prev => prev.map(d => d.id === result.id ? result : d));
         showToast('success', 'Device updated successfully!');
       } else {
-        result = await authorizedDevicesAPI.create(formData);
+        result = await authorizedDevicesAPI.create(submitData);
         setDevices(prev => [result, ...prev]);
         showToast('success', 'Device authorized successfully!');
       }
@@ -289,33 +293,13 @@ export default function DevicesPage() {
       setShowForm(false);
     } catch (error: any) {
       console.error('Submit error:', error);
-      let errorMessage = 'Failed to save device';
-      if (error.response?.data) {
-        if (typeof error.response.data === 'string') {
-          errorMessage = error.response.data;
-        } else if (error.response.data.message) {
-          errorMessage = error.response.data.message;
-        } else if (typeof error.response.data === 'object') {
-          const errors = Object.entries(error.response.data)
-            .map(([field, msgs]: [string, any]) => {
-              const fieldName = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-              const messages = Array.isArray(msgs) ? msgs : [msgs];
-              return `${fieldName}: ${messages.join(', ')}`;
-            })
-            .join('\n');
-          if (errors) errorMessage = errors;
-        }
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      console.error('Submit error:', errorMessage);
-      setError(errorMessage);
+      setError(extractError(error));
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // ── handleEdit (UNTOUCHED) ──
+  // ── handleEdit ──
   const handleEdit = (device: AuthorizedDevice) => {
     setEditingDevice(device);
     setFormData({
@@ -330,7 +314,7 @@ export default function DevicesPage() {
     setShowForm(true);
   };
 
-  // ── handleDelete (UNTOUCHED) ──
+  // ── handleDelete ──
   const handleDelete = async () => {
     if (!deletingDevice) return;
     setIsSubmitting(true);
@@ -343,7 +327,7 @@ export default function DevicesPage() {
       showToast('success', 'Device deleted successfully!');
     } catch (error: any) {
       console.error('Delete error:', error);
-      showToast('error', error.response?.data?.message || error.message || 'Failed to delete device');
+      showToast('error', extractError(error));
       setShowDeleteModal(false);
       setDeletingDevice(null);
     } finally {
@@ -379,20 +363,7 @@ export default function DevicesPage() {
     }
   };
 
-  // ── handleActivateDeactivate ──
-  const handleActivateDeactivate = async (device: AuthorizedDevice) => {
-    try {
-      await authorizedDevicesAPI.update(device.id, { is_active: !device.is_active });
-      setDevices(prev => prev.map(d => d.id === device.id ? { ...d, is_active: !device.is_active } : d));
-      showToast('success', device.is_active ? 'Device deactivated.' : 'Device activated.');
-    } catch (error: any) {
-      console.error('Activate/Deactivate error:', error);
-      showToast('error', extractError(error));
-    }
-  };
-
-  // ── handleApproveRequest
-  // CHANGED: pre-fill approvalDeviceName from suggested_device_name if available
+  // ── handleApproveRequest ──
   const handleApproveRequest = (request: DeviceApprovalRequest) => {
     setApprovingRequest(request);
     setApprovalDeviceName(
@@ -403,7 +374,7 @@ export default function DevicesPage() {
     setShowApprovalModal(true);
   };
 
-  // ── handleApprovalSubmit (UNTOUCHED logic) ──
+  // ── handleApprovalSubmit ──
   const handleApprovalSubmit = async () => {
     if (!approvingRequest || !approvalDeviceName.trim()) {
       setError('Please enter a device name');
@@ -424,7 +395,7 @@ export default function DevicesPage() {
       showToast('success', 'Device approved successfully!');
     } catch (error: any) {
       console.error('Approval error:', error);
-      setError(error.response?.data?.error || error.message || 'Failed to approve device');
+      setError(extractError(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -453,7 +424,7 @@ export default function DevicesPage() {
       setRejectReason('');
     } catch (error: any) {
       console.error('Rejection error:', error);
-      showToast('error', error.response?.data?.error || error.message || 'Failed to reject request');
+      showToast('error', extractError(error));
     } finally {
       setIsRejecting(false);
     }
@@ -468,7 +439,7 @@ export default function DevicesPage() {
     });
   };
 
-  // ── resetForm (UNTOUCHED) ──
+  // ── resetForm ──
   const resetForm = () => {
     setFormData({
       device_name: '',
@@ -495,6 +466,14 @@ export default function DevicesPage() {
 
   const inputCls = "w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition bg-white";
   const labelCls = "block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5";
+
+  if (!mounted) {
+    return (
+      <div className="min-h-[600px] flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+      </div>
+    );
+  }
 
   // ── Access guard ──
   if (!canView) return (
@@ -673,7 +652,6 @@ export default function DevicesPage() {
               <div>
                 <label className={labelCls}>
                   Device Name <span className="text-red-400 normal-case">*</span>
-                  {/* Show a hint if the student provided a suggested name */}
                   {approvingRequest.suggested_device_name?.trim() && (
                     <span className="normal-case font-normal text-emerald-600 ml-1">
                       (suggested by student)
@@ -741,7 +719,6 @@ export default function DevicesPage() {
                   <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Requested</span>
                   <p className="mt-1 text-slate-700">{new Date(rejectingRequest.requested_at).toLocaleString()}</p>
                 </div>
-                {/* Show student-suggested name if available */}
                 {rejectingRequest.suggested_device_name?.trim() && (
                   <div className="col-span-2">
                     <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Student's Device Name</span>
@@ -987,7 +964,7 @@ export default function DevicesPage() {
           ) : (
             <>
               {/* Table header */}
-              <div className="grid grid-cols-[1fr_auto_auto_auto_140px] items-center gap-4 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
+              <div className="grid grid-cols-[minmax(200px,1fr)_130px_110px_100px_140px] items-center gap-4 px-5 py-3 bg-slate-50/60 border-b border-slate-100">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Device</span>
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">IP Address</span>
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Last Used</span>
@@ -1003,7 +980,7 @@ export default function DevicesPage() {
 
                   return (
                     <div key={device.id}>
-                      <div className="grid grid-cols-[1fr_auto_auto_auto_140px] items-center gap-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
+                      <div className="grid grid-cols-[minmax(200px,1fr)_130px_110px_100px_140px] items-center gap-4 px-5 py-4 hover:bg-slate-50/50 transition-colors">
 
                         {/* Device name + type */}
                         <div className="flex items-center gap-3 min-w-0">
@@ -1029,29 +1006,31 @@ export default function DevicesPage() {
                         <span className="text-sm font-mono text-slate-600 whitespace-nowrap">{device.ip_address}</span>
 
                         {/* Last used */}
-                        <div className="text-sm text-slate-500 whitespace-nowrap text-right">
+                        <div className="text-sm text-slate-500 whitespace-nowrap">
                           <p>{device.last_used ? new Date(device.last_used).toLocaleDateString() : 'Never'}</p>
                           {device.times_used > 0 && <p className="text-xs text-slate-400">{device.times_used}×</p>}
                         </div>
 
                         {/* Status badge */}
-                        {device.is_blocked ? (
-                          <span className="flex items-center gap-1.5 px-2.5 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full whitespace-nowrap">
-                            <Ban className="h-3 w-3" /> Blocked
-                          </span>
-                        ) : isFullyActive ? (
-                          <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full whitespace-nowrap">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active
-                          </span>
-                        ) : device.status_display === 'Pending Approval' ? (
-                          <span className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full whitespace-nowrap">
-                            <Clock className="h-3 w-3" /> Pending
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-semibold rounded-full whitespace-nowrap">
-                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> {device.status_display || 'Inactive'}
-                          </span>
-                        )}
+                        <div>
+                          {device.is_blocked ? (
+                            <span className="flex items-center gap-1.5 px-2.5 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full whitespace-nowrap w-fit">
+                              <Ban className="h-3 w-3" /> Blocked
+                            </span>
+                          ) : isFullyActive ? (
+                            <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full whitespace-nowrap w-fit">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active
+                            </span>
+                          ) : device.status_display === 'Pending Approval' ? (
+                            <span className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full whitespace-nowrap w-fit">
+                              <Clock className="h-3 w-3" /> Pending
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-semibold rounded-full whitespace-nowrap w-fit">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> {device.status_display || 'Inactive'}
+                            </span>
+                          )}
+                        </div>
 
                         {/* Actions */}
                         <div className="flex items-center justify-end gap-1">
@@ -1067,7 +1046,7 @@ export default function DevicesPage() {
                                     ));
                                     showToast('success', 'Device unblocked successfully!');
                                   } catch (error: any) {
-                                    showToast('error', error.response?.data?.message || 'Failed to unblock device');
+                                    showToast('error', extractError(error));
                                   }
                                 }}
                                 className="p-2 rounded-lg text-emerald-600 bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 transition-all">
@@ -1181,7 +1160,6 @@ export default function DevicesPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-2 flex-wrap">
                             <h3 className="text-sm font-semibold text-slate-900 capitalize">{request.device_type} Device</h3>
-                            {/* Show student's suggested name as a badge if provided */}
                             {request.suggested_device_name?.trim() && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
                                 <Smartphone className="h-3 w-3" />

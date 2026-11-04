@@ -44,14 +44,32 @@ const AI_MODELS_MAP: Record<string, AIModelMeta[]> = {
 };
 
 // Default URLs to auto-fill when a provider is selected
+// Note: Google is left blank so the backend uses its hardcoded fallback URL,
+// which correctly formats the model name and API key.
 const DEFAULT_ENDPOINTS: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
   anthropic: 'https://api.anthropic.com/v1/messages',
   groq: 'https://api.groq.com/openai/v1',
-  google: 'https://generativelanguage.googleapis.com/v1beta/models/',
+  google: '',
   local: 'http://localhost:11434/v1',
-  custom: 'https://your-custom-api.com/v1/chat'
+  custom: 'https://your-custom-api.com/v1'
 };
+
+// Strips trailing slashes and accidental path suffixes that break the OpenAI SDK
+function normalizeEndpoint(url: string): string {
+  if (!url) return url;
+  let normalized = url.trim();
+
+  // If user pasted the full chat completions URL, strip it
+  if (normalized.endsWith('/chat/completions')) {
+    normalized = normalized.replace(/\/chat\/completions\/?$/, '');
+  }
+
+  // Strip trailing slashes
+  normalized = normalized.replace(/\/+$/, '');
+
+  return normalized;
+}
 
 function extractError(err: any): string {
   const d = err?.response?.data;
@@ -149,7 +167,6 @@ interface AIServiceConfigFormValues {
   monthly_token_limit?: number;
 }
 
-
 // ─── Service Form Modal ────────────────────────────────────────────────────────
 const DEFAULT_FORM: AIServiceConfigFormValues = {
   name: '',
@@ -192,7 +209,11 @@ function ServiceModal({ editing, isSaving, onSave, onClose }: {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    try { await onSave(form); }
+
+    // Normalize endpoint before submitting
+    const payload = { ...form, api_endpoint: normalizeEndpoint(form.api_endpoint) };
+
+    try { await onSave(payload); }
     catch (err) { setFormError(extractError(err)); }
   };
 
@@ -288,13 +309,16 @@ function ServiceModal({ editing, isSaving, onSave, onClose }: {
             {/* Full Width API Endpoint */}
             <div>
               <label className={labelCls}>
-                API Endpoint
+                Base API Endpoint
                 <span className="text-slate-400 normal-case ml-1 font-normal">(Auto-filled)</span>
               </label>
               <input type="url" value={form.api_endpoint || ''}
                 onChange={e => set('api_endpoint', e.target.value)}
                 placeholder="e.g., https://api.openai.com/v1"
                 className={inputCls} />
+              <p className="text-xs text-slate-400 mt-1">
+                Base URL only. Do not include <code className="bg-slate-100 px-1 rounded">/chat/completions</code>.
+              </p>
             </div>
 
             {/* API Key */}
@@ -402,6 +426,7 @@ function TokenUsageBar({ used, limit }: { used: number; limit?: number }) {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function AIServicesPage() {
   const { hasPermission, user } = useAuth();
+  const [mounted, setMounted] = useState(false);
 
   const [services, setServices] = useState<AIServiceConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -421,6 +446,10 @@ export default function AIServicesPage() {
   const [resettingId, setResettingId] = useState<number | null>(null);
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const canView   = user?.is_superuser || hasPermission('assessment_center.view_aiserviceconfigmodel');
   const canCreate = user?.is_superuser || hasPermission('assessment_center.add_aiserviceconfigmodel');
@@ -444,7 +473,9 @@ export default function AIServicesPage() {
     } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { if (canView) fetchServices(); }, [fetchServices, canView]);
+  useEffect(() => {
+    if (mounted && canView) fetchServices();
+  }, [fetchServices, mounted, canView]);
 
   const openCreate = () => { setEditingService(null); setShowModal(true); };
   const openEdit = (s: AIServiceConfig) => { setEditingService(s); setShowModal(true); };
@@ -495,12 +526,20 @@ export default function AIServicesPage() {
     setResettingId(service.id);
     try {
       await aiServicesAPI.resetUsage(service.id);
-setServices(prev => prev.map(s => s.id === service.id ? { ...s, tokens_used_this_month: 0 } : s));
+      setServices(prev => prev.map(s => s.id === service.id ? { ...s, tokens_used_this_month: 0 } : s));
       showToast('success', `Token usage reset for "${service.name}"`);
     } catch (err) {
       showToast('error', extractError(err));
     } finally { setResettingId(null); }
   };
+
+  if (!mounted) {
+    return (
+      <div className="min-h-[600px] flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
+      </div>
+    );
+  }
 
   // Permission denied
   if (!canView) return (
@@ -636,12 +675,12 @@ setServices(prev => prev.map(s => s.id === service.id ? { ...s, tokens_used_this
                 <Cpu className="h-7 w-7 text-violet-300" />
               </div>
               <h3 className="font-semibold text-slate-700 mb-1">
-                {searchTerm ? 'No services match your search' : 'No AI services yet'}
+                {searchTerm || showActiveOnly ? 'No services match your filters' : 'No AI services yet'}
               </h3>
               <p className="text-sm text-slate-400 mb-5">
-                {searchTerm ? 'Try different keywords.' : 'Add your first AI service to enable automated marking.'}
+                {searchTerm || showActiveOnly ? 'Try different keywords or toggle the active filter.' : 'Add your first AI service to enable automated marking.'}
               </p>
-              {!searchTerm && canCreate && (
+              {!searchTerm && !showActiveOnly && canCreate && (
                 <button onClick={openCreate}
                   className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-semibold rounded-xl hover:from-violet-700 hover:to-purple-700 transition-all shadow-md shadow-violet-200">
                   <Plus className="h-4 w-4" /> Add AI Service

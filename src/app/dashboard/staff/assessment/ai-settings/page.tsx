@@ -12,7 +12,7 @@ import {
 import {
   Brain, Settings, Edit3, Check, X, AlertCircle, Sparkles,
   Cpu, Shield, Activity, Sliders, Zap, Eye, MessageSquare,
-  Loader2, RefreshCw, ChevronRight, Target, BarChart2, Key
+  Loader2, RefreshCw, Target, BarChart2, Key
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -44,10 +44,16 @@ const DEFAULT_FORM: FormState = {
   use_dob_for_exam_pin: false,
 };
 
+const resolveId = (val: any): number | null => {
+  if (!val) return null;
+  if (typeof val === 'object') return val.id;
+  return val;
+};
+
 function settingsToForm(s: AssessmentAISettings): FormState {
   return {
-    school_section: typeof s.school_section === 'number' ? s.school_section : null,
-    ai_service: typeof s.ai_service === 'number' ? s.ai_service : null,
+    school_section: resolveId(s.school_section),
+    ai_service: resolveId(s.ai_service),
     enable_ai_marking: s.enable_ai_marking ?? true,
     enable_ai_vetting: s.enable_ai_vetting ?? true,
     enable_ai_feedback: s.enable_ai_feedback ?? true,
@@ -141,6 +147,12 @@ function SettingsModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveError(null);
+
+    if (!form.ai_service) {
+      setSaveError("Please select an AI Service before saving.");
+      return;
+    }
+
     try {
       await onSave(form);
     } catch (err: any) {
@@ -172,7 +184,8 @@ function SettingsModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: '92vh' }}>
+      {/* FIXED HEIGHT: h-[650px] stops the modal from jumping when switching tabs */}
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col h-[650px] max-h-[92vh]">
 
         {/* Header */}
         <div className="bg-gradient-to-r from-violet-600 to-purple-600 px-6 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
@@ -276,15 +289,15 @@ function SettingsModal({
                 </div>
 
                 {/* PIN Settings */}
-            <div className="pt-2 border-t border-slate-100">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Exam PIN</p>
-              <Toggle
-                checked={form.use_dob_for_exam_pin}
-                onChange={v => set('use_dob_for_exam_pin', v)}
-                label="Use Date of Birth as Exam PIN"
-                description="Student's DOB in DDMMYY format becomes their exam PIN"
-              />
-            </div>
+                <div className="pt-2 border-t border-slate-100">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Exam PIN</p>
+                  <Toggle
+                    checked={form.use_dob_for_exam_pin}
+                    onChange={v => set('use_dob_for_exam_pin', v)}
+                    label="Use Date of Birth as Exam PIN"
+                    description="Student's DOB in DDMMYY format becomes their exam PIN"
+                  />
+                </div>
               </div>
             )}
 
@@ -403,7 +416,7 @@ function SettingsModal({
             className="px-4 py-2 text-sm border border-slate-200 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
             Cancel
           </button>
-          <button type="submit" form="ai-settings-form" disabled={isSaving}
+          <button type="submit" form="ai-settings-form" disabled={isSaving || !form.ai_service}
             className="px-5 py-2 text-sm bg-gradient-to-r from-violet-600 to-purple-600 text-white font-semibold rounded-xl hover:from-violet-700 hover:to-purple-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-violet-200">
             {isSaving
               ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
@@ -418,6 +431,8 @@ function SettingsModal({
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function AISettingsPage() {
   const { hasPermission, user } = useAuth();
+  const [mounted, setMounted] = useState(false);
+
   const [aiSettings, setAISettings] = useState<AssessmentAISettings | null>(null);
   const [aiServices, setAIServices] = useState<AIServiceConfig[]>([]);
   const [schoolSections, setSchoolSections] = useState<SchoolSection[]>([]);
@@ -428,6 +443,10 @@ export default function AISettingsPage() {
   const [showSuccess, setShowSuccess] = useState(false);
 
   const canEdit = user?.is_superuser || hasPermission('assessment_center.change_assessmentaisettingsmodel');
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -453,7 +472,9 @@ export default function AISettingsPage() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    if (mounted) fetchData();
+  }, [fetchData, mounted]);
 
   const handleSave = async (form: FormState) => {
     setIsSaving(true);
@@ -484,6 +505,12 @@ export default function AISettingsPage() {
       setIsSaving(false);
     }
   };
+
+  if (!mounted) return (
+    <div className="min-h-[600px] flex items-center justify-center">
+      <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
+    </div>
+  );
 
   // ── Loading ──
   if (loading) return (
@@ -766,7 +793,6 @@ export default function AISettingsPage() {
                 { label: 'Spelling Weight', value: <span className="text-sm text-slate-700">{s.spelling_weight ? `${(s.spelling_weight * 100).toFixed(0)}%` : '—'}</span>, desc: 'Weight of spelling accuracy in overall score' },
                 { label: 'Auto-Mark Threshold', value: <span className="text-sm font-bold text-violet-700">{s.auto_mark_threshold ? `${(s.auto_mark_threshold * 100).toFixed(0)}%` : '—'}</span>, desc: 'Minimum AI confidence required for automatic marking' },
                 { label: 'Use DOB as Exam PIN', value: <StatusBadge value={s.use_dob_for_exam_pin} />, desc: 'Student date of birth (DDMMYY) used as exam PIN' },
-
               ].map(({ label, value, desc }) => (
                 <tr key={label} className="hover:bg-slate-50/50 transition-colors">
                   <td className="py-3.5 px-5 text-sm font-medium text-slate-700 whitespace-nowrap">{label}</td>
