@@ -606,22 +606,27 @@ export default function ProctoringRoom() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Pause/resume on visibility change
+  // Pause/resume on visibility change — also sync initial hidden state
   useEffect(() => {
     const handler = () => setPollingPaused(document.hidden);
+    handler(); // FIX: sync if page loads in a background tab
     document.addEventListener('visibilitychange', handler);
     return () => document.removeEventListener('visibilitychange', handler);
   }, []);
 
-  // Polling every 10s — recursive setTimeout to avoid drift
+  // Polling every 10s — recursive setTimeout, leak-safe
   const pollRef = useRef<NodeJS.Timeout | undefined>(undefined);
   useEffect(() => {
+    let cancelled = false;
     const poll = async () => {
-      if (!document.hidden) await fetchData(true);
-      pollRef.current = setTimeout(poll, 10000);
+      if (!document.hidden && !cancelled) await fetchData(true);
+      if (!cancelled) pollRef.current = setTimeout(poll, 10000);
     };
     pollRef.current = setTimeout(poll, 10000);
-    return () => clearTimeout(pollRef.current);
+    return () => {
+      cancelled = true;
+      clearTimeout(pollRef.current);
+    };
   }, [fetchData]);
 
   // Local countdown tick
@@ -721,20 +726,23 @@ export default function ProctoringRoom() {
     <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col overflow-hidden">
       <ToastStack toasts={toasts} onRemove={id => setToasts(p => p.filter(t => t.id !== id))} />
 
-      {/* Modals */}
+      {/* Modals — `key` forces remount on target change, clearing internal state */}
       <WarningModal
+        key={warningTarget?.attempt_id ?? 'warn'}
         open={!!warningTarget}
         studentName={warningTarget?.student.name ?? ''}
         onSend={handleSendWarning}
         onClose={() => setWarningTarget(null)}
       />
       <SubmitModal
+        key={submitTarget?.attempt_id ?? 'submit'}
         open={!!submitTarget}
         studentName={submitTarget?.student.name ?? ''}
         onSubmit={handleSubmitExam}
         onClose={() => setSubmitTarget(null)}
       />
       <ExtendModal
+        key={extendTarget?.attempt_id ?? 'extend'}
         open={!!extendTarget}
         studentName={extendTarget?.student.name ?? ''}
         onExtend={handleExtendTime}
@@ -773,9 +781,12 @@ export default function ProctoringRoom() {
                   {exam?.subject_name} — {exam?.class_name}{exam?.section_name ? ` (${exam.section_name})` : ''}
                 </p>
                 {stats && stats.in_progress > 0 && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping absolute" />
-                    <Radio className="h-2.5 w-2.5 relative" />
+                  // FIX: `relative` parent so ping stays anchored to the badge
+                  <span className="relative inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 shrink-0">
+                    <span className="relative flex w-2 h-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full w-2 h-2 bg-blue-500" />
+                    </span>
                     LIVE
                   </span>
                 )}

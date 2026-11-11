@@ -315,13 +315,13 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           current: isCurrentPath('/dashboard/staff/assessment/marking'),
           requiredPermissions: ['assessment_center.change_studentanswermodel'],
         },
-        {
-          name: 'Analytics',
-          href: '/dashboard/staff/assessment/analytics',
-          icon: <BarChart className="h-4 w-4" />,
-          current: isCurrentPath('/dashboard/staff/assessment/analytics'),
-          requiredPermissions: ['assessment_center.view_exammodel'],
-        },
+//         {
+//           name: 'Analytics',
+//           href: '/dashboard/staff/assessment/analytics',
+//           icon: <BarChart className="h-4 w-4" />,
+//           current: isCurrentPath('/dashboard/staff/assessment/analytics'),
+//           requiredPermissions: ['assessment_center.view_exammodel'],
+//         },
         {
           name: 'Result Transfer',
           href: '/dashboard/staff/assessment/result-transfer',

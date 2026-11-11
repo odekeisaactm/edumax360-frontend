@@ -87,8 +87,16 @@ import type {
   ScannedSheetProcessingStatus,
   // Result Transfer
   ExamResultTransferConfig,
-  TransferPreviewResponse,
-  TransferExecuteResponse,
+  GroupMapping,
+  ClassOverride,
+  GroupSummary,
+  GroupsSummaryResponse,
+  GroupMappingInput,
+  SetGroupMappingsResponse,
+  PreviewRow,
+  PreviewError,
+  PreviewResponse,
+  ExecuteTransferResponse,
   // AI Queue
   AIMarkingQueue,
   AIMarkingQueueStats,
@@ -1192,7 +1200,10 @@ export const assessmentAnalyticsAPI = {
 // ============================================================================
 
 export const resultTransferAPI = {
-  list: async (params?: { exam?: number; new_transfer?: string }): Promise<ExamResultTransferConfig[]> => {
+  list: async (params?: {
+    exam?: number;
+    is_transferred?: boolean;
+  }): Promise<ExamResultTransferConfig[]> => {
     const res = await api.get('/api/assessment/result-transfers/', { params });
     return unwrapList<ExamResultTransferConfig>(res.data);
   },
@@ -1202,29 +1213,53 @@ export const resultTransferAPI = {
     return unwrap<ExamResultTransferConfig>(res.data);
   },
 
-  create: async (data: { exam: number; result_field: number; round_to_nearest_half?: boolean }): Promise<ExamResultTransferConfig> => {
+  create: async (data: {
+    exam: number;
+    round_to_nearest_half?: boolean;
+  }): Promise<ExamResultTransferConfig> => {
     const res = await api.post('/api/assessment/result-transfers/', data);
     return unwrap<ExamResultTransferConfig>(res.data);
   },
 
-  update: async (id: number, data: Partial<ExamResultTransferConfig>): Promise<ExamResultTransferConfig> => {
-    const res = await api.put(`/api/assessment/result-transfers/${id}/`, data);
+  update: async (
+    id: number,
+    data: Partial<{ round_to_nearest_half: boolean }>
+  ): Promise<ExamResultTransferConfig> => {
+    const res = await api.patch(`/api/assessment/result-transfers/${id}/`, data);
     return unwrap<ExamResultTransferConfig>(res.data);
   },
 
-  previewTransfer: async (id: number): Promise<TransferPreviewResponse | any> => {
-    const res = await api.get(`/api/assessment/result-transfers/${id}/transfer_preview/`);
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/api/assessment/result-transfers/${id}/`);
+  },
+
+  getGroupsSummary: async (id: number): Promise<GroupsSummaryResponse> => {
+    const res = await api.get(`/api/assessment/result-transfers/${id}/groups_summary/`);
     return res.data;
   },
 
-  executeTransfer: async (id: number, data?: {
-    exempted_class_ids?: number[];
-    class_overrides?: Record<number, { scale: boolean }>;
-  }): Promise<TransferExecuteResponse | any> => {
-    const res = await api.post(`/api/assessment/result-transfers/${id}/execute-transfer/`, data || {});
+  setGroupMappings: async (
+    id: number,
+    mappings: GroupMappingInput[]
+  ): Promise<SetGroupMappingsResponse> => {
+    const res = await api.post(
+      `/api/assessment/result-transfers/${id}/set_group_mappings/`,
+      { mappings }
+    );
+    return res.data;
+  },
+
+  preview: async (id: number): Promise<PreviewResponse> => {
+    const res = await api.get(`/api/assessment/result-transfers/${id}/preview/`);
+    return res.data;
+  },
+
+  execute: async (id: number): Promise<ExecuteTransferResponse> => {
+    const res = await api.post(`/api/assessment/result-transfers/${id}/execute/`);
     return res.data;
   },
 };
+
 
 // ============================================================================
 // SCANNED EXAMS
@@ -1310,5 +1345,64 @@ export const dashboardAPI = {
   getStats: async (): Promise<any> => {
     const res = await api.get('/api/assessment/dashboard/stats/');
     return res.data;
+  },
+};
+
+
+export const publicExamAPI = {
+  /** Classes (with nested sections) that have a ready exam today. */
+  classes: async (deviceFingerprint: string): Promise<Array<{
+    id: number;
+    name: string;
+    sections: Array<{ id: number | null; name: string; class_configuration_id: number }>;
+  }>> => {
+    const r = await api.get('/api/assessment/public/classes/', {
+      headers: { 'X-Device-Fingerprint': deviceFingerprint },
+    });
+    return r.data;
+  },
+
+  /** Students in a class configuration with a ready exam today. */
+  students: async (
+    classConfigurationId: number,
+    deviceFingerprint: string,
+  ): Promise<Array<{
+    name: string;
+    registration_number: string;
+    first_name: string;
+    last_name: string;
+  }>> => {
+    const r = await api.get('/api/assessment/public/students/', {
+      headers: { 'X-Device-Fingerprint': deviceFingerprint },
+      params: { class_configuration_id: classConfigurationId },
+    });
+    return r.data;
+  },
+
+  /** Look up a student by reg number — returns their name + today's exams. */
+  lookup: async (
+    registrationNumber: string,
+    deviceFingerprint: string,
+  ): Promise<{
+    student_name: string;
+    registration_number: string;
+    class_name: string;
+    section_name: string | null;
+    exams: Array<{
+      exam_name: string;
+      exam_type: string;
+      subject_name: string;
+      exam_code: string;
+      schedule_id: number;
+      start_datetime: string;
+      duration_minutes: number;
+    }>;
+  }> => {
+    const r = await api.post(
+      '/api/assessment/public/lookup/',
+      { registration_number: registrationNumber.trim() },
+      { headers: { 'X-Device-Fingerprint': deviceFingerprint } },
+    );
+    return r.data;
   },
 };

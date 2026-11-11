@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { examsAPI, academicCalendarAPI } from '@/lib/api';
@@ -35,18 +35,21 @@ const EXAM_TYPE_COLORS: Record<string, { bg: string; text: string; border: strin
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function extractError(err: any): string {
-  if (!err) return 'An unknown error occurred';
-  if (err.response?.data) {
-    const d = err.response.data;
+  const d = err?.response?.data;
+  if (d) {
     if (typeof d === 'string') return d;
-    if (d.detail) return d.detail;
-    if (d.error) return d.error;
-    if (d.message) return d.message;
-    const first = Object.values(d)[0];
-    if (Array.isArray(first)) return first[0] as string;
-    if (typeof first === 'string') return first;
+    if (d.detail) return String(d.detail);
+    if (d.error) return String(d.error);
+    if (d.message) return String(d.message);
+    if (d.non_field_errors?.length) return d.non_field_errors[0];
+    if (typeof d === 'object') {
+      const msgs = Object.entries(d)
+        .map(([f, v]: [string, any]) => `${f.replace(/_/g, ' ')}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
+        .join('\n');
+      if (msgs) return msgs;
+    }
   }
-  return err.message || 'An error occurred';
+  return err?.message || 'An unexpected error occurred.';
 }
 
 // ─── Toast ───────────────────────────────────────────────────────────────────
@@ -58,15 +61,15 @@ function ToastStack({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: numb
     <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
       {toasts.map(t => (
         <div key={t.id}
-          className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border pointer-events-auto
+          className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border pointer-events-auto max-w-sm
             ${t.type === 'success'
               ? 'bg-green-50 border-green-200 text-green-900'
               : 'bg-red-50 border-red-200 text-red-900'}`}>
           {t.type === 'success'
             ? <Check className="h-4 w-4 text-green-600 shrink-0" />
             : <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />}
-          <span className="text-sm font-medium">{t.message}</span>
-          <button onClick={() => onRemove(t.id)} className="ml-1 opacity-60 hover:opacity-100">
+          <span className="text-sm font-medium flex-1 leading-snug whitespace-pre-line">{t.message}</span>
+          <button onClick={() => onRemove(t.id)} className="ml-1 opacity-60 hover:opacity-100 shrink-0">
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -135,17 +138,21 @@ interface SessionPeriod {
 export default function ExamsPage() {
   const router = useRouter();
   const { hasPermission, user } = useAuth();
+  const [mounted, setMounted] = useState(false);
   const { toasts, showToast, removeToast } = useToasts();
 
   const [exams, setExams] = useState<Exam[]>([]);
   const [sessionPeriods, setSessionPeriods] = useState<SessionPeriod[]>([]);
   const [currentPeriod, setCurrentPeriod] = useState<SessionPeriod | null>(null);
+
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   // Filters (server-side)
   const [filterType, setFilterType] = useState('');
   const [filterPublished, setFilterPublished] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   // Delete modal
   const [deletingExam, setDeletingExam] = useState<Exam | null>(null);
@@ -156,25 +163,56 @@ export default function ExamsPage() {
   const canDelete = user?.is_superuser || hasPermission('assessment_center.delete_exammodel');
 
   useEffect(() => {
-    if (canView) fetchAll();
-  }, [canView]);
+    setMounted(true);
+  }, []);
 
-  const fetchAll = async () => {
+  // ── Fetch Session Periods (Once) ──
+  useEffect(() => {
+    if (!mounted || !canView) return;
+    academicCalendarAPI.listSessionPeriods()
+      .then(periods => {
+        setSessionPeriods(periods);
+        setCurrentPeriod(periods.find((p: SessionPeriod) => p.is_current) ?? null);
+      })
+      .catch(err => console.error('Failed to load session periods', err));
+  }, [mounted, canView]);
+
+  // ── Debounce Search ──
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  // ── Fetch Exams (Backend Filtered) ──
+  const fetchExams = useCallback(async () => {
+    if (!mounted || !canView) return;
     setLoading(true);
+    setPageError(null);
+
+    const params: Record<string, any> = {};
+    if (debouncedSearch) params.search = debouncedSearch;
+    if (filterType) params.exam_type = filterType;
+
+    // Map UI status filter to backend flags
+    if (filterPublished === 'published') params.is_published = true;
+    if (filterPublished === 'unpublished') params.is_published = false;
+    if (filterPublished === 'practice') params.is_practice_mode = true;
+
     try {
-      const [examsData, periodsData] = await Promise.all([
-        examsAPI.list(),
-        academicCalendarAPI.listSessionPeriods(),
-      ]);
-      setExams(examsData);
-      setSessionPeriods(periodsData);
-      setCurrentPeriod(periodsData.find((p: SessionPeriod) => p.is_current) ?? null);
-    } catch (err) {
-      showToast('error', extractError(err));
+      const data = await examsAPI.list(params);
+      setExams(data);
+    } catch (err: any) {
+      setPageError(extractError(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [mounted, canView, debouncedSearch, filterType, filterPublished]);
+
+  useEffect(() => {
+    fetchExams();
+  }, [fetchExams]);
 
   const handleDelete = async () => {
     if (!deletingExam) return;
@@ -211,34 +249,27 @@ export default function ExamsPage() {
     return exam.term === currentPeriod.id;
   };
 
-  // ── Client-side filtering (search + type + published — all small filters) ──
-  const filtered = exams.filter(exam => {
-    if (filterType && exam.exam_type !== filterType) return false;
-    if (filterPublished === 'published' && !exam.is_published) return false;
-    if (filterPublished === 'unpublished' && exam.is_published) return false;
-    if (filterPublished === 'practice' && !exam.is_practice_mode) return false;
-    if (searchTerm) {
-      const q = searchTerm.toLowerCase();
-      return exam.name.toLowerCase().includes(q) ||
-        getSessionLabel(exam).toLowerCase().includes(q) ||
-        getTermLabel(exam).toLowerCase().includes(q) ||
-        (EXAM_TYPE_LABELS[exam.exam_type] || '').toLowerCase().includes(q);
-    }
-    return true;
-  });
-
-  const currentExams = filtered.filter(isCurrentPeriodExam);
-  const otherExams   = filtered.filter(e => !isCurrentPeriodExam(e));
+  // ── Derived Values ──
+  const currentExams = exams.filter(isCurrentPeriodExam);
+  const otherExams   = exams.filter(e => !isCurrentPeriodExam(e));
 
   const hasFilter = !!(filterType || filterPublished || searchTerm);
 
-  // ── Stats ─────────────────────────────────────────────────────────────────
+  // ── Stats (Based on current filter result) ─────────────────────────────────
   const stats = [
-    { label: 'Total Exams',      value: filtered.length,                               color: 'text-violet-600' },
-    { label: 'Current Term',     value: filtered.filter(isCurrentPeriodExam).length,   color: 'text-violet-600' },
-    { label: 'Published',        value: filtered.filter(e => e.is_published).length,    color: 'text-emerald-600' },
-    { label: 'Practice',         value: filtered.filter(e => e.is_practice_mode).length, color: 'text-blue-600' },
+    { label: 'In View',          value: exams.length,                               color: 'text-violet-600' },
+    { label: 'Current Term',     value: currentExams.length,                        color: 'text-violet-600' },
+    { label: 'Published',        value: exams.filter(e => e.is_published).length,    color: 'text-emerald-600' },
+    { label: 'Practice',         value: exams.filter(e => e.is_practice_mode).length, color: 'text-blue-600' },
   ];
+
+  if (!mounted) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
+      </div>
+    );
+  }
 
   if (!canView) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -279,9 +310,9 @@ export default function ExamsPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={fetchAll}
-            className="p-2.5 border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors">
-            <RefreshCw className="h-4 w-4" />
+          <button onClick={fetchExams} disabled={loading}
+            className="p-2.5 border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors disabled:opacity-50">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           {canCreate && (
             <button
@@ -295,16 +326,14 @@ export default function ExamsPage() {
       </div>
 
       {/* ── Stat chips ─────────────────────────────────────────────────────── */}
-      {!loading && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {stats.map(s => (
-            <div key={s.label} className="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3">
-              <p className="text-xs font-medium text-slate-500 mb-0.5">{s.label}</p>
-              <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {stats.map(s => (
+          <div key={s.label} className="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3">
+            <p className="text-xs font-medium text-slate-500 mb-0.5">{s.label}</p>
+            <p className={`text-2xl font-bold ${s.color}`}>{loading ? '—' : s.value}</p>
+          </div>
+        ))}
+      </div>
 
       {/* ── Filter bar ─────────────────────────────────────────────────────── */}
       <div className="bg-white border border-slate-100 rounded-xl shadow-sm px-4 py-3">
@@ -357,7 +386,17 @@ export default function ExamsPage() {
           <Loader2 className="h-10 w-10 text-violet-400 animate-spin" />
           <p className="text-sm text-slate-500">Loading exams...</p>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : pageError ? (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-16 flex flex-col items-center gap-3">
+          <AlertCircle className="h-12 w-12 text-red-400" />
+          <p className="text-base font-semibold text-slate-700">Failed to Load</p>
+          <p className="text-sm text-slate-500 max-w-sm text-center">{pageError}</p>
+          <button onClick={fetchExams}
+            className="mt-2 inline-flex items-center gap-2 px-4 py-2.5 bg-slate-700 text-white font-semibold rounded-xl hover:bg-slate-800 transition-colors text-sm">
+            <RefreshCw className="h-4 w-4" /> Try Again
+          </button>
+        </div>
+      ) : exams.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-16 flex flex-col items-center gap-3">
           <ClipboardList className="h-14 w-14 text-slate-200" />
           <p className="text-base font-semibold text-slate-700">

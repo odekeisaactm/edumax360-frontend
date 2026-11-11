@@ -2501,6 +2501,7 @@ export const feeAPI = {
   generateSingleInvoice: newFeeAPI.invoices.generateSingle,
 
   getBillingLedger: newFeeAPI.billingLedger.get,
+  getSessionLedger: newFeeAPI.billingLedger.getSessionLedger,
   // 1. Invoices extensions
   getInvoices: newFeeAPI.invoices.list,
   voidInvoice: newFeeAPI.invoices.void,

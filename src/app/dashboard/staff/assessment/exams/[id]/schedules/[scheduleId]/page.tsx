@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -12,9 +12,9 @@ import {
 import {
   ArrowLeft, AlertCircle, X, Check, Loader2, Save,
   BookOpen, Settings, Sparkles, Upload, Plus, Target,
-  CheckCircle2, XCircle, Info, Shield, ListChecks, FileQuestion,
-  RefreshCw, Search, Eye, BrainCircuit, ChevronRight, ChevronDown, Clock,
-  Users, UserCheck, UserMinus,
+  CheckCircle2, Info, Shield, ListChecks, FileQuestion,
+  RefreshCw, Search, Eye, BrainCircuit, Users, UserCheck,
+  AlertTriangle, Hash,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -45,33 +45,44 @@ const DIFF_COLORS: Record<string, string> = {
   hard:   'bg-red-50 text-red-700 border-red-200',
 };
 
+const TYPE_ORDER = ['objective', 'theory', 'subjective', 'true_false', 'fill_blank'];
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function extractError(err: any): string {
-  if (!err) return 'An unknown error occurred';
-  if (err.response?.data) {
-    const d = err.response.data;
+  const d = err?.response?.data;
+  if (d) {
     if (typeof d === 'string') return d;
-    if (d.detail) return d.detail;
-    if (d.error) return d.error;
-    if (d.message) return d.message;
-    const entries = Object.entries(d);
-    if (entries.length)
-      return entries.map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n');
+    if (d.detail) return String(d.detail);
+    if (d.error) return String(d.error);
+    if (d.message) return String(d.message);
+    if (d.non_field_errors?.length) return d.non_field_errors[0];
+    if (typeof d === 'object') {
+      const msgs = Object.entries(d)
+        .map(([f, v]: [string, any]) => `${f.replace(/_/g, ' ')}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
+        .join('\n');
+      if (msgs) return msgs;
+    }
   }
-  return err.message || 'An error occurred';
-}
-
-function renumber(qs: SelectedQuestion[]): SelectedQuestion[] {
-  return qs.map((q, i) => ({ ...q, _order: i + 1 }));
+  return err?.message || 'An unexpected error occurred.';
 }
 
 function unwrapList<T = any>(data: any): T[] {
   if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.results)) return data.results;          // plain DRF pagination
-  if (Array.isArray(data?.results?.data)) return data.results.data; // your custom APIResponse wrapper
+  if (Array.isArray(data?.results)) return data.results;
+  if (Array.isArray(data?.results?.data)) return data.results.data;
   if (Array.isArray(data?.data)) return data.data;
   return [];
+}
+
+// Auto-sorts by type, then by ID to keep groups clean
+function sortQuestions(qs: SelectedQuestion[]): SelectedQuestion[] {
+  return [...qs].sort((a, b) => {
+    const ai = TYPE_ORDER.indexOf(a.question_type);
+    const bi = TYPE_ORDER.indexOf(b.question_type);
+    if (ai !== bi) return ai - bi;
+    return a.id - b.id; // secondary sort by ID within the type
+  }).map((q, i) => ({ ...q, _order: i + 1 }));
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
@@ -112,7 +123,7 @@ function useToasts() {
   };
 }
 
-// ─── Error Modal (for important errors) ──────────────────────────────────────
+// ─── Modals ───────────────────────────────────────────────────────────────────
 
 function ErrorModal({ open, title, message, onClose }: {
   open: boolean; title: string; message: string; onClose: () => void;
@@ -139,135 +150,72 @@ function ErrorModal({ open, title, message, onClose }: {
   );
 }
 
-// ─── Invigilator Modal ────────────────────────────────────────────────────────
-
 function InvigilatorModal({ open, assignedIds, staffList, isSaving, onSave, onClose }: {
-  open: boolean;
-  assignedIds: number[];
-  staffList: any[];
-  isSaving: boolean;
-  onSave: (ids: number[]) => void;
-  onClose: () => void;
+  open: boolean; assignedIds: number[]; staffList: any[]; isSaving: boolean;
+  onSave: (ids: number[]) => void; onClose: () => void;
 }) {
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<number[]>(assignedIds);
 
   useEffect(() => { setSelectedIds(assignedIds); }, [assignedIds, open]);
-
   if (!open) return null;
 
   const filtered = staffList.filter(s =>
-    (s.full_name || `${s.first_name} ${s.last_name}`)
-      .toLowerCase().includes(search.toLowerCase())
+    (s.full_name || `${s.first_name} ${s.last_name}`).toLowerCase().includes(search.toLowerCase())
   );
-
-  const toggle = (id: number) => {
-    setSelectedIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-  };
-
+  const toggle = (id: number) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const selectedStaff = staffList.filter(s => selectedIds.includes(s.id));
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: '80vh' }}>
-
         <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
-          <h3 className="text-base font-bold text-white flex items-center gap-2">
-            <Users className="h-4 w-4" /> Assign Invigilators
-          </h3>
-          <button onClick={onClose} disabled={isSaving}
-            className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50">
-            <X className="h-5 w-5" />
-          </button>
+          <h3 className="text-base font-bold text-white flex items-center gap-2"><Users className="h-4 w-4" /> Assign Invigilators</h3>
+          <button onClick={onClose} disabled={isSaving} className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"><X className="h-5 w-5" /></button>
         </div>
-
         <div className="p-5 space-y-4 flex-1 overflow-y-auto min-h-0">
-          {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search staff by name..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
-            />
+            <input type="text" placeholder="Search staff by name..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" />
           </div>
-
-          {/* Results */}
           {filtered.length > 0 ? (
             <div className="space-y-1.5 max-h-60 overflow-y-auto">
               {filtered.map(staff => {
                 const name = staff.full_name || `${staff.first_name} ${staff.last_name}`;
                 const isChecked = selectedIds.includes(staff.id);
                 return (
-                  <button
-                    key={staff.id}
-                    type="button"
-                    onClick={() => toggle(staff.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
-                      isChecked
-                        ? 'bg-violet-50 border-violet-200'
-                        : 'bg-white border-slate-100 hover:bg-slate-50 hover:border-slate-200'
-                    }`}
-                  >
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                      isChecked ? 'bg-violet-600' : 'bg-slate-100'
-                    }`}>
-                      {isChecked
-                        ? <Check className="h-3.5 w-3.5 text-white" />
-                        : <UserCheck className="h-3.5 w-3.5 text-slate-400" />}
+                  <button key={staff.id} type="button" onClick={() => toggle(staff.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${isChecked ? 'bg-violet-50 border-violet-200' : 'bg-white border-slate-100 hover:bg-slate-50 hover:border-slate-200'}`}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${isChecked ? 'bg-violet-600' : 'bg-slate-100'}`}>
+                      {isChecked ? <Check className="h-3.5 w-3.5 text-white" /> : <UserCheck className="h-3.5 w-3.5 text-slate-400" />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-semibold truncate ${isChecked ? 'text-violet-900' : 'text-slate-700'}`}>
-                        {name}
-                      </p>
-                      {staff.staff_id && (
-                        <p className="text-xs text-slate-400">{staff.staff_id}</p>
-                      )}
+                      <p className={`text-sm font-semibold truncate ${isChecked ? 'text-violet-900' : 'text-slate-700'}`}>{name}</p>
+                      {staff.staff_id && <p className="text-xs text-slate-400">{staff.staff_id}</p>}
                     </div>
                   </button>
                 );
               })}
             </div>
-          ) : (
-            <p className="text-sm text-slate-400 text-center py-8">No staff found</p>
-          )}
-
-          {/* Selected chips */}
+          ) : <p className="text-sm text-slate-400 text-center py-8">No staff found</p>}
           {selectedStaff.length > 0 && (
             <div className="pt-3 border-t border-slate-100">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                Selected ({selectedStaff.length})
-              </p>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Selected ({selectedStaff.length})</p>
               <div className="flex flex-wrap gap-2">
                 {selectedStaff.map(s => (
                   <div key={s.id} className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 rounded-lg border border-violet-100">
-                    <span className="text-sm text-violet-700 font-medium">
-                      {s.full_name || `${s.first_name} ${s.last_name}`}
-                    </span>
-                    <button onClick={() => toggle(s.id)} className="text-violet-400 hover:text-violet-600 transition-colors">
-                      <X className="h-3 w-3" />
-                    </button>
+                    <span className="text-sm text-violet-700 font-medium">{s.full_name || `${s.first_name} ${s.last_name}`}</span>
+                    <button onClick={() => toggle(s.id)} className="text-violet-400 hover:text-violet-600 transition-colors"><X className="h-3 w-3" /></button>
                   </div>
                 ))}
               </div>
             </div>
           )}
         </div>
-
         <div className="flex justify-end gap-3 px-5 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex-shrink-0">
-          <button type="button" onClick={onClose} disabled={isSaving}
-            className="px-4 py-2 text-sm border border-slate-200 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
-            Cancel
-          </button>
-          <button onClick={() => onSave(selectedIds)} disabled={isSaving}
-            className="px-5 py-2 text-sm bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-violet-700 hover:to-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-violet-200">
-            {isSaving
-              ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
-              : <><Check className="h-4 w-4" /> Confirm</>}
+          <button onClick={onClose} disabled={isSaving} className="px-4 py-2 text-sm border border-slate-200 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">Cancel</button>
+          <button onClick={() => onSave(selectedIds)} disabled={isSaving} className="px-5 py-2 text-sm bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-violet-700 hover:to-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-violet-200">
+            {isSaving ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</> : <><Check className="h-4 w-4" /> Confirm</>}
           </button>
         </div>
       </div>
@@ -275,123 +223,70 @@ function InvigilatorModal({ open, assignedIds, staffList, isSaving, onSave, onCl
   );
 }
 
-// ─── Question Preview Modal ───────────────────────────────────────────────────
-
-function QuestionPreviewModal({ open, question, onClose }: {
-  open: boolean;
-  question: Question | null;
-  onClose: () => void;
-}) {
+function QuestionPreviewModal({ open, question, onClose }: { open: boolean; question: Question | null; onClose: () => void; }) {
   if (!open || !question) return null;
-
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 fade-in">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${QTYPE_COLORS[question.question_type]}`}>
-                <FileQuestion className="h-4 w-4" />
-             </div>
+             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${QTYPE_COLORS[question.question_type]}`}><FileQuestion className="h-4 w-4" /></div>
              <h3 className="font-bold text-slate-900">Question Preview</h3>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
-            <X className="h-5 w-5" />
-          </button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors"><X className="h-5 w-5" /></button>
         </div>
-
         <div className="flex-1 overflow-y-auto p-8 space-y-8">
            <div className="space-y-4">
               <div className="flex items-center gap-3 flex-wrap">
-                 <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border ${QTYPE_COLORS[question.question_type]}`}>
-                   {question.question_type.replace(/_/g, ' ')}
-                 </span>
-                 <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border ${DIFF_COLORS[question.difficulty_level]}`}>
-                   {question.difficulty_level}
-                 </span>
+                 <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border ${QTYPE_COLORS[question.question_type]}`}>{question.question_type.replace(/_/g, ' ')}</span>
+                 <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border ${DIFF_COLORS[question.difficulty_level]}`}>{question.difficulty_level}</span>
                  <span className="text-xs font-bold text-slate-400">Score Weight: {question.max_mark} mk</span>
               </div>
               <p className="text-lg font-bold text-slate-800 leading-relaxed">{question.question_text}</p>
               {question.diagram && (
-                <div className="rounded-2xl border border-slate-100 overflow-hidden shadow-sm max-w-md">
-                   <img src={question.diagram} alt="Diagram" className="w-full h-auto" />
-                </div>
+                <div className="rounded-2xl border border-slate-100 overflow-hidden shadow-sm max-w-md"><img src={question.diagram} alt="Diagram" className="w-full h-auto" /></div>
               )}
            </div>
-
            {question.question_type === 'objective' && question.options && (
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {Object.entries(question.options).map(([label, text]) => (
-                  <div key={label} className={`p-4 rounded-2xl border flex items-start gap-4 transition-all
-                    ${question.correct_answer === label ? 'bg-emerald-50 border-emerald-200 shadow-sm' : 'bg-slate-50 border-slate-100'}`}>
-                     <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm shrink-0
-                        ${question.correct_answer === label ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-100' : 'bg-white text-slate-400 shadow-sm'}`}>
-                        {label}
-                     </div>
+                  <div key={label} className={`p-4 rounded-2xl border flex items-start gap-4 transition-all ${question.correct_answer === label ? 'bg-emerald-50 border-emerald-200 shadow-sm' : 'bg-slate-50 border-slate-100'}`}>
+                     <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${question.correct_answer === label ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-100' : 'bg-white text-slate-400 shadow-sm'}`}>{label}</div>
                      <span className={`text-sm font-bold ${question.correct_answer === label ? 'text-emerald-900' : 'text-slate-600'}`}>{text}</span>
                      {question.correct_answer === label && <CheckCircle2 className="h-4 w-4 text-emerald-500 ml-auto shrink-0" />}
                   </div>
                 ))}
              </div>
            )}
-
            {['theory', 'subjective', 'fill_blank'].includes(question.question_type) && (
              <div className="space-y-6">
                 {question.model_answer && (
                   <div className="bg-emerald-50/50 border border-emerald-100 rounded-[1.5rem] p-6">
-                    <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3 flex items-center gap-2">
-                       <CheckCircle2 className="h-3 w-3" /> Model Answer
-                    </h4>
+                    <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3 flex items-center gap-2"><CheckCircle2 className="h-3 w-3" /> Model Answer</h4>
                     <p className="text-sm font-bold text-emerald-900 leading-relaxed whitespace-pre-wrap">{question.model_answer}</p>
                   </div>
                 )}
                 {question.keywords && (question.keywords as any).length > 0 && (
                   <div className="bg-blue-50/50 border border-blue-100 rounded-[1.5rem] p-6">
-                    <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3 flex items-center gap-2">
-                       <Target className="h-3 w-3" /> AI Grading Keywords
-                    </h4>
+                    <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3 flex items-center gap-2"><Target className="h-3 w-3" /> AI Grading Keywords</h4>
                     <div className="flex flex-wrap gap-2">
-                       {(question.keywords as any).map((k: string, i: number) => (
-                         <span key={i} className="px-3 py-1 bg-white border border-blue-100 text-blue-700 text-xs font-bold rounded-lg shadow-sm">
-                           {k}
-                         </span>
-                       ))}
+                       {(question.keywords as any).map((k: string, i: number) => (<span key={i} className="px-3 py-1 bg-white border border-blue-100 text-blue-700 text-xs font-bold rounded-lg shadow-sm">{k}</span>))}
                     </div>
                   </div>
                 )}
              </div>
            )}
-
-           {question.question_type === 'true_false' && (
-             <div className="flex items-center gap-4">
-                {['True', 'False'].map(val => (
-                  <div key={val} className={`flex-1 p-5 rounded-[1.5rem] border flex items-center justify-center gap-3 transition-all
-                    ${question.correct_answer === val ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                     <span className={`text-lg font-black ${question.correct_answer === val ? 'text-emerald-700' : 'text-slate-400'}`}>{val}</span>
-                     {question.correct_answer === val && <CheckCircle2 className="h-5 w-5 text-emerald-500" />}
-                  </div>
-                ))}
-             </div>
-           )}
         </div>
-
         <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
-           <button onClick={onClose} className="px-6 py-2 bg-slate-900 text-white text-sm font-black rounded-xl hover:bg-black transition-all shadow-lg">
-             CLOSE PREVIEW
-           </button>
+           <button onClick={onClose} className="px-6 py-2 bg-slate-900 text-white text-sm font-black rounded-xl hover:bg-black transition-all shadow-lg">CLOSE PREVIEW</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── AI Generate Modal ────────────────────────────────────────────────────────
-
 function AIGenerateModal({ open, schedule, onClose, onComplete, topics }: {
-  open: boolean;
-  schedule: ExamScheduleDetail;
-  onClose: () => void;
-  onComplete: () => void;
-  topics: any[];
+  open: boolean; schedule: ExamScheduleDetail; onClose: () => void; onComplete: () => void; topics: any[];
 }) {
   const [loading, setLoading] = useState(false);
   const [questionType, setQuestionType] = useState<'objective' | 'theory'>('objective');
@@ -425,104 +320,58 @@ function AIGenerateModal({ open, schedule, onClose, onComplete, topics }: {
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh] animate-in zoom-in-95 fade-in">
-
-        {/* Header */}
         <div className="relative px-6 pt-8 pb-6 flex-shrink-0">
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center">
-                <BrainCircuit className="h-5 w-5 text-violet-600" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900">AI Question Selection</h3>
-                <p className="text-xs text-slate-500">Auto-pick from your question bank</p>
-              </div>
+              <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center"><BrainCircuit className="h-5 w-5 text-violet-600" /></div>
+              <div><h3 className="text-base font-bold text-slate-900">AI Question Selection</h3><p className="text-xs text-slate-500">Auto-pick from your question bank</p></div>
             </div>
-            <button onClick={onClose} disabled={loading}
-              className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors disabled:opacity-40">
-              <X className="h-4 w-4" />
-            </button>
+            <button onClick={onClose} disabled={loading} className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors disabled:opacity-40"><X className="h-4 w-4" /></button>
           </div>
-
-          {/* Inline error */}
           {error && (
             <div className="flex items-start gap-3 p-3.5 bg-red-50 border border-red-200 rounded-xl mb-1">
               <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-red-800">Generation failed</p>
-                <p className="text-xs text-red-600 mt-0.5 leading-relaxed">{error}</p>
-              </div>
-              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 shrink-0">
-                <X className="h-3.5 w-3.5" />
-              </button>
+              <div className="flex-1"><p className="text-sm font-semibold text-red-800">Generation failed</p><p className="text-xs text-red-600 mt-0.5 leading-relaxed">{error}</p></div>
+              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 shrink-0"><X className="h-3.5 w-3.5" /></button>
             </div>
           )}
         </div>
-
-        {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 pb-2 space-y-5">
-
-          {/* Type + Difficulty */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Type</label>
-              <select value={questionType} onChange={e => setQuestionType(e.target.value as any)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-violet-500 text-slate-700">
-                <option value="objective">Objective</option>
-                <option value="theory">Theory</option>
+              <select value={questionType} onChange={e => setQuestionType(e.target.value as any)} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-violet-500 text-slate-700">
+                <option value="objective">Objective</option><option value="theory">Theory</option>
               </select>
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Difficulty</label>
-              <select value={difficulty} onChange={e => setDifficulty(e.target.value as any)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-violet-500 text-slate-700">
-                <option value="random">Random</option>
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
+              <select value={difficulty} onChange={e => setDifficulty(e.target.value as any)} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-violet-500 text-slate-700">
+                <option value="random">Random</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option>
               </select>
             </div>
           </div>
-
-          {/* Count + Mode */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Count</label>
-              <input type="number" min={1} max={50} value={count}
-                onChange={e => setCount(parseInt(e.target.value) || 1)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-violet-500 text-slate-700" />
+              <input type="number" min={1} max={50} value={count} onChange={e => setCount(parseInt(e.target.value) || 1)} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-violet-500 text-slate-700" />
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Mode</label>
               <div className="flex bg-slate-100 p-1 rounded-xl h-[42px]">
-                <button type="button" onClick={() => setOverhaul(false)}
-                  className={`flex-1 rounded-lg text-xs font-bold transition-all ${!overhaul ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                  Append
-                </button>
-                <button type="button" onClick={() => setOverhaul(true)}
-                  className={`flex-1 rounded-lg text-xs font-bold transition-all ${overhaul ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                  Replace
-                </button>
+                <button type="button" onClick={() => setOverhaul(false)} className={`flex-1 rounded-lg text-xs font-bold transition-all ${!overhaul ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Append</button>
+                <button type="button" onClick={() => setOverhaul(true)} className={`flex-1 rounded-lg text-xs font-bold transition-all ${overhaul ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Replace</button>
               </div>
             </div>
           </div>
-
-          {/* Topics */}
           {topics.length > 0 && (
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">
-                Filter by Topic <span className="normal-case font-normal text-slate-400">(optional)</span>
-              </label>
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Filter by Topic <span className="normal-case font-normal text-slate-400">(optional)</span></label>
               <div className="border border-slate-200 rounded-xl overflow-hidden">
                 <div className="max-h-32 overflow-y-auto divide-y divide-slate-50">
                   {topics.map(t => (
                     <label key={t.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={selectedTopics.includes(t.id)}
-                        onChange={e => {
-                          if (e.target.checked) setSelectedTopics([...selectedTopics, t.id]);
-                          else setSelectedTopics(selectedTopics.filter(id => id !== t.id));
-                        }}
-                        className="rounded text-violet-600 focus:ring-violet-500" />
+                      <input type="checkbox" checked={selectedTopics.includes(t.id)} onChange={e => { if (e.target.checked) setSelectedTopics([...selectedTopics, t.id]); else setSelectedTopics(selectedTopics.filter(id => id !== t.id)); }} className="rounded text-violet-600 focus:ring-violet-500" />
                       <span className="text-sm text-slate-700">{t.title}</span>
                     </label>
                   ))}
@@ -530,36 +379,18 @@ function AIGenerateModal({ open, schedule, onClose, onComplete, topics }: {
               </div>
             </div>
           )}
-
-          {overhaul && (
-            <div className="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl">
-              <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-700">
-                <span className="font-semibold">Replace mode:</span> existing {questionType} questions will be removed before adding new ones.
-              </p>
-            </div>
-          )}
+          {overhaul && (<div className="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl"><AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" /><p className="text-xs text-amber-700"><span className="font-semibold">Replace mode:</span> existing {questionType} questions will be removed before adding new ones.</p></div>)}
         </div>
-
-        {/* Footer */}
         <div className="flex gap-3 px-6 py-5 flex-shrink-0">
-          <button onClick={onClose} disabled={loading}
-            className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50">
-            Cancel
-          </button>
-          <button onClick={handleGenerate} disabled={loading}
-            className="flex-1 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm shadow-violet-200">
-            {loading
-              ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</>
-              : <><Sparkles className="h-4 w-4" /> Generate</>}
+          <button onClick={onClose} disabled={loading} className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50">Cancel</button>
+          <button onClick={handleGenerate} disabled={loading} className="flex-1 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm shadow-violet-200">
+            {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</> : <><Sparkles className="h-4 w-4" /> Generate</>}
           </button>
         </div>
       </div>
     </div>
   );
 }
-
-// ─── SetupBadge ───────────────────────────────────────────────────────────────
 
 function SetupBadge({ status }: { status: string }) {
   const map: Record<string, { cls: string; label: string }> = {
@@ -571,63 +402,35 @@ function SetupBadge({ status }: { status: string }) {
   return <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${cls}`}>{label}</span>;
 }
 
-// ─── SectionHeader ────────────────────────────────────────────────────────────
-
-function SectionHeader({ icon: Icon, title, subtitle }: {
-  icon: React.ElementType; title: string; subtitle?: string;
-}) {
+function SectionHeader({ icon: Icon, title, subtitle }: { icon: React.ElementType; title: string; subtitle?: string; }) {
   return (
     <div className="flex items-center gap-3 mb-5">
-      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center shadow-sm shrink-0">
-        <Icon className="h-4 w-4 text-white" />
-      </div>
-      <div>
-        <h2 className="text-sm font-bold text-slate-900">{title}</h2>
-        {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
-      </div>
+      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center shadow-sm shrink-0"><Icon className="h-4 w-4 text-white" /></div>
+      <div><h2 className="text-sm font-bold text-slate-900">{title}</h2>{subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}</div>
     </div>
   );
 }
 
-// ─── QuestionCard ─────────────────────────────────────────────────────────────
-
 function QuestionCard({ question, order, action, onPreview }: {
-  question: Question | SelectedQuestion;
-  order?: number;
-  action?: React.ReactNode;
-  onPreview: (q: Question) => void;
+  question: Question | SelectedQuestion; order?: number; action?: React.ReactNode; onPreview: (q: Question) => void;
 }) {
   const typeCls = QTYPE_COLORS[question.question_type] || 'bg-slate-50 text-slate-600 border-slate-200';
   const diffCls = DIFF_COLORS[question.difficulty_level] || 'bg-slate-50 text-slate-600 border-slate-200';
   return (
     <div className="border border-slate-100 rounded-xl p-3.5 hover:bg-slate-50/60 transition-all group/card">
       <div className="flex items-start gap-3">
-        {order !== undefined && (
-          <div className="shrink-0 w-7 h-7 bg-violet-100 text-violet-700 rounded-lg flex items-center justify-center font-bold text-xs">
-            {order}
-          </div>
-        )}
+        {order !== undefined && (<div className="shrink-0 w-7 h-7 bg-violet-100 text-violet-700 rounded-lg flex items-center justify-center font-bold text-xs">{order}</div>)}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-            {question.question_number != null && (
-              <span className="text-xs font-semibold text-slate-600">
-                Q{question.question_number}{question.sub_question_number || ''}
-              </span>
-            )}
-            <span className={`px-1.5 py-0.5 rounded-md text-xs font-semibold border ${typeCls}`}>
-              {question.question_type.replace(/_/g, ' ')}
-            </span>
-            <span className={`px-1.5 py-0.5 rounded-md text-xs font-semibold border ${diffCls}`}>
-              {question.difficulty_level}
-            </span>
+            {question.question_number != null && (<span className="text-xs font-semibold text-slate-600">Q{question.question_number}{question.sub_question_number || ''}</span>)}
+            <span className={`px-1.5 py-0.5 rounded-md text-xs font-semibold border ${typeCls}`}>{question.question_type.replace(/_/g, ' ')}</span>
+            <span className={`px-1.5 py-0.5 rounded-md text-xs font-semibold border ${diffCls}`}>{question.difficulty_level}</span>
             <span className="text-xs text-slate-400">{question.max_mark} mk</span>
           </div>
           <p className="text-sm text-slate-700 line-clamp-2 leading-relaxed">{question.question_text}</p>
         </div>
         <div className="shrink-0 flex items-center gap-1">
-          <button onClick={() => onPreview(question as any)} className="p-1.5 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all opacity-0 group-hover/card:opacity-100" title="Preview full question">
-            <Eye className="h-3.5 w-3.5" />
-          </button>
+          <button onClick={() => onPreview(question as any)} className="p-1.5 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all opacity-0 group-hover/card:opacity-100" title="Preview full question"><Eye className="h-3.5 w-3.5" /></button>
           {action && <div className="shrink-0 ml-1">{action}</div>}
         </div>
       </div>
@@ -641,6 +444,7 @@ export default function ExamScheduleDetailPage() {
   const router   = useRouter();
   const params   = useParams();
   const { hasPermission, user } = useAuth();
+  const [mounted, setMounted] = useState(false);
   const { toasts, showToast, removeToast } = useToasts();
 
   const examId     = params?.id         ? parseInt(params.id as string)         : null;
@@ -660,8 +464,6 @@ export default function ExamScheduleDetailPage() {
   const [hallId,          setHallId]          = useState<number | null>(null);
   const [invigilators,    setInvigilators]    = useState<number[]>([]);
   const [savingConfig,    setSavingConfig]    = useState(false);
-
-  // ── Invigilator modal ──────────────────────────────────────────────────────
   const [showInvigilatorModal, setShowInvigilatorModal] = useState(false);
 
   // ── Requirements ──────────────────────────────────────────────────────────
@@ -675,6 +477,7 @@ export default function ExamScheduleDetailPage() {
   const [selectedBank,       setSelectedBank]       = useState<number | null>(null);
   const [availableQuestions, setAvailableQuestions] = useState<Question[]>([]);
   const [selectedQuestions,  setSelectedQuestions]  = useState<SelectedQuestion[]>([]);
+  const [initialQuestionIds, setInitialQuestionIds] = useState<string>('');
   const [loadingQuestions,   setLoadingQuestions]   = useState(false);
   const [savingQuestions,    setSavingQuestions]    = useState(false);
 
@@ -693,11 +496,10 @@ export default function ExamScheduleDetailPage() {
   // ── Mark ready ─────────────────────────────────────────────────────────────
   const [markingReady, setMarkingReady] = useState(false);
 
-  // ── PIN ────────────────────────────────────────────────────────────────────
-  const [duplicateId, setDuplicateId] = useState<number | null>(null);
-
   const isPublished = schedule ? schedule.is_published === true : false;
   const canEdit = !isPublished && (user?.is_superuser || hasPermission('assessment_center.change_examschedulemodel'));
+
+  useEffect(() => { setMounted(true); }, []);
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -718,33 +520,35 @@ export default function ExamScheduleDetailPage() {
       setReqObjective(data.total_objective_questions ?? 0);
       setReqTheory(data.total_theory_questions ?? 0);
       setReqSubjective(data.total_subjective_questions ?? 0);
+
       const qs: SelectedQuestion[] = (assigned.questions || [])
-        .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
         .map((q: any, idx: number) => ({
           ...q.question_data,
           _order: q.order ?? idx + 1,
           custom_mark: q.custom_mark ?? null,
           section_id: q.exam_section ?? null,
         }));
-      setSelectedQuestions(qs);
+
+      const sorted = sortQuestions(qs);
+      setSelectedQuestions(sorted);
+      setInitialQuestionIds(sorted.map(q => q.id).sort().join(','));
+
       const [banksResponse, hallData, staffData] = await Promise.all([
         questionBanksAPI.getAvailableForSchedule(scheduleId!),
         examinationHallsAPI.list({ is_active: true }),
         staffAPI.list({ status: 'active' }),
       ]);
-      const banks = banksResponse.banks ?? [];
-      setQuestionBanks(banks);
+      setQuestionBanks(banksResponse.banks ?? []);
       setHalls(hallData);
-
-    setStaffList(unwrapList(staffData));
+      setStaffList(unwrapList(staffData));
     } catch (err) {
       showToast('error', extractError(err));
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [scheduleId]);
+  }, [scheduleId, showToast]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => { if (mounted) fetchAll(); }, [mounted, fetchAll]);
 
   const loadQuestionsFromBank = useCallback(async (bankId: number) => {
     if (!schedule) return;
@@ -758,7 +562,7 @@ export default function ExamScheduleDetailPage() {
     } finally {
       setLoadingQuestions(false);
     }
-  }, [schedule]);
+  }, [schedule, showToast]);
 
   const handleBankChange = (bankId: number) => {
     if (!bankId || isNaN(bankId)) {
@@ -772,6 +576,8 @@ export default function ExamScheduleDetailPage() {
     setFilterDifficulty('');
     loadQuestionsFromBank(bankId);
   };
+
+  // ── Actions ────────────────────────────────────────────────────────────────
 
   const handleSaveConfig = async () => {
     if (!scheduleId) return;
@@ -796,10 +602,21 @@ export default function ExamScheduleDetailPage() {
 
   const handleSaveRequirements = async () => {
     if (!scheduleId) return;
-    if (reqObjective + reqTheory + reqSubjective === 0) {
-      showToast('error', 'At least one question type must have a count greater than 0');
+
+    // ── NEW: Block if they are reducing requirements below current selection ──
+    if (reqObjective < currentObjective) {
+      showToast('error', `You have ${currentObjective} Objective questions selected. Reduce the requirement only after removing the extra questions.`);
       return;
     }
+    if (reqTheory < currentTheory) {
+      showToast('error', `You have ${currentTheory} Theory questions selected. Reduce the requirement only after removing the extra questions.`);
+      return;
+    }
+    if (reqSubjective < currentSubjective) {
+      showToast('error', `You have ${currentSubjective} Subjective questions selected. Reduce the requirement only after removing the extra questions.`);
+      return;
+    }
+
     setSavingReqs(true);
     try {
       await examSchedulesAPI.setQuestionRequirements(scheduleId, {
@@ -822,16 +639,25 @@ export default function ExamScheduleDetailPage() {
   const currentTheory     = selectedQuestions.filter(q => q.question_type === 'theory').length;
   const currentSubjective = selectedQuestions.filter(q => q.question_type === 'subjective').length;
 
+  // Marks Calculation
+  const currentMarks = selectedQuestions.reduce((sum, q) => {
+  const mark = q.custom_mark ?? q.max_mark ?? 0;
+  return sum + parseFloat(String(mark));
+}, 0);
+const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
+  const isOverMarks = currentMarks > targetMarks;
+
   const allRequirementsMet =
     (reqObjective + reqTheory + reqSubjective > 0) &&
     currentObjective  === reqObjective  &&
     currentTheory     === reqTheory     &&
     currentSubjective === reqSubjective;
 
-  const typeOrder = ['objective', 'theory', 'subjective', 'true_false', 'fill_blank'];
+  const isDirty = selectedQuestions.map(q => q.id).sort().join(',') !== initialQuestionIds;
+
   const sortQs = (qs: Question[]) => [...qs].sort((a, b) => {
-    const ai = typeOrder.indexOf(a.question_type);
-    const bi = typeOrder.indexOf(b.question_type);
+    const ai = TYPE_ORDER.indexOf(a.question_type);
+    const bi = TYPE_ORDER.indexOf(b.question_type);
     if (ai !== bi) return ai - bi;
     return (a.question_number ?? 999) - (b.question_number ?? 999);
   });
@@ -844,12 +670,16 @@ export default function ExamScheduleDetailPage() {
     return true;
   }));
 
+  const groupedAvailable = TYPE_ORDER.map(t => ({
+    type: t,
+    questions: filteredAvailable.filter(q => q.question_type === t)
+  })).filter(g => g.questions.length > 0);
+
   // ── Question management ────────────────────────────────────────────────────
 
   const handleAddQuestion = (q: Question) => {
     if (selectedQuestions.some(sq => sq.id === q.id)) {
-      setDuplicateId(q.id);
-      setTimeout(() => setDuplicateId(null), 3000);
+      showToast('error', 'Question already selected');
       return;
     }
 
@@ -867,22 +697,50 @@ export default function ExamScheduleDetailPage() {
       return;
     }
 
-    setSelectedQuestions(prev => renumber([...prev, { ...q, _order: prev.length + 1 }]));
+    setSelectedQuestions(prev => sortQuestions([...prev, { ...q, _order: prev.length + 1 }]));
+  };
+
+  const handleAddAll = () => {
+    let objToAdd = 0, theoryToAdd = 0, subjToAdd = 0;
+    const toAdd: SelectedQuestion[] = [];
+
+    for (const q of filteredAvailable) {
+      if (q.question_type === 'objective') {
+        if (reqObjective > 0 && currentObjective + objToAdd >= reqObjective) continue;
+        objToAdd++;
+      } else if (q.question_type === 'theory') {
+        if (reqTheory > 0 && currentTheory + theoryToAdd >= reqTheory) continue;
+        theoryToAdd++;
+      } else if (q.question_type === 'subjective') {
+        if (reqSubjective > 0 && currentSubjective + subjToAdd >= reqSubjective) continue;
+        subjToAdd++;
+      }
+      toAdd.push({ ...q, _order: 0, custom_mark: null, section_id: null });
+    }
+
+    if (toAdd.length === 0) {
+      showToast('error', 'Limits reached, could not add any more questions.');
+      return;
+    }
+
+    setSelectedQuestions(prev => sortQuestions([...prev, ...toAdd]));
+    showToast('success', `Added ${toAdd.length} questions`);
   };
 
   const handleRemoveQuestion = (questionId: number) => {
-    setSelectedQuestions(prev => renumber(prev.filter(q => q.id !== questionId)));
+    setSelectedQuestions(prev => sortQuestions(prev.filter(q => q.id !== questionId)));
   };
 
   const handleSaveQuestions = async () => {
     if (!scheduleId) return;
     if (selectedQuestions.length === 0) {
-      showToast('error', 'No questions selected. Add questions before saving.');
+      showToast('error', 'No questions selected.');
       return;
     }
-
-    // NOTE: marks tally validation removed — staff can save partial selections
-    // and complete them later.
+    if (isOverMarks) {
+      showToast('error', `Total marks (${currentMarks}) exceeds exam limit (${targetMarks}). Please remove questions.`);
+      return;
+    }
 
     setSavingQuestions(true);
     try {
@@ -890,9 +748,7 @@ export default function ExamScheduleDetailPage() {
         question_ids: selectedQuestions.map(q => q.id),
         order:        selectedQuestions.map(q => q.id),
         custom_marks: Object.fromEntries(
-          selectedQuestions
-            .filter(q => q.custom_mark != null)
-            .map(q => [q.id, q.custom_mark!])
+          selectedQuestions.filter(q => q.custom_mark != null).map(q => [q.id, q.custom_mark!])
         ),
       });
       showToast('success', `${selectedQuestions.length} questions saved`);
@@ -959,7 +815,7 @@ export default function ExamScheduleDetailPage() {
       return;
     }
 
-    setSelectedQuestions(prev => renumber([
+    setSelectedQuestions(prev => sortQuestions([
       ...prev,
       ...questionsToAdd.map(q => ({ ...q, _order: 0, custom_mark: null, section_id: null })),
     ]));
@@ -967,29 +823,16 @@ export default function ExamScheduleDetailPage() {
     setActiveTab('manual');
   };
 
-  // ── Invigilator save ───────────────────────────────────────────────────────
-
   const handleSaveInvigilators = (ids: number[]) => {
     setInvigilators(ids);
     setShowInvigilatorModal(false);
   };
 
-  // ── Manual Selection Grouping ─────────────────────────────────────────────
-
-  const groupedAvailable = typeOrder.map(t => ({
-    type: t,
-    questions: filteredAvailable.filter(q => q.question_type === t)
-  })).filter(g => g.questions.length > 0);
-
-  // ── Invigilator display names ──────────────────────────────────────────────
-
   const invigilatorNames = staffList
     .filter(s => invigilators.includes(s.id))
     .map(s => s.full_name || `${s.first_name} ${s.last_name}`);
 
-  // ─────────────────────────────────────────────────────────────────────────
-
-  if (loading) return (
+  if (!mounted || loading) return (
     <div className="min-h-96 flex items-center justify-center">
       <Loader2 className="h-10 w-10 text-violet-500 animate-spin" />
     </div>
@@ -1000,49 +843,26 @@ export default function ExamScheduleDetailPage() {
       <div>
         <AlertCircle className="h-14 w-14 text-red-300 mx-auto mb-4" />
         <p className="font-semibold text-slate-700 mb-4">Schedule not found</p>
-        <button onClick={() => router.back()}
-          className="px-5 py-2.5 bg-violet-600 text-white font-semibold rounded-xl hover:bg-violet-700 text-sm">
-          Go Back
-        </button>
+        <button onClick={() => router.back()} className="px-5 py-2.5 bg-violet-600 text-white font-semibold rounded-xl hover:bg-violet-700 text-sm">Go Back</button>
       </div>
     </div>
   );
 
   return (
-    <div className="space-y-5 pb-10">
+    <div className={`space-y-5 ${isDirty ? 'pb-32' : 'pb-10'}`}>
       <ToastStack toasts={toasts} onRemove={removeToast} />
 
-      <ErrorModal
-        open={!!errorModal}
-        title={errorModal?.title || 'Error'}
-        message={errorModal?.message || ''}
-        onClose={() => setErrorModal(null)}
-      />
-
-      {duplicateId && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[120] px-6 py-3 bg-amber-600 text-white rounded-2xl shadow-2xl font-black text-xs uppercase tracking-widest animate-in slide-in-from-top-4 fade-in duration-300">
-          Question ID #{duplicateId} already selected
-        </div>
-      )}
-
+      <ErrorModal open={!!errorModal} title={errorModal?.title || 'Error'} message={errorModal?.message || ''} onClose={() => setErrorModal(null)} />
       <QuestionPreviewModal open={!!previewQuestion} question={previewQuestion} onClose={() => setPreviewQuestion(null)} />
 
       <AIGenerateModal
-        open={showAIGenerate}
-        schedule={schedule}
+        open={showAIGenerate} schedule={schedule}
         topics={questionBanks.filter(b => b.id === selectedBank).flatMap(b => b.topic ? [{ id: b.topic, title: b.topic_title }] : [])}
         onClose={() => setShowAIGenerate(false)}
         onComplete={() => { setShowAIGenerate(false); showToast('success', 'AI generation complete'); fetchAll(true); }}
       />
 
-      <InvigilatorModal
-        open={showInvigilatorModal}
-        assignedIds={invigilators}
-        staffList={staffList}
-        isSaving={false}
-        onSave={handleSaveInvigilators}
-        onClose={() => setShowInvigilatorModal(false)}
-      />
+      <InvigilatorModal open={showInvigilatorModal} assignedIds={invigilators} staffList={staffList} isSaving={false} onSave={handleSaveInvigilators} onClose={() => setShowInvigilatorModal(false)} />
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-start gap-3">
@@ -1058,7 +878,6 @@ export default function ExamScheduleDetailPage() {
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             <SetupBadge status={schedule.setup_status} />
             <span className="font-mono text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg">{schedule.exam_code}</span>
-            <span className="inline-flex items-center gap-1 text-xs text-violet-600 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-lg"><Shield className="h-3 w-3" />Questions locked to subject/class</span>
           </div>
         </div>
         <button onClick={() => fetchAll(true)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors shrink-0 mt-0.5"><RefreshCw className="h-4 w-4" /></button>
@@ -1083,107 +902,74 @@ export default function ExamScheduleDetailPage() {
         ))}
       </div>
 
-      {/* ── Config & Requirements — stacked vertically ────────────────────── */}
+      {/* ── Config & Requirements ────────────────────────────────────────────── */}
       <div className="space-y-5">
-
-        {/* Schedule Config */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
           <SectionHeader icon={Settings} title="Schedule Config" subtitle="Date, time, hall, invigilators" />
           <div className="grid grid-cols-1 sm:grid-cols-6 lg:grid-cols-12 gap-4">
-
-            {/* Start Date — col-4 */}
             <div className="sm:col-span-6 lg:col-span-4">
               <label className={labelCls}>Start Date &amp; Time</label>
-              <input type="datetime-local" value={startDateTime}
-                onChange={e => setStartDateTime(e.target.value)}
-                className={inputCls} disabled={!canEdit} />
+              <input type="datetime-local" value={startDateTime} onChange={e => setStartDateTime(e.target.value)} className={inputCls} disabled={!canEdit} />
             </div>
-
-            {/* Duration — col-4 */}
             <div className="sm:col-span-3 lg:col-span-4">
               <label className={labelCls}>Duration (min)</label>
-              <input type="number" value={durationMinutes}
-                onChange={e => setDurationMinutes(parseInt(e.target.value) || 60)}
-                className={inputCls} disabled={!canEdit} />
+              <input type="number" value={durationMinutes} onChange={e => setDurationMinutes(parseInt(e.target.value) || 60)} className={inputCls} disabled={!canEdit} />
             </div>
-
-            {/* Grace — col-4 */}
             <div className="sm:col-span-3 lg:col-span-4">
               <label className={labelCls}>Grace Period (min)</label>
-              <input type="number" value={graceMinutes}
-                onChange={e => setGraceMinutes(parseInt(e.target.value) || 0)}
-                className={inputCls} disabled={!canEdit} />
+              <input type="number" value={graceMinutes} onChange={e => setGraceMinutes(parseInt(e.target.value) || 0)} className={inputCls} disabled={!canEdit} />
             </div>
-
-            {/* Hall — col-6 */}
             <div className="sm:col-span-3 lg:col-span-6">
               <label className={labelCls}>Examination Hall</label>
-              <select value={hallId ?? ''} onChange={e => setHallId(e.target.value ? parseInt(e.target.value) : null)}
-                className={inputCls} disabled={!canEdit}>
+              <select value={hallId ?? ''} onChange={e => setHallId(e.target.value ? parseInt(e.target.value) : null)} className={inputCls} disabled={!canEdit}>
                 <option value="">— No hall assigned —</option>
                 {halls.map(h => (<option key={h.id} value={h.id}>{h.name} (capacity: {h.capacity})</option>))}
               </select>
+              {hallId && schedule.students_info && (() => {
+                const hall = halls.find(h => h.id === hallId);
+                if (hall && hall.capacity < schedule.students_info.total) {
+                  return <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle className="h-3 w-3" /> Hall capacity ({hall.capacity}) is less than student count ({schedule.students_info.total})</p>;
+                }
+                return null;
+              })()}
             </div>
-
-            {/* Invigilators — col-6 with chip display + modal trigger */}
             <div className="sm:col-span-3 lg:col-span-6">
               <label className={labelCls}>Invigilators</label>
-              <div
-                onClick={() => canEdit && setShowInvigilatorModal(true)}
-                className={`min-h-[42px] w-full px-3 py-2 border border-slate-200 rounded-xl text-sm flex items-center flex-wrap gap-1.5 transition-colors
-                  ${canEdit ? 'cursor-pointer hover:border-violet-400 hover:bg-violet-50/30' : 'bg-slate-50 cursor-default'}`}
-              >
-                {invigilatorNames.length === 0 ? (
-                  <span className="text-slate-400 text-sm">
-                    {canEdit ? 'Click to assign invigilators...' : 'No invigilators assigned'}
-                  </span>
-                ) : (
-                  invigilatorNames.map((name, i) => (
-                    <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-100 text-violet-800 text-xs font-medium rounded-lg">
-                      <UserCheck className="h-3 w-3" />{name}
-                    </span>
-                  ))
+              <div onClick={() => canEdit && setShowInvigilatorModal(true)} className={`min-h-[42px] w-full px-3 py-2 border border-slate-200 rounded-xl text-sm flex items-center flex-wrap gap-1.5 transition-colors ${canEdit ? 'cursor-pointer hover:border-violet-400 hover:bg-violet-50/30' : 'bg-slate-50 cursor-default'}`}>
+                {invigilatorNames.length === 0 ? (<span className="text-slate-400 text-sm">{canEdit ? 'Click to assign invigilators...' : 'No invigilators assigned'}</span>) : (
+                  invigilatorNames.map((name, i) => (<span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-100 text-violet-800 text-xs font-medium rounded-lg"><UserCheck className="h-3 w-3" />{name}</span>))
                 )}
-                {canEdit && (
-                  <span className="ml-auto text-xs text-violet-500 font-medium shrink-0 flex items-center gap-1">
-                    <Users className="h-3.5 w-3.5" /> Manage
-                  </span>
-                )}
+                {canEdit && (<span className="ml-auto text-xs text-violet-500 font-medium shrink-0 flex items-center gap-1"><Users className="h-3.5 w-3.5" /> Manage</span>)}
               </div>
             </div>
           </div>
-
           {canEdit && (
             <div className="flex justify-end mt-4">
-              <button onClick={handleSaveConfig} disabled={savingConfig}
-                className="px-4 py-2 bg-violet-600 text-white font-semibold rounded-xl hover:bg-violet-700 text-sm disabled:opacity-50 flex items-center gap-2">
+              <button onClick={handleSaveConfig} disabled={savingConfig} className="px-4 py-2 bg-violet-600 text-white font-semibold rounded-xl hover:bg-violet-700 text-sm disabled:opacity-50 flex items-center gap-2">
                 {savingConfig ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving...</> : 'Save Config'}
               </button>
             </div>
           )}
         </div>
 
-        {/* Requirements */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
           <SectionHeader icon={Target} title="Question Requirements" subtitle="Set expected question counts per type" />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
-              { label: 'Objective',  val: reqObjective,  set: setReqObjective },
-              { label: 'Theory',     val: reqTheory,     set: setReqTheory },
-              { label: 'Subjective', val: reqSubjective, set: setReqSubjective },
-            ].map(({ label, val, set }) => (
+              { label: 'Objective',  val: reqObjective,  set: setReqObjective,  current: currentObjective },
+              { label: 'Theory',     val: reqTheory,     set: setReqTheory,     current: currentTheory },
+              { label: 'Subjective', val: reqSubjective, set: setReqSubjective, current: currentSubjective },
+            ].map(({ label, val, set, current }) => (
               <div key={label}>
                 <label className={labelCls}>{label}</label>
-                <input type="number" min={0} value={val}
-                  onChange={e => set(parseInt(e.target.value) || 0)}
-                  className={inputCls} disabled={!canEdit} />
+                <input type="number" min={0} value={val} onChange={e => set(parseInt(e.target.value) || 0)} className={inputCls} disabled={!canEdit} />
+                {val < current && <p className="text-xs text-red-500 mt-1">Remove {current - val} selected question(s) to save</p>}
               </div>
             ))}
           </div>
           {canEdit && (
             <div className="flex justify-end mt-4">
-              <button onClick={handleSaveRequirements} disabled={savingReqs}
-                className="px-4 py-2 bg-violet-600 text-white font-semibold rounded-xl hover:bg-violet-700 text-sm disabled:opacity-50 flex items-center gap-2">
+              <button onClick={handleSaveRequirements} disabled={savingReqs} className="px-4 py-2 bg-violet-600 text-white font-semibold rounded-xl hover:bg-violet-700 text-sm disabled:opacity-50 flex items-center gap-2">
                 {savingReqs ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving...</> : 'Save Requirements'}
               </button>
             </div>
@@ -1211,13 +997,20 @@ export default function ExamScheduleDetailPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <select value={selectedBank ?? ''} onChange={e => handleBankChange(parseInt(e.target.value))} disabled={!canEdit || questionBanks.length === 0} className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white disabled:bg-slate-50"><option value="">{questionBanks.length === 0 ? `No banks` : '— Select Question Bank —'}</option>{questionBanks.map(b => (<option key={b.id} value={b.id}>{b.name} ({b.question_count ?? 0})</option>))}</select>
                 <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" /><input type="text" placeholder="Search questions…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" /></div>
-                <select value={filterType} onChange={e => setFilterType(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"><option value="">All Types</option>{typeOrder.map(t => (<option key={t} value={t}>{t.replace(/_/g, ' ')}</option>))}</select>
+                <select value={filterType} onChange={e => setFilterType(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"><option value="">All Types</option>{TYPE_ORDER.map(t => (<option key={t} value={t}>{t.replace(/_/g, ' ')}</option>))}</select>
                 <select value={filterDifficulty} onChange={e => setFilterDifficulty(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"><option value="">All Difficulties</option>{['easy', 'medium', 'hard'].map(d => (<option key={d} value={d}>{d}</option>))}</select>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="border border-slate-100 rounded-2xl overflow-hidden">
-                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between"><span className="text-sm font-semibold text-slate-700">Available ({filteredAvailable.length})</span></div>
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-700">Available ({filteredAvailable.length})</span>
+                    {canEdit && filteredAvailable.length > 0 && (
+                      <button onClick={handleAddAll} className="text-xs font-bold text-violet-600 hover:text-violet-800 flex items-center gap-1">
+                        <Plus className="h-3 w-3" /> Add All
+                      </button>
+                    )}
+                  </div>
                   <div className="p-3 max-h-[520px] overflow-y-auto space-y-6">
                     {loadingQuestions ? (
                       <div className="flex items-center justify-center py-16"><Loader2 className="h-7 w-7 text-violet-400 animate-spin" /></div>
@@ -1226,8 +1019,7 @@ export default function ExamScheduleDetailPage() {
                     ) : groupedAvailable.map(group => (
                       <div key={group.type} className="space-y-3">
                         <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-md">
-                          <div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-                          {group.type.replace(/_/g, ' ')}s ({group.questions.length})
+                          <div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />{group.type.replace(/_/g, ' ')}s ({group.questions.length})
                         </h5>
                         <div className="space-y-2">
                           {group.questions.map(q => (
@@ -1241,17 +1033,14 @@ export default function ExamScheduleDetailPage() {
                   </div>
                 </div>
 
-                <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                <div className="border border-slate-100 rounded-2xl overflow-hidden flex flex-col">
                   <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                     <span className="text-sm font-semibold text-slate-700">Selected ({selectedQuestions.length})</span>
-                    {canEdit && (
-                      <button onClick={handleSaveQuestions} disabled={savingQuestions}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-semibold rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors">
-                        {savingQuestions ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} Save
-                      </button>
-                    )}
+                    <div className={`text-xs font-bold px-2 py-1 rounded-md flex items-center gap-1 ${isOverMarks ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                      <Hash className="h-3 w-3" /> {currentMarks} / {targetMarks} marks
+                    </div>
                   </div>
-                  <div className="p-3 max-h-[520px] overflow-y-auto space-y-2">
+                  <div className="p-3 flex-1 overflow-y-auto max-h-[520px] space-y-2">
                     {selectedQuestions.length === 0
                       ? <div className="flex flex-col items-center justify-center py-16 text-center gap-2"><ListChecks className="h-10 w-10 text-slate-200" /><p className="text-sm text-slate-400">No questions selected yet</p></div>
                       : selectedQuestions.map(q => (
@@ -1268,56 +1057,42 @@ export default function ExamScheduleDetailPage() {
           {activeTab === 'ai' && (
             <div className="max-w-sm mx-auto py-10">
               <div className="text-center space-y-5">
-                <div className="w-16 h-16 rounded-2xl bg-violet-100 flex items-center justify-center mx-auto">
-                  <BrainCircuit className="h-8 w-8 text-violet-600" />
-                </div>
-                <div>
-                  <h4 className="text-base font-bold text-slate-900">AI Question Selection</h4>
-                  <p className="text-sm text-slate-500 mt-1 leading-relaxed">
-                    Intelligently select the most appropriate questions from your bank using the school's active AI service.
-                  </p>
-                </div>
-                <button onClick={() => setShowAIGenerate(true)} disabled={!canEdit}
-                  className="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm shadow-violet-200">
-                  <Sparkles className="h-4 w-4" /> Configure &amp; Generate
-                </button>
-                <p className="text-xs text-slate-400">
-                  Make sure a question bank is selected in the Manual tab first.
-                </p>
+                <div className="w-16 h-16 rounded-2xl bg-violet-100 flex items-center justify-center mx-auto"><BrainCircuit className="h-8 w-8 text-violet-600" /></div>
+                <div><h4 className="text-base font-bold text-slate-900">AI Question Selection</h4><p className="text-sm text-slate-500 mt-1 leading-relaxed">Intelligently select the most appropriate questions from your bank using the school's active AI service.</p></div>
+                <button onClick={() => setShowAIGenerate(true)} disabled={!canEdit || !selectedBank} className="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm shadow-violet-200"><Sparkles className="h-4 w-4" /> Configure &amp; Generate</button>
+                <p className="text-xs text-slate-400">Select a question bank in the Manual tab first.</p>
               </div>
             </div>
           )}
 
           {activeTab === 'bulk' && (
-            <BulkTab
-              onImport={handleBulkImport}
-              questionBanks={questionBanks}
-              selectedBankQuestions={availableQuestions}
-              selectedBank={selectedBank}
-              onBankChange={handleBankChange}
-              loadingQuestions={loadingQuestions}
-              subjectName={schedule.subject_name}
-              className={schedule.class_name}
-              canEdit={canEdit}
-              onPreview={setPreviewQuestion}
-            />
+            <BulkTab onImport={handleBulkImport} questionBanks={questionBanks} selectedBankQuestions={availableQuestions} selectedBank={selectedBank} onBankChange={handleBankChange} loadingQuestions={loadingQuestions} canEdit={canEdit} onPreview={setPreviewQuestion} />
           )}
         </div>
       </div>
 
       {allRequirementsMet && schedule.setup_status !== 'ready' && canEdit && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <CheckCircle2 className="h-6 w-6 text-emerald-500 shrink-0" />
-            <div>
-              <p className="font-semibold text-emerald-900 text-sm">All requirements met!</p>
-              <p className="text-xs text-emerald-700 mt-0.5">Save your questions first, then mark this schedule as ready.</p>
+          <div className="flex items-center gap-3"><CheckCircle2 className="h-6 w-6 text-emerald-500 shrink-0" /><div><p className="font-semibold text-emerald-900 text-sm">All requirements met!</p><p className="text-xs text-emerald-700 mt-0.5">Save your questions first, then mark this schedule as ready.</p></div></div>
+          <button onClick={handleMarkReady} disabled={markingReady} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 disabled:opacity-50 text-sm transition-colors shrink-0">{markingReady ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Mark as Ready</button>
+        </div>
+      )}
+
+      {/* ── Sticky Save Bar ── */}
+      {isDirty && canEdit && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-lg px-4 animate-in slide-in-from-bottom-8 fade-in">
+          <div className="bg-slate-900 text-white rounded-2xl shadow-2xl p-2 flex items-center justify-between gap-4 border border-slate-700">
+            <div className="flex items-center gap-3 pl-3">
+              <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              <span className="text-sm font-medium text-slate-300">Unsaved changes to questions</span>
+            </div>
+            <div className="flex items-center gap-2 pr-1">
+              <button onClick={() => fetchAll(true)} className="px-3 py-2 text-sm text-slate-400 hover:text-white transition-colors">Discard</button>
+              <button onClick={handleSaveQuestions} disabled={savingQuestions || isOverMarks} className="flex items-center gap-2 px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-violet-900/50 disabled:opacity-50">
+                {savingQuestions ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Questions
+              </button>
             </div>
           </div>
-          <button onClick={handleMarkReady} disabled={markingReady}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 disabled:opacity-50 text-sm transition-colors shrink-0">
-            {markingReady ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Mark as Ready
-          </button>
         </div>
       )}
     </div>
@@ -1326,18 +1101,13 @@ export default function ExamScheduleDetailPage() {
 
 // ─── Bulk Tab ─────────────────────────────────────────────────────────────────
 
-function BulkTab({
-  onImport, questionBanks, selectedBankQuestions, selectedBank, onBankChange,
-  loadingQuestions, subjectName, className, canEdit, onPreview
-}: {
+function BulkTab({ onImport, questionBanks, selectedBankQuestions, selectedBank, onBankChange, loadingQuestions, canEdit, onPreview }: {
   onImport: (ids: number[], validIds: Set<number>) => Promise<void>;
   questionBanks: QuestionBank[];
   selectedBankQuestions: Question[];
   selectedBank: number | null;
   onBankChange: (id: number) => void;
   loadingQuestions: boolean;
-  subjectName?: string;
-  className?: string;
   canEdit: boolean;
   onPreview: (q: Question) => void;
 }) {
@@ -1371,6 +1141,8 @@ function BulkTab({
 
   return (
     <div className="space-y-5">
+      {duplicateId && <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[120] px-6 py-3 bg-amber-600 text-white rounded-2xl shadow-2xl font-black text-xs uppercase tracking-widest animate-in slide-in-from-top-4 fade-in duration-300">Question ID #{duplicateId} already in list</div>}
+
       <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
         <Upload className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
         <div>
@@ -1379,15 +1151,14 @@ function BulkTab({
             <li>Select a bank to see available IDs.</li>
             <li>Click an ID to add it to your input area.</li>
             <li>Click <strong>Import</strong> to add them to your selection.</li>
-            <li>Switch to <strong>Manual Selection</strong> then click <strong>Save</strong>.</li>
+            <li>Switch to <strong>Manual Selection</strong> then click <strong>Save Questions</strong>.</li>
           </ol>
         </div>
       </div>
 
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1.5">Question Bank</label>
-        <select value={selectedBank ?? ''} onChange={e => { if (e.target.value) onBankChange(parseInt(e.target.value)); }}
-          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white disabled:bg-slate-50" disabled={!canEdit || questionBanks.length === 0}>
+        <select value={selectedBank ?? ''} onChange={e => { if (e.target.value) onBankChange(parseInt(e.target.value)); }} className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white disabled:bg-slate-50" disabled={!canEdit || questionBanks.length === 0}>
           <option value="">Select a bank to view IDs</option>
           {questionBanks.map(b => (<option key={b.id} value={b.id}>{b.name} ({b.question_count ?? 0})</option>))}
         </select>
@@ -1407,10 +1178,7 @@ function BulkTab({
               <div className="p-4 space-y-6 max-h-80 overflow-y-auto">
                 {grouped.map(group => (
                   <div key={group.type} className="space-y-3">
-                    <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-                      {group.type.replace(/_/g, ' ')}s ({group.questions.length})
-                    </h5>
+                    <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />{group.type.replace(/_/g, ' ')}s ({group.questions.length})</h5>
                     <div className="flex flex-wrap gap-2">
                       {group.questions.map(q => (
                         <div key={q.id} className="flex items-center bg-white border border-slate-100 rounded-xl shadow-sm hover:border-indigo-300 transition-all">
@@ -1433,12 +1201,8 @@ function BulkTab({
 
       <div className="space-y-3">
         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">IDs to Import</label>
-        <textarea value={idText} onChange={e => setIdText(e.target.value)} rows={3}
-          placeholder="e.g. 102, 105, 120..."
-          className="w-full px-4 py-3 border border-slate-200 rounded-2xl text-sm font-black focus:outline-none focus:ring-2 focus:ring-violet-500 bg-slate-50"
-          disabled={!canEdit} />
-        <button onClick={handleImport} disabled={!idText.trim() || !selectedBank}
-          className="w-full h-[52px] bg-slate-900 hover:bg-black text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg transition-all transform active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
+        <textarea value={idText} onChange={e => setIdText(e.target.value)} rows={3} placeholder="e.g. 102, 105, 120..." className="w-full px-4 py-3 border border-slate-200 rounded-2xl text-sm font-black focus:outline-none focus:ring-2 focus:ring-violet-500 bg-slate-50" disabled={!canEdit} />
+        <button onClick={handleImport} disabled={!idText.trim() || !selectedBank} className="w-full h-[52px] bg-slate-900 hover:bg-black text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg transition-all transform active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
           <Upload className="h-4 w-4" /> ADD TO SELECTION
         </button>
       </div>

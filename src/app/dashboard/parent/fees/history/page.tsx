@@ -49,6 +49,21 @@ function formatDate(dateStr?: string): string {
   return new Date(dateStr).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function formatReceiptPeriod(receipt: any): string | null {
+  const periods: { id: number; name: string; order: number }[] = receipt?.periods_covered || [];
+  if (!periods.length) return null;
+  const sorted = [...periods].sort((a, b) => a.order - b.order);
+  const names = sorted.map(p => p.name).filter(Boolean);
+  if (!names.length) return null;
+
+  let joined: string;
+  if (names.length === 1) joined = names[0];
+  else if (names.length === 2) joined = `${names[0]} & ${names[1]}`;
+  else joined = `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+
+  return receipt.session_display ? `${joined} · ${receipt.session_display}` : joined;
+}
+
 function getImageUrl(path: string | null): string | undefined {
   if (!path) return undefined;
   if (path.startsWith('http')) return path;
@@ -67,19 +82,6 @@ function groupAllocations(payment: any) {
     acc[groupName].push(curr);
     return acc;
   }, {});
-}
-
-// A payment always belongs to a single session/term (multiple invoices, same period).
-// wallet_funding allocations don't carry session info, so we scan for the first
-// allocation whose hover_detail actually has it.
-function parseSessionTerm(payment: any): { session: string; term: string; label: string } {
-  const withPeriod = payment?.allocations?.find((a: any) => a.hover_detail?.startsWith('Session:'));
-  if (!withPeriod) return { session: '—', term: '—', label: 'Unspecified' };
-  const match = withPeriod.hover_detail.match(/Session:\s*(.+?)\s*\|\s*Term:\s*(.+)/);
-  if (!match) return { session: '—', term: '—', label: 'Unspecified' };
-  const session = match[1].trim();
-  const term = smartTitleCase(match[2].trim());
-  return { session, term, label: `${session} · ${term}` };
 }
 
 // ─── Status Badge Component ───────────────────────────────────────────────────
@@ -153,35 +155,29 @@ export default function ParentPaymentsPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [printPayment]);
 
-  // Session/term options are derived from whatever's currently loaded on this page —
-  // there's no backend filter param for it yet, so this only filters the visible page.
-  const periodsByPayment = useMemo(() => {
-    const map = new Map<number, ReturnType<typeof parseSessionTerm>>();
-    payments.forEach(p => map.set(p.id, parseSessionTerm(p)));
-    return map;
+  const availableSessions = useMemo(() => {
+    return Array.from(new Set(payments.map(p => p.session_display).filter(Boolean)));
   }, [payments]);
 
-  const availableSessions = useMemo(() => {
-    return Array.from(new Set(Array.from(periodsByPayment.values()).map(p => p.session))).filter(s => s !== '—');
-  }, [periodsByPayment]);
-
   const availableTerms = useMemo(() => {
-    const terms = Array.from(periodsByPayment.values())
-      .filter(p => !sessionFilter || p.session === sessionFilter)
-      .map(p => p.term);
-    return Array.from(new Set(terms)).filter(t => t !== '—');
-  }, [periodsByPayment, sessionFilter]);
+    const terms = new Set<string>();
+    payments.filter(p => !sessionFilter || p.session_display === sessionFilter).forEach(p => {
+      (p.periods_covered || []).forEach((per: any) => {
+        if (per.name) terms.add(per.name);
+      });
+    });
+    return Array.from(terms);
+  }, [payments, sessionFilter]);
 
   const filteredPayments = useMemo(() => {
     return payments.filter(p => {
-      const period = periodsByPayment.get(p.id);
-      if (sessionFilter && period?.session !== sessionFilter) return false;
-      if (termFilter && period?.term !== termFilter) return false;
+      if (sessionFilter && p.session_display !== sessionFilter) return false;
+      if (termFilter && !(p.periods_covered || []).some((per: any) => per.name === termFilter)) return false;
       return true;
     });
-  }, [payments, periodsByPayment, sessionFilter, termFilter]);
+  }, [payments, sessionFilter, termFilter]);
 
-  const printPeriod = useMemo(() => printPayment ? parseSessionTerm(printPayment) : null, [printPayment]);
+  const printPeriod = useMemo(() => printPayment ? formatReceiptPeriod(printPayment) : null, [printPayment]);
   const printGroupedAllocations = useMemo(() => groupAllocations(printPayment), [printPayment]);
 
   // Most browsers default the print/"Save as PDF" filename to document.title,
@@ -189,7 +185,7 @@ export default function ParentPaymentsPage() {
   const handlePrint = () => {
     if (!printPayment) return;
     const name = toTitleCase(printPayment.student_name || printPayment.parent_name);
-    const period = printPeriod?.label || '';
+    const period = printPeriod || '';
     const originalTitle = document.title;
     const safeTitle = `Receipt - ${name} - ${period}`.replace(/[\\/:*?"<>|]/g, '-');
     document.title = safeTitle;
@@ -289,13 +285,16 @@ export default function ParentPaymentsPage() {
                 </tr>
               ) : (
                 filteredPayments.map((p) => {
-                  const period = periodsByPayment.get(p.id);
+                  const periodLabel = formatReceiptPeriod(p);
                   return (
                     <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-3.5 font-medium text-slate-600">{formatDate(p.created_at)}</td>
                       <td className="px-5 py-3.5">
-                        <p className="font-bold text-slate-800">{period?.session}</p>
-                        <p className="text-xs font-medium text-slate-500">{period?.term}</p>
+                        {periodLabel ? (
+                          <p className="font-bold text-indigo-600 text-[11px] uppercase tracking-wider">{periodLabel}</p>
+                        ) : (
+                          <span className="text-slate-400 text-xs">—</span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5 text-right font-black text-slate-900">{formatCurrency(p.total_amount)}</td>
                       <td className="px-5 py-3.5 text-center"><StatusBadge status={p.status} /></td>
@@ -435,7 +434,7 @@ export default function ParentPaymentsPage() {
                   </tr>
                   <tr>
                     <th className="border border-slate-300 px-3 py-1.5 text-left bg-slate-100/80 text-slate-900">Academic Term</th>
-                    <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-900 bg-white/80">{printPeriod?.label}</td>
+                    <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-900 bg-white/80">{printPeriod || '—'}</td>
                   </tr>
                   {printPayment.notes && (
                     <tr>

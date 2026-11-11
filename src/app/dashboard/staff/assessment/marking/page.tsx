@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { examsAPI, academicAPI, api } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import { examsAPI, api } from '@/lib/api';
 import {
   CheckSquare, Loader2, AlertCircle, Search,
-  Users, AlertTriangle, Brain,
+  Users, AlertTriangle, Brain, Shield,
   Filter, RefreshCw, Eye,
 } from 'lucide-react';
 
@@ -44,7 +45,8 @@ interface MarkingListResponse {
     section_name: string | null;
   };
   summary: {
-    total_students: number;
+    roster_count: number;      // students enrolled in the class/section
+    total_students: number;    // students who actually have an attempt
     submitted: number;
     ungraded: number;
     pending: number;
@@ -74,17 +76,19 @@ const MARKING_STATUS: Record<string, { label: string; color: string }> = {
   ungraded:      { label: 'Ungraded',    color: 'bg-slate-100 text-slate-600' },
 };
 
+// Matches StudentExamAttemptModel.STATUS_CHOICES. No dead 'timed_out' key.
 const ATTEMPT_STATUS: Record<string, { label: string; color: string }> = {
-  submitted:   { label: 'Submitted',   color: 'bg-emerald-100 text-emerald-700' },
-  in_progress: { label: 'In Progress', color: 'bg-blue-100 text-blue-700' },
-  not_started: { label: 'Not Started', color: 'bg-slate-100 text-slate-500' },
-  timed_out:   { label: 'Timed Out',   color: 'bg-red-100 text-red-600' },
+  submitted:      { label: 'Submitted',      color: 'bg-emerald-100 text-emerald-700' },
+  auto_submitted: { label: 'Auto-Submitted', color: 'bg-emerald-100 text-emerald-700' },
+  in_progress:    { label: 'In Progress',    color: 'bg-blue-100 text-blue-700' },
+  not_started:    { label: 'Not Started',    color: 'bg-slate-100 text-slate-500' },
+  abandoned:      { label: 'Abandoned',      color: 'bg-red-100 text-red-600' },
 };
 
-function Badge({
-  status,
-  map,
-}: {
+// Only these are markable. Matches the backend's authoritative list.
+const MARKABLE_STATUSES = new Set(['submitted', 'auto_submitted']);
+
+function Badge({ status, map }: {
   status: string;
   map: Record<string, { label: string; color: string }>;
 }) {
@@ -100,6 +104,14 @@ function Badge({
 
 export default function MarkingHubPage() {
   const router = useRouter();
+  const { hasPermission, user } = useAuth();
+
+  // Permission: match the backend gate exactly.
+  const canView = !!user && (
+    user.is_superuser
+    || hasPermission('result.can_publish_result')
+    || hasPermission('assessment_center.change_studentanswermodel')
+  );
 
   // Selector state
   const [exams, setExams] = useState<Exam[]>([]);
@@ -129,11 +141,14 @@ export default function MarkingHubPage() {
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // sections.length > 0 drives all section UI — no dependency on settings flag
+  // Kills stale marking-list responses when the user switches subjects quickly
+  const markingReqRef = useRef(0);
+
   const hasSections = sections.length > 0;
 
-  // Load exams on mount
+  // Load exams on mount — only if permitted
   useEffect(() => {
+    if (!canView) { setLoadingExams(false); return; }
     (async () => {
       try {
         const examList = await examsAPI.list({ is_published: true });
@@ -144,7 +159,14 @@ export default function MarkingHubPage() {
         setLoadingExams(false);
       }
     })();
-  }, []);
+  }, [canView]);
+
+  // Cancel any in-flight marking request when selections change
+  const cancelMarking = () => {
+    markingReqRef.current++;
+    setMarkingData(null);
+    setLoadingStudents(false);
+  };
 
   // Step 1: Exam selected → fetch schedules_status, derive classes
   const handleExamSelect = async (exam: Exam) => {
@@ -155,7 +177,7 @@ export default function MarkingHubPage() {
     setClasses([]);
     setSections([]);
     setSubjects([]);
-    setMarkingData(null);
+    cancelMarking();
     setError(null);
     setLoadingSchedules(true);
 
@@ -184,14 +206,14 @@ export default function MarkingHubPage() {
     }
   };
 
-  // Step 2: Class selected → derive sections from schedules data (no API call)
+  // Step 2: Class selected → derive sections (no API call)
   const handleClassSelect = (cls: ClassOption) => {
     setSelectedClass(cls);
     setSelectedSection(null);
     setSelectedSubject(null);
     setSections([]);
     setSubjects([]);
-    setMarkingData(null);
+    cancelMarking();
     setError(null);
 
     const sectionMap = new Map<number, string>();
@@ -209,7 +231,6 @@ export default function MarkingHubPage() {
 
     setSections(derivedSections);
 
-    // If no sections exist, go straight to subjects
     if (derivedSections.length === 0) {
       deriveSubjects(cls.id, null);
     }
@@ -220,7 +241,7 @@ export default function MarkingHubPage() {
     setSelectedSection(sec);
     setSelectedSubject(null);
     setSubjects([]);
-    setMarkingData(null);
+    cancelMarking();
     setError(null);
     deriveSubjects(selectedClass!.id, sec.name);
   };
@@ -241,25 +262,32 @@ export default function MarkingHubPage() {
     if (result.length === 0) setError('No subjects found for this selection.');
   };
 
-  // Step 4: Subject selected → load marking list
+  // Step 4: Subject selected → load marking list (stale-safe)
   const loadMarkingList = useCallback(async (scheduleId: number) => {
+    const reqId = ++markingReqRef.current;
     setLoadingStudents(true);
     setError(null);
     try {
       const res = await api.get(`/api/assessment/teacher/schedule/${scheduleId}/marking-list/`);
+      if (reqId !== markingReqRef.current) return;
       setMarkingData(res.data);
-    } catch {
-      setError('Failed to load student list.');
+    } catch (err: any) {
+      if (reqId !== markingReqRef.current) return;
+      const msg =
+        err?.response?.status === 403
+          ? 'You are not authorised to view this schedule.'
+          : err?.response?.data?.error || 'Failed to load student list.';
+      setError(msg);
     } finally {
-      setLoadingStudents(false);
+      if (reqId === markingReqRef.current) setLoadingStudents(false);
     }
   }, []);
 
   const handleSubjectSelect = (sub: SubjectOption) => {
     setSelectedSubject(sub);
-    setMarkingData(null);
     setSearch('');
     setStatusFilter('all');
+    cancelMarking();
     loadMarkingList(sub.scheduleId);
   };
 
@@ -277,6 +305,23 @@ export default function MarkingHubPage() {
     const matchStatus = statusFilter === 'all' || a.marking_status === statusFilter;
     return matchSearch && matchStatus;
   });
+
+  // ── Access denied ─────────────────────────────────────────────────────────
+  if (!loadingExams && !canView) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center max-w-sm px-4">
+          <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Shield className="h-7 w-7 text-red-500" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-1">Access Denied</h2>
+          <p className="text-sm text-slate-500">
+            You don't have permission to view the marking hub.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // ── UI ────────────────────────────────────────────────────────────────────
 
@@ -346,7 +391,7 @@ export default function MarkingHubPage() {
               )}
             </div>
 
-            {/* Section — only shown when the selected class has sections */}
+            {/* Section */}
             {hasSections && (
               <div className="flex-1 min-w-[140px]">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5 block">Section</label>
@@ -384,7 +429,6 @@ export default function MarkingHubPage() {
 
           </div>
 
-          {/* Error */}
           {error && (
             <div className="flex items-start gap-2 p-3 mt-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
               <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
@@ -402,164 +446,227 @@ export default function MarkingHubPage() {
         )}
 
         {/* Marking List */}
-        {markingData && !loadingStudents && (
-          <>
-            {/* Summary chips */}
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-              {[
-                { label: 'Total',        value: markingData.summary.total_students, color: 'text-slate-800',   bg: 'bg-white' },
-                { label: 'Submitted',    value: markingData.summary.submitted,      color: 'text-emerald-700', bg: 'bg-emerald-50' },
-                { label: 'Ungraded',     value: markingData.summary.ungraded,       color: 'text-slate-600',   bg: 'bg-slate-50' },
-                { label: 'Pending',      value: markingData.summary.pending,        color: 'text-amber-700',   bg: 'bg-amber-50' },
-                { label: 'Marked',       value: markingData.summary.fully_marked,   color: 'text-blue-700',    bg: 'bg-blue-50' },
-                { label: 'Needs Review', value: markingData.summary.needs_review,   color: 'text-rose-700',    bg: 'bg-rose-50' },
-              ].map(chip => (
-                <div key={chip.label} className={`${chip.bg} border border-slate-200 rounded-xl p-3 text-center`}>
-                  <p className={`text-2xl font-bold ${chip.color}`}>{chip.value}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{chip.label}</p>
-                </div>
-              ))}
-            </div>
+        {markingData && !loadingStudents && (() => {
+          // Roster = enrolled students; wrote = students with an attempt.
+          // `roster_count` may be undefined on older backends — fall back gracefully.
+          const roster   = markingData.summary.roster_count ?? markingData.summary.total_students;
+          const wrote    = markingData.summary.total_students;
+          const missing  = Math.max(0, roster - wrote);
+          const complete = roster > 0 && missing === 0;
 
-            {/* Table card */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Users className="h-4 w-4 text-violet-500" />
-                  <span className="text-sm font-semibold text-slate-700">
-                    {markingData.schedule.subject} — {markingData.schedule.class_name}
-                    {markingData.schedule.section_name ? ` · ${markingData.schedule.section_name}` : ''}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Search student…"
-                      value={search}
-                      onChange={e => setSearch(e.target.value)}
-                      className="pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-300 w-44"
-                    />
+          const attemptsChip = {
+            label: missing > 0 ? `${missing} did not write` : 'Wrote',
+            value: `${wrote}/${roster}`,
+            color: complete ? 'text-emerald-700' : missing > 0 ? 'text-amber-700' : 'text-slate-800',
+            bg:    complete ? 'bg-emerald-50'    : missing > 0 ? 'bg-amber-50'    : 'bg-white',
+          };
+
+          const chips = [
+            attemptsChip,
+            { label: 'Submitted',    value: markingData.summary.submitted,    color: 'text-emerald-700', bg: 'bg-emerald-50' },
+            { label: 'Ungraded',     value: markingData.summary.ungraded,     color: 'text-slate-600',   bg: 'bg-slate-50'   },
+            { label: 'Pending',      value: markingData.summary.pending,      color: 'text-amber-700',   bg: 'bg-amber-50'   },
+            { label: 'Marked',       value: markingData.summary.fully_marked, color: 'text-blue-700',    bg: 'bg-blue-50'    },
+            { label: 'Needs Review', value: markingData.summary.needs_review, color: 'text-rose-700',    bg: 'bg-rose-50'    },
+          ];
+
+          return (
+            <>
+              {/* Summary chips */}
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                {chips.map(chip => (
+                  <div key={chip.label} className={`${chip.bg} border border-slate-200 rounded-xl p-3 text-center`}>
+                    <p className={`text-2xl font-bold ${chip.color}`}>{chip.value}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{chip.label}</p>
                   </div>
-                  <div className="relative">
-                    <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                    <select
-                      value={statusFilter}
-                      onChange={e => setStatusFilter(e.target.value)}
-                      className="pl-8 pr-6 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-300 bg-white appearance-none"
-                    >
-                      <option value="all">All Statuses</option>
-                      {Object.entries(MARKING_STATUS).map(([k, v]) => (
-                        <option key={k} value={k}>{v.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <button
-                    onClick={handleRefresh}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Refresh
-                  </button>
-                </div>
+                ))}
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 text-xs text-slate-500 font-semibold uppercase tracking-wide border-b border-slate-100">
-                      <th className="text-left px-5 py-3">Student</th>
-                      <th className="text-left px-4 py-3">Attempt</th>
-                      <th className="text-center px-4 py-3">Obj.</th>
-                      <th className="text-center px-4 py-3">Theory</th>
-                      <th className="text-center px-4 py-3">Total</th>
-                      <th className="text-left px-4 py-3">Marking</th>
-                      <th className="text-center px-4 py-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredAttempts.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="text-center py-12 text-slate-400 text-sm">
-                          No students match your filters.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredAttempts.map(row => (
-                        <tr key={row.attempt_id} className="hover:bg-violet-50/30 transition-colors">
-                          <td className="px-5 py-3">
-                            <p className="font-medium text-slate-800">{row.student_name}</p>
-                            <p className="text-xs text-slate-400">{row.admission_number}</p>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge status={row.attempt_status} map={ATTEMPT_STATUS} />
-                          </td>
-                          <td className="px-4 py-3 text-center text-slate-700">
-                            {row.objective_max > 0 ? (
-                              <span className="font-medium">{row.objective_score}/{row.objective_max}</span>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-center text-slate-700">
-                            {row.theory_max > 0 ? (
-                              <span className="font-medium">{row.theory_score}/{row.theory_max}</span>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <p className="font-semibold text-slate-800">{row.total_score}/{row.total_max}</p>
-                            {row.total_max > 0 && (
-                              <p className="text-xs text-slate-400">{row.percentage.toFixed(1)}%</p>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <Badge status={row.marking_status} map={MARKING_STATUS} />
-                              {row.pending_count > 0 && (
-                                <span className="flex items-center gap-0.5 text-xs text-amber-600">
-                                  <AlertTriangle className="h-3 w-3" />
-                                  {row.pending_count}
-                                </span>
-                              )}
-                              {row.low_confidence_count > 0 && (
-                                <span className="flex items-center gap-0.5 text-xs text-purple-600">
-                                  <Brain className="h-3 w-3" />
-                                  {row.low_confidence_count}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <button
-                              onClick={() =>
-                                router.push(
-                                  `/dashboard/staff/assessment/marking/${row.attempt_id}`
-                                )
-                              }
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg transition-colors"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                              Mark
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              {/* Roster-gap notice — factual only, no pointer to a non-existent page */}
+              {missing > 0 && (
+                <div className="flex items-start gap-3 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-500" />
+                  <div>
+                    <p className="font-semibold">
+                      {missing} enrolled student{missing !== 1 ? 's have' : ' has'} no attempt record for this exam.
+                    </p>
 
-              {filteredAttempts.length > 0 && (
-                <div className="px-5 py-3 border-t border-slate-100 text-xs text-slate-400">
-                  Showing {filteredAttempts.length} of {markingData.attempts.length} students
+                  </div>
                 </div>
               )}
-            </div>
-          </>
-        )}
+
+              {/* Table card */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-violet-500" />
+                    <span className="text-sm font-semibold text-slate-700">
+                      {markingData.schedule.subject} — {markingData.schedule.class_name}
+                      {markingData.schedule.section_name ? ` · ${markingData.schedule.section_name}` : ''}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search student…"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        className="pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-300 w-44"
+                      />
+                    </div>
+                    <div className="relative">
+                      <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                      <select
+                        value={statusFilter}
+                        onChange={e => setStatusFilter(e.target.value)}
+                        className="pl-8 pr-6 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-300 bg-white appearance-none"
+                      >
+                        <option value="all">All Statuses</option>
+                        {Object.entries(MARKING_STATUS).map(([k, v]) => (
+                          <option key={k} value={k}>{v.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      onClick={handleRefresh}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-xs text-slate-500 font-semibold uppercase tracking-wide border-b border-slate-100">
+                        <th className="text-left px-5 py-3">Student</th>
+                        <th className="text-left px-4 py-3">Attempt</th>
+                        <th className="text-center px-4 py-3">Obj.</th>
+                        <th className="text-center px-4 py-3">Theory</th>
+                        <th className="text-center px-4 py-3">Total</th>
+                        <th className="text-left px-4 py-3">Marking</th>
+                        <th className="text-center px-4 py-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredAttempts.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="text-center py-12 text-slate-400 text-sm">
+                            No students match your filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredAttempts.map(row => {
+                          const markable = MARKABLE_STATUSES.has(row.attempt_status);
+                          return (
+                            <tr key={row.attempt_id} className="hover:bg-violet-50/30 transition-colors">
+                              <td className="px-5 py-3">
+                                <p className="font-medium text-slate-800">{row.student_name}</p>
+                                <p className="text-xs text-slate-400">{row.admission_number}</p>
+                              </td>
+                              <td className="px-4 py-3">
+                                <Badge status={row.attempt_status} map={ATTEMPT_STATUS} />
+                              </td>
+                              <td className="px-4 py-3 text-center text-slate-700">
+                                {row.objective_max > 0 ? (
+                                  <span className="font-medium">{row.objective_score}/{row.objective_max}</span>
+                                ) : (
+                                  <span className="text-slate-300">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center text-slate-700">
+                                {row.theory_max > 0 ? (
+                                  <span className="font-medium">{row.theory_score}/{row.theory_max}</span>
+                                ) : (
+                                  <span className="text-slate-300">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <p className="font-semibold text-slate-800">{row.total_score}/{row.total_max}</p>
+                                {row.total_max > 0 && (
+                                  <p className="text-xs text-slate-400">{row.percentage.toFixed(1)}%</p>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <Badge status={row.marking_status} map={MARKING_STATUS} />
+                                  {row.pending_count > 0 && (
+                                    <span
+                                      className="flex items-center gap-0.5 text-xs text-amber-600"
+                                      title={`${row.pending_count} ungraded written answer${row.pending_count !== 1 ? 's' : ''}`}
+                                    >
+                                      <AlertTriangle className="h-3 w-3" />
+                                      {row.pending_count}
+                                    </span>
+                                  )}
+                                  {row.low_confidence_count > 0 && (
+                                    <span
+                                      className="flex items-center gap-0.5 text-xs text-purple-600"
+                                      title={`${row.low_confidence_count} AI-graded answer${row.low_confidence_count !== 1 ? 's' : ''} with <70% confidence — spot-check recommended`}
+                                    >
+                                      <Brain className="h-3 w-3" />
+                                      {row.low_confidence_count}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {markable ? (
+                                  <button
+                                    onClick={() =>
+                                      router.push(
+                                        `/dashboard/staff/assessment/marking/${row.attempt_id}`
+                                      )
+                                    }
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg transition-colors"
+                                  >
+                                    <Eye className="h-3.5 w-3.5" />
+                                    Mark
+                                  </button>
+                                ) : (
+                                  <span
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-400 text-xs font-medium rounded-lg cursor-not-allowed"
+                                    title={
+                                      row.attempt_status === 'in_progress'
+                                        ? 'Student is still taking the exam'
+                                        : row.attempt_status === 'not_started'
+                                        ? 'Student has not started the exam'
+                                        : row.attempt_status === 'abandoned'
+                                        ? 'Attempt was abandoned / invalidated'
+                                        : 'Cannot be marked'
+                                    }
+                                  >
+                                    <Eye className="h-3.5 w-3.5" />
+                                    Mark
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {filteredAttempts.length > 0 && (
+                  <div className="px-5 py-3 border-t border-slate-100 text-xs text-slate-400">
+                    Showing {filteredAttempts.length} of {markingData.attempts.length} attempt{markingData.attempts.length !== 1 ? 's' : ''}
+                    {missing > 0 && (
+                      <span className="text-amber-600">
+                        {' '}· {missing} enrolled student{missing !== 1 ? 's' : ''} with no attempt
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          );
+        })()}
       </div>
     </div>
   );

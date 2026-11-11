@@ -133,6 +133,7 @@ export default function POSCheckoutPage() {
 
   // ─── State: Search ───
   const [searchType, setSearchType] = useState<'student' | 'parent'>(presetParentId ? 'parent' : 'student');
+  const [viewMode, setViewMode] = useState<'single' | 'session'>('single');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -142,9 +143,11 @@ export default function POSCheckoutPage() {
   const [loadingTerms, setLoadingTerms] = useState(false);
   const [termsWithDebt, setTermsWithDebt] = useState<TermOption[]>([]);
   const [activeTerm, setActiveTerm] = useState<TermOption | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
 
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [cartGroups, setCartGroups] = useState<CartGroup[]>([]);
+  const [sessionLedgerData, setSessionLedgerData] = useState<any[]>([]);
   const [rawParentData, setRawParentData] = useState<any>(null); // full ledger response for this term — drives the statement drawer
 
   // ─── State: Payment Inputs ───
@@ -182,6 +185,17 @@ export default function POSCheckoutPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [warningModal, setWarningModal] = useState<{ warnings: string[]; action: 'preview' | 'submit' } | null>(null);
   const [toasts, setToasts] = useState<any[]>([]);
+
+  // Reset all payment inputs when switching modes to prevent cross-mode data leaks
+  useEffect(() => {
+    setTenderedAmount('');
+    setTenderedTouched(false);
+    setManualOverrides({});
+    setWalletContributions({});
+    setOverpaymentTargetId(null);
+    setSplitPercentages({});
+    setAttemptedSubmit(false);
+  }, [viewMode]);
 
   const showToast = (type: 'success' | 'error', message: string) => {
     setToasts(p => [...p, { id: ++_toastId, type, message }]);
@@ -271,6 +285,29 @@ export default function POSCheckoutPage() {
     }, 300);
     return () => clearTimeout(t);
   }, [searchQuery, searchType]);
+
+  // Derive distinct sessions from the terms list
+  const sessionsWithDebt = useMemo(() => {
+    const map = new Map<number, { session_id: number; label: string; total_owed: number }>();
+    termsWithDebt.forEach(t => {
+      if (!t.session_id) return;
+      if (!map.has(t.session_id)) {
+        // Extract "2027/2028" from "1st Term 2027/2028" if possible, or just use the raw label
+        const sessionLabel = t.label.includes(' ') ? t.label.split(' ').pop() : t.label;
+        map.set(t.session_id, { session_id: t.session_id, label: sessionLabel || 'Session', total_owed: 0 });
+      }
+      map.get(t.session_id)!.total_owed += t.total_owed;
+    });
+    return Array.from(map.values()).sort((a, b) => b.session_id - a.session_id);
+  }, [termsWithDebt]);
+
+  // Auto-select the current session (or the newest one with debt) when switching to session mode
+  useEffect(() => {
+    if (viewMode === 'session' && sessionsWithDebt.length > 0) {
+      const currentSess = sessionsWithDebt.find(s => s.session_id === currentSessionId);
+      setActiveSessionId(currentSess ? currentSess.session_id : sessionsWithDebt[0].session_id);
+    }
+  }, [viewMode, sessionsWithDebt, currentSessionId]);
 
   // ─── STEP 1: Fetch Terms with Debt ───
   const handleSelectProfile = async (p: any, type: 'student' | 'parent') => {
@@ -397,8 +434,62 @@ export default function POSCheckoutPage() {
     fetchTermLedger();
   }, [activeTerm, selectedPerson, searchType]);
 
+  // ─── STEP 2b: Fetch Ledger for Active Session ───
+  useEffect(() => {
+    if (viewMode !== 'session' || !activeSessionId || !selectedPerson) return;
+
+    const fetchSessionLedger = async () => {
+      setLoadingLedger(true);
+      setSessionLedgerData([]);
+      // Reset payment inputs
+      setTenderedAmount('');
+      setPaymentDate(new Date().toISOString().slice(0, 10));
+      setTenderedTouched(false);
+      setManualOverrides({});
+      setWalletContributions({});
+      setOverpaymentTargetId(null);
+      setSplitPercentages({});
+      setAttemptedSubmit(false);
+
+      try {
+        const params: any = { session_id: activeSessionId };
+        if (searchType === 'parent') params.parent_id = selectedPerson.id;
+        else params.student_id = selectedPerson.id;
+
+        const res = await feeAPI.getSessionLedger(params);
+        setSessionLedgerData(res.results || []);
+      } catch (err: any) {
+        setError(extractError(err));
+      } finally {
+        setLoadingLedger(false);
+      }
+    };
+
+    fetchSessionLedger();
+  }, [viewMode, activeSessionId, selectedPerson, searchType]);
+
   // ─── Wards (for wallet + overpayment UI) ───
-  const wards = useMemo(() => rawParentData?.students || [], [rawParentData]);
+  const wards = useMemo(() => {
+    if (viewMode === 'single') return rawParentData?.students || [];
+
+    // Session mode: extract unique students from sessionLedgerData
+    const uniqueStudents = new Map();
+    sessionLedgerData.forEach(term => {
+      term.students?.forEach((st: any) => {
+        if (!uniqueStudents.has(st.student_id)) {
+          uniqueStudents.set(st.student_id, {
+            student: {
+              id: st.student_id,
+              full_name: st.name,
+              fee_balance: '0', // Balance not loaded in session mode
+            }
+          });
+        }
+      });
+    });
+    return Array.from(uniqueStudents.values());
+  }, [rawParentData, sessionLedgerData, viewMode]);
+
   const eligibleWalletWards = useMemo(() => wards.filter((w: any) => Number(w.student?.fee_balance || 0) > 0), [wards]);
 
   // ─── Funds available ───
@@ -505,7 +596,71 @@ export default function POSCheckoutPage() {
     () => finalGroups.reduce((s, g) => s + g.items.reduce((s2, i) => s2 + toKobo(i.allocated || 0), 0), 0),
     [finalGroups]
   );
-  const overpaymentKobo = Math.max(0, totalAvailableKobo - totalAllocatedKobo);
+
+  // Ensure session data is strictly sorted by term order (oldest first)
+  const sortedSessionData = useMemo(() => {
+    return [...sessionLedgerData].sort((a, b) => {
+      const orderA = a.period_order || 0;
+      const orderB = b.period_order || 0;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.period_id - b.period_id; // fallback
+    });
+  }, [sessionLedgerData]);
+
+  // Session Mode Waterfall: Term-level allocations
+  const sessionTermAllocations = useMemo(() => {
+    if (viewMode !== 'session') return {};
+    const map: Record<number, number> = {};
+    let rem = totalAvailableKobo;
+    sortedSessionData.forEach(term => {
+      const dueKobo = toKobo(term.total_due);
+      const allocKobo = Math.min(rem, dueKobo);
+      map[term.period_id] = allocKobo;
+      rem -= allocKobo;
+    });
+    return map;
+  }, [sortedSessionData, totalAvailableKobo, viewMode]);
+
+  // Session Mode Waterfall: Item-level expansion for submit
+  const sessionFlatAllocations = useMemo(() => {
+    if (viewMode !== 'session') return [];
+    const allocs: any[] = [];
+    sortedSessionData.forEach(term => {
+      let termRem = sessionTermAllocations[term.period_id] || 0;
+      if (termRem <= 0) return;
+
+      const processItems = (items: any[]) => {
+        items.forEach(item => {
+          if (termRem <= 0) return;
+          const balKobo = toKobo(item.balance);
+          const payKobo = Math.min(termRem, balKobo);
+          if (payKobo > 0) {
+            allocs.push({
+              target_type: item.target_type,
+              target_id: item.target_id,
+              amount: String(fromKobo(payKobo))
+            });
+            termRem -= payKobo;
+          }
+        });
+      };
+
+      // Allocate invoices first, then family, then ancillary
+      term.students?.forEach((st: any) => processItems(st.items || []));
+      if (term.family_invoice?.items) processItems(term.family_invoice.items);
+      term.students?.forEach((st: any) => processItems(st.ancillary || []));
+    });
+    return allocs;
+  }, [sortedSessionData, sessionTermAllocations, viewMode]);
+
+  // Overpayment logic now depends on the active view mode
+  const overpaymentKobo = useMemo(() => {
+    if (viewMode === 'session') {
+      const totalAllocated = Object.values(sessionTermAllocations).reduce((s, v) => s + v, 0);
+      return Math.max(0, totalAvailableKobo - totalAllocated);
+    }
+    return Math.max(0, totalAvailableKobo - totalAllocatedKobo);
+  }, [viewMode, sessionTermAllocations, totalAvailableKobo, totalAllocatedKobo]);
 
   // ─── Selected Total — sum of balances for items still checked "in", regardless of
   // payment inputs. Lets a cashier show a parent a live, reduced total by unchecking
@@ -650,13 +805,17 @@ export default function POSCheckoutPage() {
 
     try {
       const debtAllocations: any[] = [];
-      finalGroups.forEach(g => {
-        g.items.forEach(a => {
-          if (parseFloat(a.allocated) > 0) {
-            debtAllocations.push({ target_type: a.targetType, target_id: a.targetId, amount: a.allocated });
-          }
+      if (viewMode === 'session') {
+        debtAllocations.push(...sessionFlatAllocations);
+      } else {
+        finalGroups.forEach(g => {
+          g.items.forEach(a => {
+            if (parseFloat(a.allocated) > 0) {
+              debtAllocations.push({ target_type: a.targetType, target_id: a.targetId, amount: a.allocated });
+            }
+          });
         });
-      });
+      }
       const overpayAllocPayload = overpaymentAllocations
         .filter(o => o.amountKobo > 0)
         .map(o => ({ target_type: 'wallet_funding', target_id: o.studentId, amount: String(fromKobo(o.amountKobo)) }));
@@ -878,14 +1037,28 @@ export default function POSCheckoutPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {finalGroups.flatMap(g => g.items).filter(i => parseFloat(i.allocated) > 0).map(item => (
-                    <tr key={item.uid}>
-                      <td className="py-3 font-bold text-slate-800 truncate max-w-[200px]">{item.description}</td>
-                      <td className="py-3 text-right font-medium text-slate-500">{fmtMoney(item.balance)}</td>
-                      <td className="py-3 text-right font-black text-emerald-600">+{fmtMoney(Number(item.allocated))}</td>
-                      <td className="py-3 text-right font-black text-indigo-600">{fmtMoney(item.balance - Number(item.allocated))}</td>
-                    </tr>
-                  ))}
+                  {viewMode === 'session' ? (
+                    sortedSessionData.filter(term => sessionTermAllocations[term.period_id] > 0).map(term => {
+                      const alloc = sessionTermAllocations[term.period_id] || 0;
+                      return (
+                        <tr key={term.period_id}>
+                          <td className="py-3 font-bold text-slate-800">{term.period_name}</td>
+                          <td className="py-3 text-right font-medium text-slate-500">{fmtMoney(term.total_due)}</td>
+                          <td className="py-3 text-right font-black text-emerald-600">+{fmtMoney(fromKobo(alloc))}</td>
+                          <td className="py-3 text-right font-black text-indigo-600">{fmtMoney(fromKobo(toKobo(term.total_due) - alloc))}</td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    finalGroups.flatMap(g => g.items).filter(i => parseFloat(i.allocated) > 0).map(item => (
+                      <tr key={item.uid}>
+                        <td className="py-3 font-bold text-slate-800 truncate max-w-[200px]">{item.description}</td>
+                        <td className="py-3 text-right font-medium text-slate-500">{fmtMoney(item.balance)}</td>
+                        <td className="py-3 text-right font-black text-emerald-600">+{fmtMoney(Number(item.allocated))}</td>
+                        <td className="py-3 text-right font-black text-indigo-600">{fmtMoney(item.balance - Number(item.allocated))}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
 
@@ -954,7 +1127,7 @@ export default function POSCheckoutPage() {
         </div>
 
         {/* ── Parent / Student Info Banner — shown as soon as a profile is selected ── */}
-        {step === 'cart' && rawParentData && (
+        {step === 'cart' && (rawParentData || selectedPerson) && (
           <div className="mb-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 bg-indigo-100 rounded-xl flex items-center justify-center shrink-0">
@@ -962,13 +1135,13 @@ export default function POSCheckoutPage() {
               </div>
               <div>
                 <p className="text-sm font-black text-slate-900">
-                  {toTitleCase(rawParentData.parent_name || selectedPerson?.full_name || '')}
+                  {toTitleCase(rawParentData?.parent_name || selectedPerson?.full_name || '')}
                 </p>
                 <div className="flex items-center gap-2 flex-wrap mt-0.5">
                   <span className="text-[10px] font-black uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
                     {searchType === 'parent' ? 'Parent / Guardian' : 'Student'}
                   </span>
-                  {rawParentData.phone && (
+                  {rawParentData?.phone && (
                     <span className="text-xs font-medium text-slate-400 flex items-center gap-1">
                       <Phone className="w-3 h-3" /> {rawParentData.phone}
                     </span>
@@ -983,7 +1156,13 @@ export default function POSCheckoutPage() {
             </div>
             <div className="text-right">
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Grand Total Outstanding</p>
-              <p className="text-lg font-black text-rose-600">{fmtMoney(rawParentData.grand_total_outstanding || 0)}</p>
+              <p className="text-lg font-black text-rose-600">
+                {fmtMoney(
+                  viewMode === 'session'
+                    ? sessionLedgerData.reduce((sum, t) => sum + Number(t.total_due), 0)
+                    : (rawParentData?.grand_total_outstanding || 0)
+                )}
+              </p>
             </div>
           </div>
         )}
@@ -1040,144 +1219,236 @@ export default function POSCheckoutPage() {
           // ─── STEP 2: PAYMENT WORKSPACE ───
           <div className="flex flex-col lg:flex-row gap-6">
 
-            {/* Left Column: Terms Navigation */}
+            {/* Left Column: Sessions or Terms Navigation */}
             <div className="w-full lg:w-1/4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm self-start lg:sticky lg:top-4">
               <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-indigo-500"/> {periodTypeName} with Debt
+                <Calendar className="w-4 h-4 text-indigo-500"/>
+                {viewMode === 'session' ? 'Sessions with Debt' : `${periodTypeName} with Debt`}
               </h3>
-              {loadingTerms ? <Loader2 className="w-6 h-6 animate-spin mx-auto text-indigo-500 my-8"/> : termsWithDebt.length === 0 ? (
-                <p className="text-xs font-medium text-slate-400 text-center py-8">No debt found.</p>
+
+              {loadingTerms ? (
+                <Loader2 className="w-6 h-6 animate-spin mx-auto text-indigo-500 my-8"/>
+              ) : viewMode === 'session' ? (
+                sessionsWithDebt.length === 0 ? (
+                  <p className="text-xs font-medium text-slate-400 text-center py-8">No debt found.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {sessionsWithDebt.map((sess) => {
+                      const isSelected = activeSessionId === sess.session_id;
+                      const isCurrent = currentSessionId != null && String(sess.session_id) === String(currentSessionId);
+                      return (
+                        <button key={sess.session_id} onClick={() => setActiveSessionId(sess.session_id)} className={`w-full text-left p-3 rounded-xl border-2 transition-all relative ${isSelected ? 'border-indigo-500 bg-indigo-50' : 'border-transparent hover:bg-slate-50'}`}>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <p className={`text-[11px] font-bold ${isSelected ? 'text-indigo-900' : 'text-slate-700'}`}>{sess.label}</p>
+                            {isCurrent && <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">Current</span>}
+                          </div>
+                          <p className="text-[10px] font-bold text-rose-500">Owes: {fmtMoney(sess.total_owed)}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )
               ) : (
-                <div className="space-y-2">
-                  {termsWithDebt.map((term, idx) => {
-                    const isSelected = activeTerm?.session_id === term.session_id && activeTerm?.period_id === term.period_id;
-                    const isCurrent = currentSessionId != null && currentPeriodId != null &&
-                      String(term.session_id) === String(currentSessionId) && String(term.period_id) === String(currentPeriodId);
-                    return (
-                      <button key={idx} onClick={() => setActiveTerm(term)} className={`w-full text-left p-3 rounded-xl border-2 transition-all relative ${isSelected ? 'border-indigo-500 bg-indigo-50' : 'border-transparent hover:bg-slate-50'}`}>
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <p className={`text-[11px] font-bold ${isSelected ? 'text-indigo-900' : 'text-slate-700'}`}>{term.label}</p>
-                          {isCurrent && <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">Current</span>}
-                        </div>
-                        <p className="text-[10px] font-bold text-rose-500">Owes: {fmtMoney(term.total_owed)}</p>
-                      </button>
-                    );
-                  })}
-                </div>
+                termsWithDebt.length === 0 ? (
+                  <p className="text-xs font-medium text-slate-400 text-center py-8">No debt found.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {termsWithDebt.map((term, idx) => {
+                      const isSelected = activeTerm?.session_id === term.session_id && activeTerm?.period_id === term.period_id;
+                      const isCurrent = currentSessionId != null && currentPeriodId != null &&
+                        String(term.session_id) === String(currentSessionId) && String(term.period_id) === String(currentPeriodId);
+                      return (
+                        <button key={idx} onClick={() => setActiveTerm(term)} className={`w-full text-left p-3 rounded-xl border-2 transition-all relative ${isSelected ? 'border-indigo-500 bg-indigo-50' : 'border-transparent hover:bg-slate-50'}`}>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <p className={`text-[11px] font-bold ${isSelected ? 'text-indigo-900' : 'text-slate-700'}`}>{term.label}</p>
+                            {isCurrent && <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">Current</span>}
+                          </div>
+                          <p className="text-[10px] font-bold text-rose-500">Owes: {fmtMoney(term.total_owed)}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )
               )}
             </div>
 
             {/* Right Column */}
             <div className="w-full lg:w-3/4 flex flex-col gap-6">
 
-              {/* Line Items Table */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-2">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <h3 className="text-sm font-black text-slate-800">Line Items Breakdown</h3>
-                    <span className="text-[10px] font-bold text-slate-500 px-2.5 py-1 bg-white border border-slate-200 rounded-full">
-                      Selected Total: {fmtMoney(fromKobo(selectedTotalKobo))}
-                    </span>
-                    {manualCount > 0 && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-full">
-                        <span className="text-[9px] font-black text-amber-700 uppercase tracking-wide">Manual: {manualCount} item{manualCount > 1 ? 's' : ''}</span>
-                        <button onClick={resetToAutoFill} className="text-[9px] font-black text-indigo-600 underline">Reset to Auto-fill</button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-indigo-600 px-3 py-1 bg-indigo-100 rounded-full">{activeTerm?.label}</span>
-                    {rawParentData && (
-                      <button onClick={() => setShowStatementDrawer(true)} className="p-1.5 text-slate-400 hover:text-indigo-600 bg-white border border-slate-200 rounded-lg transition-colors" title="View full billing statement" aria-label="View full billing statement">
-                        <Eye className="w-4 h-4"/>
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="px-5 pt-3 pb-1">
-                  <p className="text-[11px] text-slate-400 font-medium">
-                    Uncheck an item to leave it out of this payment, or type an amount directly into a box below — everything else fills automatically with whatever's left of the amount tendered.
-                  </p>
-                </div>
-
-                <div className="overflow-x-auto min-h-[160px]">
-                  {loadingLedger ? (
-                    <div className="flex items-center justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-indigo-500"/></div>
-                  ) : (
-                    <table className="w-full text-left whitespace-nowrap table-fixed">
-                      <thead className="sticky top-0 z-10">
-                        <tr className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b-2 border-slate-200">
-                          <th className="px-3 py-3 w-8 bg-slate-100"></th>
-                          <th className="px-4 py-3 w-1/2 bg-slate-100">Description</th>
-                          <th className="px-4 py-3 text-right w-32 bg-slate-100">Balance Due</th>
-                          <th className="px-4 py-3 text-right w-40 bg-slate-100">Allocated Pay</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {finalGroups.length === 0 ? (
-                          <tr><td colSpan={4} className="px-4 py-8 text-center text-sm font-medium text-slate-400">No items in this term.</td></tr>
-                        ) : (
-                          finalGroups.map(group => (
-                            <React.Fragment key={group.groupId}>
-                              <tr className={group.isFamily ? "bg-purple-50 border-y border-purple-100" : "bg-slate-50 border-y border-slate-200"}>
-                                <td className="px-3 py-2"></td>
-                                <td colSpan={3} className={`px-4 py-2 text-xs font-black ${group.isFamily ? 'text-purple-900' : 'text-slate-800'}`}>
-                                  <div className="flex items-center gap-2">
-                                    {group.isFamily ? <Building2 className="w-4 h-4 text-purple-400 shrink-0"/> : <UserCircle className="w-4 h-4 text-slate-400 shrink-0"/>}
-                                    <span className="truncate">{group.groupName}</span>
-                                    {group.groupMeta && (
-                                      <span className="text-[10px] font-bold text-slate-400 normal-case shrink-0">• {group.groupMeta}</span>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-
-                              {group.items.map(item => {
-                                const excluded = item.included === false;
-                                return (
-                                  <tr key={item.uid} className={`transition-colors ${excluded ? 'opacity-40' : group.isFamily ? 'hover:bg-purple-50/50' : 'hover:bg-slate-50'} ${item.targetType === 'ancillary_debt' ? 'bg-amber-50/20' : ''}`}>
-                                    <td className="px-3 py-2.5">
-                                      <input
-                                        type="checkbox"
-                                        checked={!excluded}
-                                        onChange={() => toggleItemIncluded(item.uid)}
-                                        aria-label={`Include ${item.description} in this payment`}
-                                        className="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-indigo-500"
-                                      />
-                                    </td>
-                                    <td className={`px-4 py-2.5 text-xs font-bold text-slate-700 pl-2 relative ${excluded ? 'line-through' : ''}`}>
-                                      {item.targetType === 'ancillary_debt' && <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] mr-2">FINE</span>}
-                                      {item.description}
-                                    </td>
-                                    <td className="px-4 py-2.5 text-xs font-black text-rose-600 text-right">{fmtMoney(item.balance)}</td>
-                                    <td className="px-4 py-2.5 text-right">
-                                      {excluded ? (
-                                        <span className="text-[10px] text-slate-300 italic">excluded</span>
-                                      ) : (
-                                        <input
-                                          type="number"
-                                          value={item.allocated}
-                                          onChange={e => handleManualAllocation(item.uid, e.target.value)}
-                                          placeholder="0.00"
-                                          aria-label={`Allocate payment to ${item.description}`}
-                                          className="w-full px-2 py-1.5 text-xs font-bold border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none text-right shadow-sm"
-                                        />
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </React.Fragment>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+              {/* View Mode Toggle */}
+              <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 w-fit self-end">
+                <button
+                  onClick={() => setViewMode('single')}
+                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === 'single' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Single Term
+                </button>
+                <button
+                  onClick={() => setViewMode('session')}
+                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === 'session' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Full Session
+                </button>
               </div>
 
+              {/* Line Items Table (Single Term Mode) */}
+              {viewMode === 'single' && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-2">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h3 className="text-sm font-black text-slate-800">Line Items Breakdown</h3>
+                      <span className="text-[10px] font-bold text-slate-500 px-2.5 py-1 bg-white border border-slate-200 rounded-full">
+                        Selected Total: {fmtMoney(fromKobo(selectedTotalKobo))}
+                      </span>
+                      {manualCount > 0 && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-full">
+                          <span className="text-[9px] font-black text-amber-700 uppercase tracking-wide">Manual: {manualCount} item{manualCount > 1 ? 's' : ''}</span>
+                          <button onClick={resetToAutoFill} className="text-[9px] font-black text-indigo-600 underline">Reset to Auto-fill</button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-indigo-600 px-3 py-1 bg-indigo-100 rounded-full">{activeTerm?.label}</span>
+                      {rawParentData && (
+                        <button onClick={() => setShowStatementDrawer(true)} className="p-1.5 text-slate-400 hover:text-indigo-600 bg-white border border-slate-200 rounded-lg transition-colors" title="View full billing statement" aria-label="View full billing statement">
+                          <Eye className="w-4 h-4"/>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="px-5 pt-3 pb-1">
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      Uncheck an item to leave it out of this payment, or type an amount directly into a box below — everything else fills automatically with whatever's left of the amount tendered.
+                    </p>
+                  </div>
+
+                  <div className="overflow-x-auto min-h-[160px]">
+                    {loadingLedger ? (
+                      <div className="flex items-center justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-indigo-500"/></div>
+                    ) : (
+                      <table className="w-full text-left whitespace-nowrap table-fixed">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b-2 border-slate-200">
+                            <th className="px-3 py-3 w-8 bg-slate-100"></th>
+                            <th className="px-4 py-3 w-1/2 bg-slate-100">Description</th>
+                            <th className="px-4 py-3 text-right w-32 bg-slate-100">Balance Due</th>
+                            <th className="px-4 py-3 text-right w-40 bg-slate-100">Allocated Pay</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {finalGroups.length === 0 ? (
+                            <tr><td colSpan={4} className="px-4 py-8 text-center text-sm font-medium text-slate-400">No items in this term.</td></tr>
+                          ) : (
+                            finalGroups.map(group => (
+                              <React.Fragment key={group.groupId}>
+                                <tr className={group.isFamily ? "bg-purple-50 border-y border-purple-100" : "bg-slate-50 border-y border-slate-200"}>
+                                  <td className="px-3 py-2"></td>
+                                  <td colSpan={3} className={`px-4 py-2 text-xs font-black ${group.isFamily ? 'text-purple-900' : 'text-slate-800'}`}>
+                                    <div className="flex items-center gap-2">
+                                      {group.isFamily ? <Building2 className="w-4 h-4 text-purple-400 shrink-0"/> : <UserCircle className="w-4 h-4 text-slate-400 shrink-0"/>}
+                                      <span className="truncate">{group.groupName}</span>
+                                      {group.groupMeta && (
+                                        <span className="text-[10px] font-bold text-slate-400 normal-case shrink-0">• {group.groupMeta}</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+
+                                {group.items.map(item => {
+                                  const excluded = item.included === false;
+                                  return (
+                                    <tr key={item.uid} className={`transition-colors ${excluded ? 'opacity-40' : group.isFamily ? 'hover:bg-purple-50/50' : 'hover:bg-slate-50'} ${item.targetType === 'ancillary_debt' ? 'bg-amber-50/20' : ''}`}>
+                                      <td className="px-3 py-2.5">
+                                        <input
+                                          type="checkbox"
+                                          checked={!excluded}
+                                          onChange={() => toggleItemIncluded(item.uid)}
+                                          aria-label={`Include ${item.description} in this payment`}
+                                          className="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-indigo-500"
+                                        />
+                                      </td>
+                                      <td className={`px-4 py-2.5 text-xs font-bold text-slate-700 pl-2 relative ${excluded ? 'line-through' : ''}`}>
+                                        {item.targetType === 'ancillary_debt' && <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] mr-2">FINE</span>}
+                                        {item.description}
+                                      </td>
+                                      <td className="px-4 py-2.5 text-xs font-black text-rose-600 text-right">{fmtMoney(item.balance)}</td>
+                                      <td className="px-4 py-2.5 text-right">
+                                        {excluded ? (
+                                          <span className="text-[10px] text-slate-300 italic">excluded</span>
+                                        ) : (
+                                          <input
+                                            type="number"
+                                            value={item.allocated}
+                                            onChange={e => handleManualAllocation(item.uid, e.target.value)}
+                                            placeholder="0.00"
+                                            aria-label={`Allocate payment to ${item.description}`}
+                                            className="w-full px-2 py-1.5 text-xs font-bold border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none text-right shadow-sm"
+                                          />
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </React.Fragment>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Session Terms Table (Full Session Mode) */}
+              {viewMode === 'session' && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-2">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h3 className="text-sm font-black text-slate-800">{periodTypeName} Breakdown</h3>
+                      <span className="text-[10px] font-bold text-slate-500 px-2.5 py-1 bg-white border border-slate-200 rounded-full">
+                        Total Session Due: {fmtMoney(sortedSessionData.reduce((sum, t) => sum + Number(t.total_due), 0))}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="px-5 pt-3 pb-1">
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      Entering a tendered amount will automatically fill the oldest {periodTypeName.toLowerCase()} first. You cannot skip a {periodTypeName.toLowerCase()} that has an outstanding balance.
+                    </p>
+                  </div>
+
+                  <div className="overflow-x-auto min-h-[160px]">
+                    {loadingLedger ? (
+                      <div className="flex items-center justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-indigo-500"/></div>
+                    ) : sessionLedgerData.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-sm font-medium text-slate-400">No outstanding debt found for this session.</div>
+                    ) : (
+                      <table className="w-full text-left whitespace-nowrap table-fixed">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b-2 border-slate-200">
+                            <th className="px-4 py-3 w-1/2 bg-slate-100">Academic {periodTypeName.slice(0, -1)}</th>
+                            <th className="px-4 py-3 text-right w-32 bg-slate-100">Total Due</th>
+                            <th className="px-4 py-3 text-right w-40 bg-slate-100">Allocated Pay</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {sortedSessionData.map((term) => (
+                            <tr key={term.period_id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-3 text-sm font-bold text-slate-700">{term.period_name}</td>
+                              <td className="px-4 py-3 text-sm font-black text-rose-600 text-right">{fmtMoney(term.total_due)}</td>
+                              <td className="px-4 py-3 text-sm font-black text-emerald-600 text-right">
+                                {fmtMoney(fromKobo(sessionTermAllocations[term.period_id] || 0))}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Multi-Wallet Funding Sources */}
-              {eligibleWalletWards.length > 0 && (
+              {viewMode === 'single' && eligibleWalletWards.length > 0 && (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="px-5 py-4 border-b border-slate-100 bg-slate-50">
                     <h3 className="text-sm font-black text-slate-800 flex items-center gap-2"><Wallet className="w-4 h-4 text-indigo-500"/> Fund From Student Wallet</h3>
@@ -1347,7 +1618,7 @@ export default function POSCheckoutPage() {
                 </div>
               </div>
 
-              <button onClick={handlePreviewClick} disabled={totalAllocatedKobo <= 0 && overpaymentKobo <= 0} className="self-end flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-200 disabled:opacity-50 transition-colors">
+              <button onClick={handlePreviewClick} disabled={(viewMode === 'session' ? Object.values(sessionTermAllocations).reduce((s,v)=>s+v, 0) : totalAllocatedKobo) <= 0} className="self-end flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-200 disabled:opacity-50 transition-colors">
                 <Eye className="w-3.5 h-3.5" /> Preview
               </button>
 

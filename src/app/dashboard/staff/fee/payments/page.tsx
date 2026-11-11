@@ -84,6 +84,21 @@ function formatTime(dateStr?: string): string {
   return new Date(dateStr).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatReceiptPeriod(receipt: any): string | null {
+  const periods: { id: number; name: string; order: number }[] = receipt?.periods_covered || [];
+  if (!periods.length) return null;
+  const sorted = [...periods].sort((a, b) => a.order - b.order);
+  const names = sorted.map(p => p.name).filter(Boolean);
+  if (!names.length) return null;
+
+  let joined: string;
+  if (names.length === 1) joined = names[0];
+  else if (names.length === 2) joined = `${names[0]} & ${names[1]}`;
+  else joined = `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+
+  return receipt.session_display ? `${joined} · ${receipt.session_display}` : joined;
+}
+
 function getImageUrl(path: string | null): string | undefined {
   if (!path) return undefined;
   if (path.startsWith('http')) return path;
@@ -492,6 +507,7 @@ export default function PaymentsPage() {
                   const isPending = p.status === 'pending';
                   const isConfirmed = p.status === 'confirmed';
                   const isExpired = p.status === 'confirmed' ? ((Date.now() - new Date(p.created_at).getTime()) / (1000 * 60 * 60) > (settings?.reversal_window_hours ?? 24)) : false;
+                  const periodLabel = formatReceiptPeriod(p);
 
                   return (
                     <tr key={p.id} className="hover:bg-slate-50 transition-colors">
@@ -503,6 +519,14 @@ export default function PaymentsPage() {
                           {p.reference}
                         </p>
                         <p className="text-xs font-medium text-slate-500" title={`Recorded: ${formatDate(p.created_at)}`}>{formatDateShort(p.date)}</p>
+                        {periodLabel && (
+                          <p
+                            className="text-[10px] font-black text-indigo-600 mt-0.5 uppercase tracking-wider truncate max-w-[180px]"
+                            title={periodLabel}
+                          >
+                            {periodLabel}
+                          </p>
+                        )}
                       </td>
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-3">
@@ -576,7 +600,9 @@ export default function PaymentsPage() {
       </div>
 
       {/* DETAIL DRAWER (Grouped Audit Style) */}
-      {isDrawerOpen && selectedPayment && (
+      {isDrawerOpen && selectedPayment && (() => {
+        const drawerPeriodLabel = formatReceiptPeriod(selectedPayment);
+        return (
         <div onClick={() => setIsDrawerOpen(false)} className="fixed inset-0 z-50 overflow-hidden bg-slate-900/40 backdrop-blur-xs flex justify-end animate-in fade-in">
           <div role="dialog" aria-modal="true" aria-labelledby="drawer-title" onClick={(e) => e.stopPropagation()} className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col border-l border-slate-100 overflow-hidden animate-in slide-in-from-right duration-200">
 
@@ -640,6 +666,9 @@ export default function PaymentsPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 pt-3 border-t border-slate-100 text-[11px]">
+                  {drawerPeriodLabel && (
+                    <span className="text-slate-400 font-medium">Period <strong className="text-indigo-700 font-black">{drawerPeriodLabel}</strong></span>
+                  )}
                   <span className="text-slate-400 font-medium">Paid via <strong className="text-slate-700 font-bold">{formatPaymentMode(selectedPayment.external_payment_mode)}</strong></span>
                   <span className="text-slate-400 font-medium">Processed by <strong className="text-slate-700 font-bold">{selectedPayment.confirmed_by_full_name || selectedPayment.confirmed_by_name || 'System'}</strong></span>
                 </div>
@@ -729,10 +758,13 @@ export default function PaymentsPage() {
 
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ── PRINTABLE RECEIPT — rendered in place, no route change, no extra fetch ── */}
-      {printPayment && (
+      {printPayment && (() => {
+        const printPeriodLabel = formatReceiptPeriod(printPayment);
+        return (
         <div onClick={closePrintView} className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-8 px-4 print:p-0 print:bg-white animate-in fade-in">
           <div id="receipt-print-area" onClick={(e) => e.stopPropagation()} className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden print:shadow-none print:rounded-none print:max-w-none print:w-full">
 
@@ -782,6 +814,11 @@ export default function PaymentsPage() {
                 }`}>
                   {printPayment.status_display}
                 </span>
+                {printPeriodLabel && (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700">
+                    {printPeriodLabel}
+                  </span>
+                )}
                 <span className="text-[10px] font-bold text-slate-500">{formatDateShort(printPayment.date)} · {formatTime(printPayment.created_at)}</span>
               </div>
 
@@ -876,7 +913,8 @@ export default function PaymentsPage() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

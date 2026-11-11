@@ -1,16 +1,18 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import {
   ArrowLeft, CheckCircle2, AlertTriangle, Brain, User,
   Loader2, AlertCircle, List, PenLine, FileText,
   Check, X, RotateCcw, Save, ChevronLeft, ChevronRight,
-  BookOpen, Lightbulb, Target,
+  Target,
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
+
+type GradingMethod = 'auto_ai' | 'auto_system' | 'manual' | 'ai_assisted';
 
 interface AnswerItem {
   answer_id: number;
@@ -25,17 +27,15 @@ interface AnswerItem {
   max_mark: number;
   is_graded: boolean;
   score_awarded: number | null;
-  grading_method: 'auto' | 'ai' | 'manual' | null;
+  grading_method: GradingMethod | null;
   ai_feedback: string | null;
   ai_confidence?: number | null;
 
-  // Objective
   selected_option?: string;
   correct_answer?: string;
   is_correct?: boolean;
   options?: Record<string, string>;
 
-  // Theory / subjective
   answer_text?: string;
   model_answer?: string;
 }
@@ -89,31 +89,36 @@ function getImageUrl(path: string | null): string | null {
   return `${process.env.NEXT_PUBLIC_API_URL || ''}${path}`;
 }
 
+const isAiGraded = (method: GradingMethod | null | undefined) =>
+  method === 'auto_ai' || method === 'ai_assisted';
+
 // ─── Score Input ───────────────────────────────────────────────────────────────
 
 interface ScoreInputProps {
-  answerId: string;
   maxMark: number;
   currentScore: number | null;
+  currentFeedback: string;
   isGraded: boolean;
-  gradingMethod: string | null;
+  gradingMethod: GradingMethod | null;
   aiConfidence?: number | null;
   onSave: (score: number, feedback: string) => Promise<void>;
   saving: boolean;
 }
 
-function ScoreInput({ answerId, maxMark, currentScore, isGraded, gradingMethod, aiConfidence, onSave, saving }: ScoreInputProps) {
+function ScoreInput({
+  maxMark, currentScore, currentFeedback, isGraded, gradingMethod, aiConfidence, onSave, saving,
+}: ScoreInputProps) {
   const [score, setScore] = useState<string>(currentScore != null ? String(currentScore) : '');
-  const [feedback, setFeedback] = useState('');
+  const [feedback, setFeedback] = useState(currentFeedback || '');
   const [editing, setEditing] = useState(!isGraded);
 
   const isLowConfidence = aiConfidence != null && aiConfidence < 0.7;
-  const showOverridePrompt = isGraded && gradingMethod === 'ai' && isLowConfidence;
 
   useEffect(() => {
     setScore(currentScore != null ? String(currentScore) : '');
-    setEditing(!isGraded || showOverridePrompt);
-  }, [answerId, currentScore, isGraded]);
+    setFeedback(currentFeedback || '');
+    setEditing(!isGraded);
+  }, [currentScore, isGraded, currentFeedback]);
 
   const handleSave = async () => {
     const s = parseFloat(score);
@@ -130,12 +135,12 @@ function ScoreInput({ answerId, maxMark, currentScore, isGraded, gradingMethod, 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className={`flex items-center gap-1.5 text-sm font-bold ${
-              gradingMethod === 'ai' ? 'text-blue-700' : 'text-violet-700'
+              isAiGraded(gradingMethod) ? 'text-blue-700' : 'text-violet-700'
             }`}>
-              {gradingMethod === 'ai' ? <Brain className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+              {isAiGraded(gradingMethod) ? <Brain className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
               {currentScore} / {maxMark}
             </div>
-            {gradingMethod === 'ai' && (
+            {isAiGraded(gradingMethod) && (
               <span className={`text-xs font-medium ${conf.cls}`}>{conf.label}</span>
             )}
           </div>
@@ -144,16 +149,13 @@ function ScoreInput({ answerId, maxMark, currentScore, isGraded, gradingMethod, 
             <RotateCcw className="h-3 w-3" /> Override
           </button>
         </div>
-        {isLowConfidence && (
+        {isLowConfidence && isAiGraded(gradingMethod) && (
           <div className="mt-3 flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
             <AlertTriangle className="h-4 w-4 text-orange-500 flex-shrink-0 mt-0.5" />
             <p className="text-xs text-orange-700 font-medium">
               AI confidence is low — please review and override if needed.
             </p>
           </div>
-        )}
-        {currentScore != null && gradingMethod === 'ai' && (
-          <p className="text-xs text-slate-500 mt-2 italic">{/* AI feedback shown in parent */}</p>
         )}
       </div>
     );
@@ -165,7 +167,6 @@ function ScoreInput({ answerId, maxMark, currentScore, isGraded, gradingMethod, 
         {isGraded ? 'Override Score' : 'Award Score'}
       </p>
 
-      {/* Score slider + input */}
       <div className="flex items-center gap-4">
         <input
           type="range"
@@ -190,7 +191,6 @@ function ScoreInput({ answerId, maxMark, currentScore, isGraded, gradingMethod, 
         </div>
       </div>
 
-      {/* Quick mark buttons */}
       <div className="flex gap-2 flex-wrap">
         {[0, Math.round(maxMark * 0.25 * 2) / 2, Math.round(maxMark * 0.5 * 2) / 2, Math.round(maxMark * 0.75 * 2) / 2, maxMark].filter((v, i, a) => a.indexOf(v) === i).map(v => (
           <button key={v} onClick={() => setScore(String(v))}
@@ -204,7 +204,6 @@ function ScoreInput({ answerId, maxMark, currentScore, isGraded, gradingMethod, 
         ))}
       </div>
 
-      {/* Optional feedback */}
       <textarea
         value={feedback}
         onChange={e => setFeedback(e.target.value)}
@@ -213,7 +212,6 @@ function ScoreInput({ answerId, maxMark, currentScore, isGraded, gradingMethod, 
         className="w-full px-3 py-2 border border-violet-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-violet-400 resize-none bg-white"
       />
 
-      {/* Actions */}
       <div className="flex gap-2">
         <button onClick={handleSave} disabled={saving || score === '' || isNaN(parseFloat(score))}
           className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-violet-600 text-white text-sm font-bold rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors">
@@ -221,7 +219,7 @@ function ScoreInput({ answerId, maxMark, currentScore, isGraded, gradingMethod, 
           Save Score
         </button>
         {isGraded && (
-          <button onClick={() => { setScore(String(currentScore ?? '')); setEditing(false); }}
+          <button onClick={() => { setScore(String(currentScore ?? '')); setFeedback(currentFeedback || ''); setEditing(false); }}
             className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-white transition-colors">
             Cancel
           </button>
@@ -244,46 +242,51 @@ export default function MarkingDetailPage() {
 
   const [activeTab, setActiveTab] = useState<TabType>('objective');
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [savingAnswer, setSavingAnswer] = useState<string | null>(null); // question_number of saving item
+  const [savingAnswerId, setSavingAnswerId] = useState<number | null>(null);
   const [errorModal, setErrorModal] = useState<string | null>(null);
+
+  const initialTabSetRef = useRef(false);
 
   useEffect(() => {
     if (!attemptId) return;
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attemptId]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const r = await api.get(`/api/assessment/student/exam-result/${attemptId}/`);
       setData(r.data);
-      // Set initial tab to first available
-      const answers = r.data.answers as AnswerItem[];
-      if (answers.some(a => a.question_type === 'objective')) setActiveTab('objective');
-      else if (answers.some(a => a.question_type === 'theory')) setActiveTab('theory');
-      else if (answers.some(a => a.question_type === 'subjective')) setActiveTab('subjective');
+
+      if (!initialTabSetRef.current) {
+        const answers = r.data.answers as AnswerItem[];
+        if (answers.some(a => a.question_type === 'objective')) setActiveTab('objective');
+        else if (answers.some(a => a.question_type === 'theory')) setActiveTab('theory');
+        else if (answers.some(a => a.question_type === 'subjective')) setActiveTab('subjective');
+        initialTabSetRef.current = true;
+      }
     } catch (err: any) {
       setError(extractError(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [attemptId]);
 
   const handleSaveScore = async (answer: AnswerItem, score: number, feedback: string) => {
-    setSavingAnswer(answer.question_number);
+    setSavingAnswerId(answer.answer_id);
     try {
       await api.post('/api/assessment/teacher/mark-answer/', {
         answer_id: answer.answer_id,
         score: score,
         feedback: feedback || undefined,
       });
-      // Refresh data to update scores
       await loadData();
     } catch (err: any) {
       setErrorModal(extractError(err));
     } finally {
-      setSavingAnswer(null);
+      setSavingAnswerId(null);
     }
   };
 
@@ -341,6 +344,27 @@ export default function MarkingDetailPage() {
   const pendingInTab = currentTabAnswers.filter(a => !a.is_graded).length;
   const totalScore = data.attempt.total_score;
   const pct = data.attempt.percentage;
+
+  // Objective status line — reflects the *current* score, so overrides show up
+    const objectiveStatus = (a: AnswerItem) => {
+    if (a.score_awarded == null) {
+      return { label: 'Not graded', cls: 'bg-slate-100 text-slate-600', icon: <AlertCircle className="h-4 w-4" /> };
+    }
+    if (a.grading_method === 'manual') {
+      return {
+        label: 'Overridden Manually',
+        cls: 'bg-amber-50 text-amber-700',
+        icon: <RotateCcw className="h-4 w-4" />,
+      };
+    }
+    if (a.score_awarded === a.max_mark) {
+      return { label: 'Correct', cls: 'bg-emerald-50 text-emerald-700', icon: <CheckCircle2 className="h-4 w-4" /> };
+    }
+    if (a.score_awarded === 0) {
+      return { label: 'Incorrect', cls: 'bg-red-50 text-red-700', icon: <X className="h-4 w-4" /> };
+    }
+    return { label: 'Partial credit', cls: 'bg-slate-50 text-slate-700', icon: <CheckCircle2 className="h-4 w-4" /> };
+  };
 
   return (
     <div className="space-y-5 pb-8">
@@ -410,7 +434,7 @@ export default function MarkingDetailPage() {
       {currentAnswer ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-          {/* ── Question navigator sidebar ── */}
+          {/* ── Question navigator ── */}
           <div className="lg:col-span-1 order-2 lg:order-1">
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 lg:sticky lg:top-4">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Questions</p>
@@ -418,9 +442,9 @@ export default function MarkingDetailPage() {
                 {currentTabAnswers.map((a, idx) => {
                   const isCurrent = idx === currentIndex;
                   const isGraded = a.is_graded;
-                  const isLowConf = a.grading_method === 'ai' && (a.ai_confidence ?? 1) < 0.7;
+                  const isLowConf = isAiGraded(a.grading_method) && (a.ai_confidence ?? 1) < 0.7;
                   return (
-                    <button key={idx} onClick={() => setCurrentIndex(idx)}
+                    <button key={a.answer_id} onClick={() => setCurrentIndex(idx)}
                       title={`Q${idx + 1} — ${isGraded ? 'Graded' : 'Pending'}`}
                       className={`aspect-square rounded-lg text-xs font-bold transition-all relative ${
                         isCurrent
@@ -439,7 +463,6 @@ export default function MarkingDetailPage() {
                   );
                 })}
               </div>
-              {/* Legend */}
               <div className="space-y-1.5 text-xs border-t border-slate-100 pt-3">
                 {[
                   { color: 'bg-violet-600', label: 'Current' },
@@ -497,48 +520,61 @@ export default function MarkingDetailPage() {
                   {(currentAnswer.question_image || currentAnswer.image || currentAnswer.image_url) && (
                     <img
                       src={getImageUrl(currentAnswer.question_image || currentAnswer.image || currentAnswer.image_url || '') || ''}
-                      alt="Question image"
+                      alt="Question"
                       className="mt-3 max-h-48 w-auto rounded-xl border border-slate-200 object-contain"
                     />
                   )}
                 </div>
 
                 {/* ── OBJECTIVE ── */}
-                {currentAnswer.question_type === 'objective' && currentAnswer.options && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Options</p>
-                    {Object.entries(currentAnswer.options).map(([key, val]) => {
-                      const isCorrect = key === currentAnswer.correct_answer;
-                      const isSelected = key === currentAnswer.selected_option;
-                      return (
-                        <div key={key} className={`flex items-start gap-3 p-3 rounded-xl border text-sm ${
-                          isCorrect && isSelected ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
-                          : isCorrect ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                          : isSelected ? 'bg-red-50 border-red-200 text-red-800'
-                          : 'bg-slate-50 border-slate-200 text-slate-600'
-                        }`}>
-                          <span className="font-bold flex-shrink-0 w-5">{key}.</span>
-                          <span className="flex-1">{val}</span>
-                          {isCorrect && <Check className="h-4 w-4 text-emerald-600 flex-shrink-0" />}
-                          {isSelected && !isCorrect && <X className="h-4 w-4 text-red-500 flex-shrink-0" />}
-                        </div>
-                      );
-                    })}
-                    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold ${
-                      currentAnswer.is_correct ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                    }`}>
-                      {currentAnswer.is_correct
-                        ? <><CheckCircle2 className="h-4 w-4" /> Correct — {currentAnswer.max_mark} mark{currentAnswer.max_mark !== 1 ? 's' : ''}</>
-                        : <><X className="h-4 w-4" /> Incorrect — 0 marks</>
-                      }
+                {currentAnswer.question_type === 'objective' && currentAnswer.options && (() => {
+                  const status = objectiveStatus(currentAnswer);
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Options</p>
+                      {Object.entries(currentAnswer.options).map(([key, val]) => {
+                        const isCorrect = key === currentAnswer.correct_answer;
+                        const isSelected = key === currentAnswer.selected_option;
+                        return (
+                          <div key={key} className={`flex items-start gap-3 p-3 rounded-xl border text-sm ${
+                            isCorrect && isSelected ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                            : isCorrect ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                            : isSelected ? 'bg-red-50 border-red-200 text-red-800'
+                            : 'bg-slate-50 border-slate-200 text-slate-600'
+                          }`}>
+                            <span className="font-bold flex-shrink-0 w-5">{key}.</span>
+                            <span className="flex-1">{val}</span>
+                            {isCorrect && <Check className="h-4 w-4 text-emerald-600 flex-shrink-0" />}
+                            {isSelected && !isCorrect && <X className="h-4 w-4 text-red-500 flex-shrink-0" />}
+                          </div>
+                        );
+                      })}
+
+                      {/* Score status — reflects actual score, not just is_correct */}
+                      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold ${status.cls}`}>
+                        {status.icon}
+                        {status.label}
+                      </div>
+
+                      {/* Score override — works for objective too */}
+                      <ScoreInput
+                        key={currentAnswer.answer_id}
+                        maxMark={currentAnswer.max_mark}
+                        currentScore={currentAnswer.score_awarded}
+                        currentFeedback={currentAnswer.ai_feedback ?? ''}
+                        isGraded={currentAnswer.is_graded}
+                        gradingMethod={currentAnswer.grading_method}
+                        aiConfidence={currentAnswer.ai_confidence}
+                        onSave={(score, feedback) => handleSaveScore(currentAnswer, score, feedback)}
+                        saving={savingAnswerId === currentAnswer.answer_id}
+                      />
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* ── THEORY / SUBJECTIVE ── */}
                 {(currentAnswer.question_type === 'theory' || currentAnswer.question_type === 'subjective') && (
                   <>
-                    {/* Model answer */}
                     {currentAnswer.model_answer && (
                       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                         <div className="flex items-center gap-2 mb-2">
@@ -549,7 +585,6 @@ export default function MarkingDetailPage() {
                       </div>
                     )}
 
-                    {/* Student answer */}
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <User className="h-4 w-4 text-slate-500" />
@@ -564,7 +599,6 @@ export default function MarkingDetailPage() {
                       </div>
                     </div>
 
-                    {/* AI feedback (if exists) */}
                     {currentAnswer.ai_feedback && (
                       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                         <div className="flex items-center gap-2 mb-1.5">
@@ -580,16 +614,16 @@ export default function MarkingDetailPage() {
                       </div>
                     )}
 
-                    {/* Score input */}
                     <ScoreInput
-                      answerId={`${currentAnswer.question_number}-${currentAnswer.sub_question_number}`}
+                      key={currentAnswer.answer_id}
                       maxMark={currentAnswer.max_mark}
                       currentScore={currentAnswer.score_awarded}
+                      currentFeedback={currentAnswer.ai_feedback ?? ''}
                       isGraded={currentAnswer.is_graded}
                       gradingMethod={currentAnswer.grading_method}
                       aiConfidence={currentAnswer.ai_confidence}
                       onSave={(score, feedback) => handleSaveScore(currentAnswer, score, feedback)}
-                      saving={savingAnswer === currentAnswer.question_number}
+                      saving={savingAnswerId === currentAnswer.answer_id}
                     />
                   </>
                 )}

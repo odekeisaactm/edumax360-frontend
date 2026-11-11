@@ -1,14 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { examsAPI, academicCalendarAPI, academicAPI } from '@/lib/api';
-import { AcademicSessionPeriod, Subject, ClassModel } from '@/lib/types';
+import { examsAPI, academicCalendarAPI, api } from '@/lib/api';
+import { AcademicSessionPeriod } from '@/lib/types';
 import {
   ClipboardList, ArrowLeft, AlertCircle, X, Check,
   BookOpen, Users, Calendar, Settings, ChevronDown,
-  ChevronUp, Info, Loader2, AlertTriangle,
+  ChevronUp, Info, Loader2, AlertTriangle, RefreshCw,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -22,30 +22,27 @@ const EXAM_TYPE_OPTIONS = [
   { value: 'practice', label: 'Practice / Mock Exam' },
 ];
 
-// ─── Shared style constants ───────────────────────────────────────────────────
-
 const labelCls = 'block text-sm font-medium text-slate-700 mb-1.5';
 const inputCls = 'w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 text-slate-700 bg-white';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function extractError(err: any): string {
-  if (!err) return 'An unknown error occurred';
-  if (err.response?.data) {
-    const d = err.response.data;
+  const d = err?.response?.data;
+  if (d) {
     if (typeof d === 'string') return d;
-    if (d.detail) return d.detail;
-    if (d.error) return d.error;
-    if (d.message) return d.message;
-    // Multi-field DRF errors
-    const entries = Object.entries(d);
-    if (entries.length) {
-      return entries
-        .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+    if (d.detail) return String(d.detail);
+    if (d.error) return String(d.error);
+    if (d.message) return String(d.message);
+    if (d.non_field_errors?.length) return d.non_field_errors[0];
+    if (typeof d === 'object') {
+      const msgs = Object.entries(d)
+        .map(([f, v]: [string, any]) => `${f.replace(/_/g, ' ')}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
         .join('\n');
+      if (msgs) return msgs;
     }
   }
-  return err.message || 'An error occurred';
+  return err?.message || 'An unexpected error occurred.';
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
@@ -57,15 +54,15 @@ function ToastStack({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: numb
     <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
       {toasts.map(t => (
         <div key={t.id}
-          className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border pointer-events-auto
+          className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border pointer-events-auto max-w-sm
             ${t.type === 'success'
               ? 'bg-green-50 border-green-200 text-green-900'
               : 'bg-red-50 border-red-200 text-red-900'}`}>
           {t.type === 'success'
             ? <Check className="h-4 w-4 text-green-600 shrink-0" />
             : <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />}
-          <span className="text-sm font-medium whitespace-pre-line">{t.message}</span>
-          <button onClick={() => onRemove(t.id)} className="ml-1 opacity-60 hover:opacity-100">
+          <span className="text-sm font-medium whitespace-pre-line flex-1">{t.message}</span>
+          <button onClick={() => onRemove(t.id)} className="ml-1 opacity-60 hover:opacity-100 shrink-0">
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -121,15 +118,21 @@ function SectionHeader({ icon, title, children }: {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+interface AllowedSubject { id: number; name: string; }
+
 export default function CreateExamPage() {
   const router = useRouter();
   const { hasPermission, user } = useAuth();
+  const [mounted, setMounted] = useState(false);
   const { toasts, showToast, removeToast } = useToasts();
 
   const [currentPeriod, setCurrentPeriod] = useState<AcademicSessionPeriod | null>(null);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [classes, setClasses] = useState<ClassModel[]>([]);
+  const [allowedClasses, setAllowedClasses] = useState<{ id: number; name: string }[]>([]);
+  const [allowedSubjects, setAllowedSubjects] = useState<AllowedSubject[]>([]);
+  const [classSubjectMap, setClassSubjectMap] = useState<Record<number, number[]>>({});
+
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -150,32 +153,98 @@ export default function CreateExamPage() {
 
   const canCreate = user?.is_superuser || hasPermission('assessment_center.add_exammodel');
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Auto-set practice mode when exam type is practice
   useEffect(() => {
     setIsPracticeMode(examType === 'practice');
   }, [examType]);
 
-  const fetchData = async () => {
+  // ── Fetch Data ──
+  const fetchData = useCallback(async () => {
+    if (!canCreate) return;
     setLoading(true);
+    setPageError(null);
+
     try {
-      const [periodsData, subjectsData, classesData] = await Promise.all([
+      const [periodsData, uploadableRes, classesRes] = await Promise.all([
         academicCalendarAPI.listSessionPeriods(),
-        academicAPI.listSubjects({ is_active: true }),
-        academicAPI.listClasses({ is_active: true }),
+        api.get('/api/academic/class-subjects/uploadable/', { params: { result_type: 'score' } }),
+        api.get('/api/academic/classes/', { params: { is_active: true } }),
       ]);
-      setSubjects(subjectsData);
-      setClasses(classesData);
+
       const current = periodsData.find((p: AcademicSessionPeriod) => p.is_current);
       setCurrentPeriod(current ?? null);
-    } catch (err) {
-      showToast('error', extractError(err));
+
+      const rawClasses = uploadableRes.data?.data?.classes || [];
+      const baseClasses = classesRes.data?.data || classesRes.data || [];
+
+      const classMap = new Map<number, { id: number; name: string }>();
+      const subjectMap = new Map<number, AllowedSubject>();
+      const cSMap: Record<number, number[]> = {};
+
+      rawClasses.forEach((cls: any) => {
+        const cName = cls.class_name;
+        const baseClass = baseClasses.find((c: any) => c.name === cName);
+        const classId = baseClass ? baseClass.id : cls.student_class_id;
+
+        if (!classMap.has(classId)) {
+          classMap.set(classId, { id: classId, name: cName });
+          cSMap[classId] = [];
+        }
+
+        cls.subjects.forEach((sub: any) => {
+          if (!subjectMap.has(sub.id)) {
+            subjectMap.set(sub.id, { id: sub.id, name: sub.name });
+          }
+          if (!cSMap[classId].includes(sub.id)) {
+            cSMap[classId].push(sub.id);
+          }
+        });
+      });
+
+      const sortedClasses = Array.from(classMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+      const sortedSubjects = Array.from(subjectMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+      setAllowedClasses(sortedClasses);
+      setAllowedSubjects(sortedSubjects);
+      setClassSubjectMap(cSMap);
+
+    } catch (err: any) {
+      setPageError(extractError(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [canCreate]);
 
+  useEffect(() => {
+    if (mounted) fetchData();
+  }, [mounted, fetchData]);
+
+  // ── Dynamic Subject Filtering ──
+  const visibleSubjects = useMemo(() => {
+    if (selectedClasses.length === 0) return allowedSubjects;
+
+    // Union of all subjects taught in the selected classes
+    const validSubjectIds = new Set<number>();
+    selectedClasses.forEach(cid => {
+      (classSubjectMap[cid] || []).forEach(sid => validSubjectIds.add(sid));
+    });
+
+    return allowedSubjects.filter(s => validSubjectIds.has(s.id));
+  }, [selectedClasses, allowedSubjects, classSubjectMap]);
+
+  // ── Auto-cleanup invalid selections when classes change ──
+  useEffect(() => {
+    setSelectedSubjects(prev => {
+      const validIds = new Set(visibleSubjects.map(s => s.id));
+      return prev.filter(id => validIds.has(id));
+    });
+  }, [visibleSubjects]);
+
+  // ── Handlers ──
   const toggleSubject = (id: number) =>
     setSelectedSubjects(p => p.includes(id) ? p.filter(s => s !== id) : [...p, id]);
 
@@ -201,11 +270,12 @@ export default function CreateExamPage() {
     setIsSubmitting(true);
     try {
       const getId = (v: any) => typeof v === 'object' && v !== null ? v.id : v;
+
       const exam = await examsAPI.create({
         name: name.trim(),
         exam_type: examType,
         session: getId(currentPeriod!.session),
-        term: currentPeriod!.id,  // ExamModel.term → AcademicSessionPeriodModel (term.period.name in serializer confirms this)
+        term: currentPeriod!.id,
         subjects: selectedSubjects,
         classes: selectedClasses,
         start_date: startDate,
@@ -218,6 +288,7 @@ export default function CreateExamPage() {
         show_results_immediately: showResultsImmediately,
         is_practice_mode: isPracticeMode,
       } as any);
+
       router.push(`/dashboard/staff/assessment/exams/${exam.id}?new=true`);
     } catch (err) {
       showToast('error', extractError(err));
@@ -225,6 +296,14 @@ export default function CreateExamPage() {
       setIsSubmitting(false);
     }
   };
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
+      </div>
+    );
+  }
 
   if (!canCreate) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -269,6 +348,16 @@ export default function CreateExamPage() {
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-16 flex flex-col items-center gap-4">
           <Loader2 className="h-10 w-10 text-violet-400 animate-spin" />
           <p className="text-sm text-slate-500">Loading...</p>
+        </div>
+      ) : pageError ? (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-16 flex flex-col items-center gap-3">
+          <AlertCircle className="h-12 w-12 text-red-400" />
+          <p className="text-base font-semibold text-slate-700">Failed to Load Data</p>
+          <p className="text-sm text-slate-500 max-w-sm text-center">{pageError}</p>
+          <button onClick={fetchData}
+            className="mt-2 inline-flex items-center gap-2 px-4 py-2.5 bg-slate-700 text-white font-semibold rounded-xl hover:bg-slate-800 transition-colors text-sm">
+            <RefreshCw className="h-4 w-4" /> Try Again
+          </button>
         </div>
       ) : (
         <div className="space-y-4">
@@ -357,7 +446,7 @@ export default function CreateExamPage() {
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
             <SectionHeader icon={<BookOpen className="h-4 w-4" />} title={`Subjects (${selectedSubjects.length} selected)`}>
               <div className="flex items-center gap-3">
-                <button onClick={() => setSelectedSubjects(subjects.map(s => s.id))}
+                <button onClick={() => setSelectedSubjects(visibleSubjects.map(s => s.id))}
                   className="text-xs text-violet-600 hover:text-violet-800 font-semibold transition-colors">
                   Select All
                 </button>
@@ -370,11 +459,13 @@ export default function CreateExamPage() {
               </div>
             </SectionHeader>
             <div className="p-5">
-              {subjects.length === 0 ? (
-                <p className="text-sm text-slate-400 text-center py-6">No subjects found</p>
+              {visibleSubjects.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-6">
+                  {selectedClasses.length > 0 ? 'No subjects available for the selected classes.' : 'No subjects found.'}
+                </p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                  {subjects.map(subject => {
+                  {visibleSubjects.map(subject => {
                     const selected = selectedSubjects.includes(subject.id);
                     return (
                       <button key={subject.id} onClick={() => toggleSubject(subject.id)}
@@ -391,7 +482,7 @@ export default function CreateExamPage() {
                   })}
                 </div>
               )}
-              {selectedSubjects.length === 0 && subjects.length > 0 && (
+              {selectedSubjects.length === 0 && visibleSubjects.length > 0 && (
                 <p className="text-xs text-red-400 mt-2">Please select at least one subject</p>
               )}
             </div>
@@ -401,7 +492,7 @@ export default function CreateExamPage() {
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
             <SectionHeader icon={<Users className="h-4 w-4" />} title={`Classes (${selectedClasses.length} selected)`}>
               <div className="flex items-center gap-3">
-                <button onClick={() => setSelectedClasses(classes.map(c => c.id))}
+                <button onClick={() => setSelectedClasses(allowedClasses.map(c => c.id))}
                   className="text-xs text-violet-600 hover:text-violet-800 font-semibold transition-colors">
                   Select All
                 </button>
@@ -414,11 +505,11 @@ export default function CreateExamPage() {
               </div>
             </SectionHeader>
             <div className="p-5">
-              {classes.length === 0 ? (
+              {allowedClasses.length === 0 ? (
                 <p className="text-sm text-slate-400 text-center py-6">No classes found</p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                  {classes.map(cls => {
+                  {allowedClasses.map(cls => {
                     const selected = selectedClasses.includes(cls.id);
                     return (
                       <button key={cls.id} onClick={() => toggleClass(cls.id)}
@@ -435,7 +526,7 @@ export default function CreateExamPage() {
                   })}
                 </div>
               )}
-              {selectedClasses.length === 0 && classes.length > 0 && (
+              {selectedClasses.length === 0 && allowedClasses.length > 0 && (
                 <p className="text-xs text-red-400 mt-2">Please select at least one class</p>
               )}
             </div>

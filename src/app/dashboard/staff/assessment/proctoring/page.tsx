@@ -185,7 +185,8 @@ function ScheduleCard({ schedule, onMonitor }: {
                 <span className="text-xs text-slate-400 font-mono">({schedule.subject_code})</span>
               )}
               {isLive && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">
+                // FIX: `relative` on the badge so the absolute ping stays anchored here
+                <span className="relative inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping absolute" />
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-500 relative" />
                   LIVE
@@ -288,7 +289,7 @@ function SectionDivider({ label, count, color }: { label: string; count: number;
 
 export default function ProctoringSelector() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
 
   const [data, setData] = useState<SchedulesData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -297,6 +298,11 @@ export default function ProctoringSelector() {
 
   const [selectedExamId, setSelectedExamId] = useState<number | ''>('');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Exam officers (and superusers) see ALL published schedules.
+  // Regular invigilators see only their own.
+  const seesAllSchedules =
+    user?.is_superuser || hasPermission('result.can_publish_result');
 
   const showToast = (type: Toast['type'], message: string) => {
     const id = ++counter.current;
@@ -343,7 +349,6 @@ export default function ProctoringSelector() {
 
     const searchLower = searchTerm.toLowerCase();
 
-    // Helper to filter individual schedules
     const filterSchedule = (s: ProctoringSchedule) => {
       if (s.exam_id !== selectedExamId) return false;
       if (!searchLower) return true;
@@ -405,7 +410,7 @@ export default function ProctoringSelector() {
               value={selectedExamId}
               onChange={(e) => {
                 setSelectedExamId(Number(e.target.value) || '');
-                setSearchTerm(''); // Clear search when switching exams
+                setSearchTerm('');
               }}
               className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             >
@@ -480,9 +485,14 @@ export default function ProctoringSelector() {
           <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Shield className="h-8 w-8 text-slate-300" />
           </div>
-          <h3 className="font-semibold text-slate-700 mb-1">No exams assigned</h3>
+          {/* FIX: wording now matches the exam-officer scope */}
+          <h3 className="font-semibold text-slate-700 mb-1">
+            {seesAllSchedules ? 'No exams available' : 'No exams assigned'}
+          </h3>
           <p className="text-sm text-slate-400">
-            You are not assigned as an invigilator for any published exams.
+            {seesAllSchedules
+              ? 'There are no published exams with ready schedules right now.'
+              : 'You are not assigned as an invigilator for any published exams.'}
           </p>
         </div>
       ) : selectedExamId === '' ? (
@@ -504,7 +514,6 @@ export default function ProctoringSelector() {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* In Progress */}
             {filteredData.in_progress.length > 0 && (
               <section>
                 <SectionDivider label="Live Now" count={filteredData.in_progress.length} color="blue" />
@@ -516,7 +525,6 @@ export default function ProctoringSelector() {
               </section>
             )}
 
-            {/* Upcoming */}
             {filteredData.upcoming.length > 0 && (
               <section>
                 <SectionDivider label="Upcoming" count={filteredData.upcoming.length} color="violet" />
@@ -528,7 +536,6 @@ export default function ProctoringSelector() {
               </section>
             )}
 
-            {/* Completed */}
             {filteredData.completed.length > 0 && (
               <section>
                 <SectionDivider label="Completed" count={filteredData.completed.length} color="gray" />

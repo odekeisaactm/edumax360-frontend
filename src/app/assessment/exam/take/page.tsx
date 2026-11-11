@@ -9,9 +9,9 @@ import { api, schoolInfoAPI } from '@/lib/api';
 import {
   Clock, AlertCircle, CheckCircle2, Send, Camera, CameraOff,
   AlertTriangle, Loader2, BookOpen, ChevronLeft, ChevronRight,
-  X, List, PenLine, FileText, Shield, Info, Users, UserCheck,
+  X, List, PenLine, FileText, Shield, Info, Users,
   Bold, Italic, Underline as UnderlineIcon, Table2, Sigma,
-  BarChart2, Maximize, Minimize, Plus, Trash2,
+  BarChart2, Maximize, Plus, Trash2,
 } from 'lucide-react';
 import * as faceapi from 'face-api.js';
 
@@ -21,7 +21,9 @@ interface Question {
   id: number;
   exam_question_id: number;
   order: number;
-  question_type: 'objective' | 'theory' | 'subjective';
+  // Backend currently marks: objective | theory | subjective.
+  // Any other value is shown with the written-answer editor (never hidden).
+  question_type: string;
   question_number: string;
   sub_question_number: string | null;
   question_text: string;
@@ -41,11 +43,19 @@ interface InvigilatorWarning {
   message: string;
   sent_by: string;
   sent_at: string;
+  is_termination?: boolean;
 }
 
 interface SchoolInfo { name: string; logo?: string | null; }
 
 type TabType = 'objective' | 'theory' | 'subjective';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
+interface PendingEvent {
+  event_type: string;
+  severity: string;
+  event_data: Record<string, any>;
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -67,8 +77,60 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
 }
 
+/** An answer counts as non-empty if it has text, a graph image, or an equation. */
+function hasContent(html: string): boolean {
+  return stripHtml(html).length > 0 || /<img\b|data-latex=/i.test(html);
+}
+
 function escapeAttr(str: string): string {
   return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+const sleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
+
+const answerKey = (a: Answer) => `${a.selected_option ?? ''}|${a.answer_text ?? ''}`;
+
+/** submit_attempt() answers 400 "Cannot submit - invalid status" when already submitted. */
+function isAlreadySubmitted(err: any): boolean {
+  const status = err?.response?.status;
+  const msg = String(err?.response?.data?.error ?? '');
+  return status === 400 && /invalid status/i.test(msg);
+}
+
+function groupOf(q: Question): TabType {
+  if (q.question_type === 'objective') return 'objective';
+  if (q.question_type === 'subjective') return 'subjective';
+  return 'theory';
+}
+
+/**
+ * Client-side HTML sanitizer — defence-in-depth only.
+ * The backend MUST also sanitize before persisting.
+ * Preserves KaTeX spans and tables; strips scripts and event handlers.
+ */
+function sanitizeHtml(html: string): string {
+  if (typeof window === 'undefined') return html;
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    // Equations: keep only the LaTeX source (the editor re-renders it when loaded)
+    doc.querySelectorAll('span.katex-inline[data-latex]').forEach(el => {
+      el.textContent = `\\(${el.getAttribute('data-latex') || ''}\\)`;
+    });
+    doc.querySelectorAll('script, iframe, object, embed, style, link, meta').forEach(el => el.remove());
+    doc.querySelectorAll('*').forEach(el => {
+      Array.from(el.attributes).forEach(attr => {
+        const name = attr.name.toLowerCase();
+        const value = (attr.value || '').trim().toLowerCase();
+        if (name.startsWith('on')) el.removeAttribute(attr.name);
+        if ((name === 'href' || name === 'src' || name === 'xlink:href') && value.startsWith('javascript:')) {
+          el.removeAttribute(attr.name);
+        }
+      });
+    });
+    return doc.body.innerHTML;
+  } catch {
+    return html;
+  }
 }
 
 // ─── Error Modal ───────────────────────────────────────────────────────────────
@@ -137,7 +199,7 @@ function InvigilatorWarningOverlay({ warning, onAcknowledge }: {
         <button onClick={handle} disabled={acking}
           className="w-full py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
           {acking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          I Understand — Continue Exam
+          {warning.is_termination ? 'OK' : 'I Understand — Continue Exam'}
         </button>
       </div>
     </div>
@@ -211,7 +273,7 @@ function MathModal({ open, onInsert, onClose }: {
   };
 
   return (
-    <div className="fixed inset-0 z-[110] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[110] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 select-text">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
@@ -224,7 +286,6 @@ function MathModal({ open, onInsert, onClose }: {
         </div>
 
         <div className="p-5 space-y-4 flex-1 overflow-y-auto">
-          {/* Symbol keyboard */}
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Symbols — click to insert</p>
             <div className="flex flex-wrap gap-1.5">
@@ -238,7 +299,6 @@ function MathModal({ open, onInsert, onClose }: {
             </div>
           </div>
 
-          {/* LaTeX input */}
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">LaTeX Expression</p>
             <input
@@ -253,7 +313,6 @@ function MathModal({ open, onInsert, onClose }: {
             <p className="text-xs text-slate-400 mt-1">Type LaTeX directly or click symbols above</p>
           </div>
 
-          {/* Preview */}
           {preview && (
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Preview</p>
@@ -278,19 +337,16 @@ function MathModal({ open, onInsert, onClose }: {
   );
 }
 
-// ─── Graph Modal — Canvas-based, zero external dependencies ───────────────────
+// ─── Graph Modal ───────────────────────────────────────────────────────────────
 
 const GRAPH_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4'];
 
 function safeEval(expr: string, x: number): number | null {
   try {
     let e = expr.trim().replace(/\s/g, '');
-    // Strip leading "y=" or "f(x)="
     const eqIdx = e.indexOf('=');
     if (eqIdx !== -1) e = e.slice(eqIdx + 1);
     if (!e) return null;
-
-    // Allow only safe characters
     if (!/^[0-9x\+\-\*\/\^\(\)\.\,sincotalqrpbeMPIE]+$/i.test(e)) return null;
 
     e = e
@@ -311,17 +367,11 @@ function safeEval(expr: string, x: number): number | null {
     const fn = new Function('x', `"use strict"; try { return +(${e}); } catch(e){ return NaN; }`);
     const v  = fn(x);
     return isFinite(v) ? v : null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-function drawGraph(
-  canvas: HTMLCanvasElement,
-  expressions: string[],
-  xMin: number, xMax: number,
-  yMin: number, yMax: number,
-) {
+function drawGraph(canvas: HTMLCanvasElement, expressions: string[],
+  xMin: number, xMax: number, yMin: number, yMax: number) {
   const ctx   = canvas.getContext('2d')!;
   const W     = canvas.width;
   const H     = canvas.height;
@@ -333,12 +383,9 @@ function drawGraph(
   const toCanvasY = (y: number) => pad + ((yMax - y) / (yMax - yMin)) * h;
 
   ctx.clearRect(0, 0, W, H);
-
-  // Background
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, W, H);
 
-  // Grid lines
   ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth   = 1;
   const xStep = (xMax - xMin) / 10;
@@ -353,7 +400,6 @@ function drawGraph(
     ctx.beginPath(); ctx.moveTo(pad, cy); ctx.lineTo(pad + w, cy); ctx.stroke();
   }
 
-  // Axes
   ctx.strokeStyle = '#64748b';
   ctx.lineWidth   = 1.5;
   if (yMin <= 0 && yMax >= 0) {
@@ -365,7 +411,6 @@ function drawGraph(
     ctx.beginPath(); ctx.moveTo(cx, pad); ctx.lineTo(cx, pad + h); ctx.stroke();
   }
 
-  // Axis labels
   ctx.fillStyle  = '#64748b';
   ctx.font       = '10px system-ui, sans-serif';
   ctx.textAlign  = 'center';
@@ -379,7 +424,6 @@ function drawGraph(
     ctx.fillText(String(Math.round(y * 10) / 10), pad - 5, toCanvasY(y) + 4);
   }
 
-  // Plot each expression
   const steps = w * 2;
   expressions.forEach((expr, i) => {
     if (!expr.trim()) return;
@@ -401,7 +445,6 @@ function drawGraph(
     ctx.stroke();
   });
 
-  // Border
   ctx.strokeStyle = '#cbd5e1';
   ctx.lineWidth   = 1;
   ctx.strokeRect(pad, pad, w, h);
@@ -412,13 +455,13 @@ function GraphModal({ open, onInsert, onClose }: {
   onInsert: (imgDataUrl: string) => void;
   onClose: () => void;
 }) {
-  const canvasRef               = useRef<HTMLCanvasElement>(null);
-  const [exprs, setExprs]       = useState(['y = x*x']);
-  const [xMin, setXMin]         = useState(-10);
-  const [xMax, setXMax]         = useState(10);
-  const [yMin, setYMin]         = useState(-10);
-  const [yMax, setYMax]         = useState(10);
-  const [autoY, setAutoY]       = useState(true);
+  const canvasRef                   = useRef<HTMLCanvasElement>(null);
+  const [exprs, setExprs]           = useState(['y = x*x']);
+  const [xMin, setXMin]             = useState(-10);
+  const [xMax, setXMax]             = useState(10);
+  const [yMin, setYMin]             = useState(-10);
+  const [yMax, setYMax]             = useState(10);
+  const [autoY, setAutoY]           = useState(true);
   const [graphError, setGraphError] = useState('');
 
   const redraw = useCallback(() => {
@@ -450,7 +493,6 @@ function GraphModal({ open, onInsert, onClose }: {
   }, [exprs, xMin, xMax, yMin, yMax, autoY]);
 
   useEffect(() => { if (open) redraw(); }, [open, redraw]);
-
   if (!open) return null;
 
   const handleInsert = () => {
@@ -466,9 +508,8 @@ function GraphModal({ open, onInsert, onClose }: {
   };
 
   return (
-    <div className="fixed inset-0 z-[110] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[110] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 select-text">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[92vh]">
-
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <BarChart2 className="h-5 w-5 text-blue-600" />
@@ -481,7 +522,6 @@ function GraphModal({ open, onInsert, onClose }: {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-0">
-          {/* Canvas */}
           <canvas ref={canvasRef} width={580} height={340}
             className="w-full rounded-xl border border-slate-200 bg-white" />
 
@@ -491,7 +531,6 @@ function GraphModal({ open, onInsert, onClose }: {
             </p>
           )}
 
-          {/* Expressions */}
           <div className="space-y-2">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Expressions</p>
             {exprs.map((e, i) => (
@@ -528,7 +567,6 @@ function GraphModal({ open, onInsert, onClose }: {
             </div>
           </div>
 
-          {/* View range */}
           <div className="space-y-2">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">View Range</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -573,7 +611,7 @@ function GraphModal({ open, onInsert, onClose }: {
   );
 }
 
-// ─── Table Toolbar Hook — floating toolbar for table editing ──────────────────
+// ─── Table Toolbar Hook ───────────────────────────────────────────────────────
 
 function useTableToolbar(editorRef: React.RefObject<HTMLDivElement | null>) {
   const [toolbarPos, setToolbarPos] = useState<{ top: number; left: number } | null>(null);
@@ -620,8 +658,7 @@ function useTableToolbar(editorRef: React.RefObject<HTMLDivElement | null>) {
   };
 
   const addRow = useCallback(() => {
-    const t = getTableAndCell();
-    if (!t) return;
+    const t = getTableAndCell(); if (!t) return;
     const { table, cell } = t;
     const row = cell.closest('tr') as HTMLTableRowElement;
     if (!row) return;
@@ -635,8 +672,7 @@ function useTableToolbar(editorRef: React.RefObject<HTMLDivElement | null>) {
   }, []);
 
   const addCol = useCallback(() => {
-    const t = getTableAndCell();
-    if (!t) return;
+    const t = getTableAndCell(); if (!t) return;
     const { table, cell } = t;
     const colIdx = cell.cellIndex + 1;
     Array.from(table.rows).forEach(row => {
@@ -647,8 +683,7 @@ function useTableToolbar(editorRef: React.RefObject<HTMLDivElement | null>) {
   }, []);
 
   const deleteRow = useCallback(() => {
-    const t = getTableAndCell();
-    if (!t) return;
+    const t = getTableAndCell(); if (!t) return;
     const { table, cell } = t;
     const row = cell.closest('tr') as HTMLTableRowElement;
     if (table.rows.length <= 1) { table.remove(); return; }
@@ -656,8 +691,7 @@ function useTableToolbar(editorRef: React.RefObject<HTMLDivElement | null>) {
   }, []);
 
   const deleteCol = useCallback(() => {
-    const t = getTableAndCell();
-    if (!t) return;
+    const t = getTableAndCell(); if (!t) return;
     const { table, cell } = t;
     const colIdx = cell.cellIndex;
     if (table.rows[0]?.cells.length <= 1) { table.remove(); return; }
@@ -669,9 +703,27 @@ function useTableToolbar(editorRef: React.RefObject<HTMLDivElement | null>) {
   return { inTable, toolbarPos, addRow, addCol, deleteRow, deleteCol };
 }
 
+/** Re-render saved equations (<span data-latex>) with KaTeX. Returns false if KaTeX isn't loaded yet. */
+function renderKatexSpans(root: HTMLElement): boolean {
+  const spans = root.querySelectorAll('span.katex-inline[data-latex]');
+  if (spans.length === 0) return true;
+  const katex = (window as any).katex;
+  if (!katex) return false;
+  spans.forEach(el => {
+    if (el.querySelector('.katex')) return; // already rendered
+    try {
+      el.innerHTML = katex.renderToString(el.getAttribute('data-latex') || '', { throwOnError: false });
+      el.setAttribute('contenteditable', 'false');
+      (el as HTMLElement).style.cssText = 'display:inline-block;vertical-align:middle;margin:0 2px';
+    } catch { /* leave the raw \\(...\\) text */ }
+  });
+  return true;
+}
+
 // ─── Theory Editor ─────────────────────────────────────────────────────────────
-// Uncontrolled contenteditable — NEVER writes innerHTML after mount.
-// Fixed list commands + floating table toolbar.
+// Uncontrolled contenteditable. Tagged with `data-theory-editor` so the parent can
+// read the live content at save time. Flushes pending edits on unmount (including
+// clearing an answer) so nothing is lost when navigating between questions fast.
 
 interface TheoryEditorProps {
   examQuestionId: number;
@@ -685,12 +737,17 @@ interface TheoryEditorProps {
 const TheoryEditor = memo(function TheoryEditor({
   examQuestionId, initialValue, onChange, onSaveRange, onOpenMath, onOpenGraph,
 }: TheoryEditorProps) {
-  const editorRef   = useRef<HTMLDivElement>(null);
-  const initialized = useRef(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const editorRef    = useRef<HTMLDivElement>(null);
+  const initialized  = useRef(false);
+  const debounceRef  = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const lastHtmlRef  = useRef<string>(initialValue || '');
+  const dirtyRef     = useRef(false);
+  const onChangeRef  = useRef(onChange);
   const { inTable, toolbarPos, addRow, addCol, deleteRow, deleteCol } = useTableToolbar(editorRef);
 
-  // Initialize innerHTML exactly ONCE when the element mounts — never again (prevents cursor jump)
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+
+  // Init innerHTML once
   useLayoutEffect(() => {
     if (editorRef.current && !initialized.current) {
       editorRef.current.innerHTML = initialValue || '';
@@ -698,19 +755,46 @@ const TheoryEditor = memo(function TheoryEditor({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-render equations restored from a saved answer (waits for KaTeX to load)
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const run = () => {
+      if (!el.isConnected) return;
+      if (!renderKatexSpans(el) && tries++ < 20) timer = setTimeout(run, 500);
+    };
+    run();
+    return () => clearTimeout(timer);
+  }, []);
+
   const handleInput = useCallback(() => {
     const html = editorRef.current?.innerHTML || '';
+    lastHtmlRef.current = html;
+    dirtyRef.current = true;
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => onChange(html), 350);
-  }, [onChange]);
+    debounceRef.current = setTimeout(() => {
+      dirtyRef.current = false;
+      onChangeRef.current(html);
+    }, 350);
+  }, []);
 
-  // Fix: ensure editor is focused and selection is restored before execCommand
+  // Flush a pending debounce on unmount (also covers a cleared answer)
+  useEffect(() => {
+    return () => {
+      clearTimeout(debounceRef.current);
+      if (dirtyRef.current) {
+        onChangeRef.current(lastHtmlRef.current);
+      }
+    };
+  }, []);
+
   const execCmd = useCallback((cmd: string, value?: string) => {
     if (!editorRef.current) return;
     if (document.activeElement !== editorRef.current) {
       editorRef.current.focus({ preventScroll: true });
     }
-    // Small delay lets focus settle before execCommand
     requestAnimationFrame(() => {
       document.execCommand(cmd, false, value ?? undefined);
       handleInput();
@@ -746,19 +830,10 @@ const TheoryEditor = memo(function TheoryEditor({
     });
   }, [handleInput]);
 
-  // Expose HTML getter via ref for parent flush (pre-submit)
-  const getHtml = useCallback(() => editorRef.current?.innerHTML || '', []);
-  useEffect(() => {
-    if (editorRef.current) {
-      (editorRef.current as any).__getHtml = getHtml;
-    }
-  }, [getHtml]);
-
   const tbBtn = 'p-1.5 hover:bg-white rounded-md text-slate-600 hover:text-slate-900 transition-all';
 
   return (
-    <div className="space-y-2">
-      {/* Toolbar */}
+    <div className="space-y-2 select-text">
       <div className="flex items-center gap-0.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200 flex-wrap">
         <button type="button"
           onMouseDown={e => { e.preventDefault(); execCmd('bold'); }}
@@ -812,14 +887,12 @@ const TheoryEditor = memo(function TheoryEditor({
         </button>
       </div>
 
-      {/* Editor + floating table toolbar */}
       <div className="relative">
-        {/* Floating table toolbar — only visible when cursor is inside a table */}
         {inTable && toolbarPos && (
           <div
             className="absolute z-20 flex items-center gap-1 bg-slate-800 text-white rounded-lg px-2 py-1 shadow-xl border border-slate-700"
             style={{ top: `${toolbarPos.top}px`, left: `${toolbarPos.left}px` }}
-            onMouseDown={e => e.preventDefault()} // keep editor focus
+            onMouseDown={e => e.preventDefault()}
           >
             <button onClick={addRow}
               className="flex items-center gap-1 px-2 py-1 text-xs hover:bg-slate-700 rounded-md transition-colors" title="Add row below">
@@ -845,18 +918,19 @@ const TheoryEditor = memo(function TheoryEditor({
           ref={editorRef}
           contentEditable
           suppressContentEditableWarning
+          data-theory-editor={examQuestionId}
           onInput={handleInput}
           onKeyDown={e => {
             if (e.key === 'Tab') { e.preventDefault(); document.execCommand('indent', false); }
           }}
-          className="w-full min-h-[280px] px-5 py-4 border-2 border-slate-100 rounded-2xl text-sm focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50 transition-all bg-white overflow-y-auto cursor-text leading-relaxed"
+          className="w-full min-h-[280px] px-5 py-4 border-2 border-slate-100 rounded-2xl text-sm focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50 transition-all bg-white overflow-y-auto cursor-text leading-relaxed select-text"
           style={{ fontFamily: 'inherit' }}
         />
       </div>
 
       <p className="text-[10px] text-slate-400 flex items-center gap-1.5 justify-end">
         <Info className="h-3 w-3" />
-        Bold · Italic · Underline · Bullet &amp; numbered lists · Tables (click in cell to add/remove rows &amp; columns) · Equations · Graphs
+        Bold · Italic · Underline · Bullet &amp; numbered lists · Tables · Equations · Graphs
       </p>
     </div>
   );
@@ -876,7 +950,6 @@ function WebcamMonitor({ videoRef, canvasRef, cameraEnabled, cameraError, detect
       <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* Live indicator */}
       <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 bg-black/50 backdrop-blur-sm rounded-lg border border-white/10">
         <div className={`w-1.5 h-1.5 rounded-full ${cameraEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
         <span className="text-[9px] font-bold text-white uppercase tracking-wider">
@@ -884,7 +957,6 @@ function WebcamMonitor({ videoRef, canvasRef, cameraEnabled, cameraError, detect
         </span>
       </div>
 
-      {/* Face alerts */}
       {cameraEnabled && detectedFaces !== null && detectedFaces === 0 && (
         <div className="absolute inset-0 flex items-center justify-center p-2">
           <div className="bg-red-600/90 text-white px-2 py-1.5 rounded-xl text-center">
@@ -912,97 +984,107 @@ function ExamTakingPageInner() {
   const searchParams = useSearchParams();
   const attemptId    = searchParams?.get('attempt');
 
-  // ── Exam data ──────────────────────────────────────────────────────────────
-  const [examTitle, setExamTitle]               = useState('');
-  const [durationMinutes, setDurationMinutes]   = useState(0);
-  const [graceEndDatetime, setGraceEndDatetime] = useState<string | null>(null);
-  const [startedAt, setStartedAt]               = useState<string | null>(null);
-  const [questions, setQuestions]               = useState<Question[]>([]);
-  const [answers, setAnswers]                   = useState<Record<number, Answer>>({});
-  const [allowReview, setAllowReview]           = useState(true);
-  const [studentName, setStudentName]           = useState('');
-  const [studentClass, setStudentClass]         = useState('');
-  const [studentSection, setStudentSection]     = useState<string | null>(null);
-  const [studentImageUrl, setStudentImageUrl]   = useState<string | null>(null);
-  const [schoolInfo, setSchoolInfo]             = useState<SchoolInfo | null>(null);
+  // ── Exam data ──
+  const [examTitle, setExamTitle]             = useState('');
+  const [questions, setQuestions]             = useState<Question[]>([]);
+  const [answers, setAnswers]                 = useState<Record<number, Answer>>({});
+  const [studentName, setStudentName]         = useState('');
+  const [studentClass, setStudentClass]       = useState('');
+  const [studentSection, setStudentSection]   = useState<string | null>(null);
+  const [studentImageUrl, setStudentImageUrl] = useState<string | null>(null);
+  const [schoolInfo, setSchoolInfo]           = useState<SchoolInfo | null>(null);
 
-  // ── UI ─────────────────────────────────────────────────────────────────────
+  // ── UI ──
   const [loading, setLoading]                 = useState(true);
   const [activeTab, setActiveTab]             = useState<TabType>('objective');
   const [currentQIdx, setCurrentQIdx]         = useState(0);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [submitting, setSubmitting]           = useState(false);
+  const [closing, setClosing]                 = useState<{ title: string; text: string } | null>(null);
+  const [notice, setNotice]                   = useState<string | null>(null);
 
-  // ── Error modal ────────────────────────────────────────────────────────────
   const [errorModal, setErrorModal] = useState({
     show: false, title: '', message: '',
     onRetry: undefined as (() => void) | undefined,
   });
 
-  // ── Timer ──────────────────────────────────────────────────────────────────
+  // ── Timer (server-authoritative; counts down from a monotonic deadline) ──
   const [remainingSeconds, setRemainingSeconds] = useState(0);
-  const [timeExpired, setTimeExpired]           = useState(false);
-  // Extra seconds granted by invigilator time extensions
-  const [extraSeconds, setExtraSeconds]         = useState(0);
+  const deadlineRef       = useRef<number | null>(null);   // performance.now() based
+  const timeExpiredRef    = useRef(false);
+  const expiredOnLoadRef  = useRef(false);
 
-  // ── Auto-save ──────────────────────────────────────────────────────────────
-  const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [saving, setSaving]       = useState(false);
-  const autoSaveRef                = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  // ── Saving ──
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [lastSaved, setLastSaved]   = useState<Date | null>(null);
+  const autoSaveRef       = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const answersRef        = useRef<Record<number, Answer>>({});
+  const savedSnapshotRef  = useRef<Record<number, string>>({});   // what the server already has
+  const saveChainRef      = useRef<Promise<boolean>>(Promise.resolve(true)); // serialises saves
+  const submittingRef     = useRef(false);
 
-  // ── Webcam + face detection ────────────────────────────────────────────────
+  // ── Webcam + face detection ──
   const videoRef                          = useRef<HTMLVideoElement>(null);
   const canvasRef                         = useRef<HTMLCanvasElement>(null);
+  const streamRef                         = useRef<MediaStream | null>(null);
+  const cameraStartedRef                  = useRef(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraError, setCameraError]     = useState<string | null>(null);
   const [detectedFaces, setDetectedFaces] = useState<number | null>(null);
+  const [noFaceStreak, setNoFaceStreak]   = useState(0);
+  const detectedFacesRef                  = useRef<number | null>(null);
   const faceIntervalRef                   = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const snapshotIntervalRef               = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const consecutiveNoFaceRef              = useRef(0);
+  const multiFaceStreakRef                = useRef(0);
+  const mismatchStreakRef                 = useRef(0);
   const studentDescriptorRef              = useRef<Float32Array | null>(null);
 
-  // ── Proctoring counts ──────────────────────────────────────────────────────
+  // ── Proctoring counts ──
   const [tabSwitchCount, setTabSwitchCount]   = useState(0);
   const [windowBlurCount, setWindowBlurCount] = useState(0);
   const [fullscreenExits, setFullscreenExits] = useState(0);
 
-  // ── Fullscreen — only show banner after a confirmed exit, not on load ──────
-  // true = student was in fullscreen, then left
-  const [fullscreenHasExited, setFullscreenHasExited]       = useState(false);
-  const [isCurrentlyFullscreen, setIsCurrentlyFullscreen]   = useState(false);
-  const fullscreenEnteredOnceRef                             = useRef(false);
-  // Derived: show banner only if they were previously fullscreen and have since exited
+  // ── Fullscreen ──
+  const [fullscreenHasExited, setFullscreenHasExited]     = useState(false);
+  const [isCurrentlyFullscreen, setIsCurrentlyFullscreen] = useState(false);
+  const fullscreenEnteredOnceRef                           = useRef(false);
   const showFullscreenBanner = fullscreenHasExited && !isCurrentlyFullscreen;
 
-  // ── Invigilator warnings ───────────────────────────────────────────────────
+  // ── Invigilator warnings ──
   const [activeWarning, setActiveWarning] = useState<InvigilatorWarning | null>(null);
+  const activeWarningRef                   = useRef<InvigilatorWarning | null>(null);
   const warningPollRef                     = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const noticeTimerRef                     = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // ── Math / Graph modals ────────────────────────────────────────────────────
+  // ── Proctoring event queue + throttle ──
+  const eventQueueRef     = useRef<PendingEvent[]>([]);
+  const flushingEventsRef = useRef(false);
+  const lastEventAtRef    = useRef<Record<string, number>>({});
+
+  // ── Math / Graph modals ──
   const [showMathModal, setShowMathModal]   = useState(false);
   const [showGraphModal, setShowGraphModal] = useState(false);
   const savedRangeRef                        = useRef<Range | null>(null);
 
-  // ── Derived ────────────────────────────────────────────────────────────────
-  const objQs  = questions.filter(q => q.question_type === 'objective');
-  const thQs   = questions.filter(q => q.question_type === 'theory');
-  const subjQs = questions.filter(q => q.question_type === 'subjective');
-
-  const availableTabs: TabType[] = [
-    ...(objQs.length  > 0 ? ['objective'  as TabType] : []),
-    ...(thQs.length   > 0 ? ['theory'     as TabType] : []),
-    ...(subjQs.length > 0 ? ['subjective' as TabType] : []),
-  ];
-
-  const tabQs: Record<TabType, Question[]> = { objective: objQs, theory: thQs, subjective: subjQs };
+  // ── Derived ──
+  const tabQs: Record<TabType, Question[]> = {
+    objective:  questions.filter(q => groupOf(q) === 'objective'),
+    theory:     questions.filter(q => groupOf(q) === 'theory'),
+    subjective: questions.filter(q => groupOf(q) === 'subjective'),
+  };
+  const availableTabs = (['objective', 'theory', 'subjective'] as TabType[])
+    .filter(t => tabQs[t].length > 0);
   const currentTabQs = tabQs[activeTab] ?? [];
   const currentQ     = currentTabQs[currentQIdx] ?? null;
 
   const answeredCount = Object.keys(answers).length;
   const progress      = questions.length > 0 ? (answeredCount / questions.length) * 100 : 0;
 
-  // ── Cleanup ────────────────────────────────────────────────────────────────
+  // ── Cleanup ──
   const cleanup = useCallback(() => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
     if (videoRef.current?.srcObject) {
       (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
     }
@@ -1010,30 +1092,128 @@ function ExamTakingPageInner() {
     clearInterval(faceIntervalRef.current);
     clearInterval(snapshotIntervalRef.current);
     clearInterval(warningPollRef.current);
+    clearTimeout(noticeTimerRef.current);
   }, []);
 
-  // ── Load exam data ─────────────────────────────────────────────────────────
+  // ── Timer helpers ──
+  const setServerRemaining = useCallback((secs: number) => {
+    const s = Math.max(0, secs);
+    deadlineRef.current = performance.now() + s * 1000;
+    setRemainingSeconds(Math.ceil(s));
+  }, []);
+
+  // ── Answers: state mirror of answersRef + live editor content ──
+  const getMergedAnswers = useCallback((): Record<number, Answer> => {
+    const merged: Record<number, Answer> = {};
+    Object.entries(answersRef.current).forEach(([k, a]) => {
+      merged[Number(k)] = a.answer_text !== undefined
+        ? { ...a, answer_text: sanitizeHtml(a.answer_text) }
+        : a;
+    });
+    document.querySelectorAll('[data-theory-editor]').forEach((el: any) => {
+      const qid = parseInt(el.dataset.theoryEditor, 10);
+      if (isNaN(qid)) return;
+      const html = el.innerHTML || '';
+      if (!hasContent(html)) delete merged[qid];
+      else merged[qid] = { exam_question_id: qid, answer_text: sanitizeHtml(html) };
+    });
+    return merged;
+  }, []);
+
+  const handleAnswerChange = useCallback((examQuestionId: number, value: string, isOption = false) => {
+    const next = { ...answersRef.current };
+    const isEmpty = isOption ? !value : !hasContent(value);
+    if (isEmpty) {
+      delete next[examQuestionId];
+    } else {
+      next[examQuestionId] = {
+        exam_question_id: examQuestionId,
+        ...(isOption ? { selected_option: value } : { answer_text: value }),
+      };
+    }
+    answersRef.current = next;
+    setAnswers(next);
+  }, []);
+
+  // Local backup of every change (cheap and synchronous), independent of the network
+  useEffect(() => {
+    if (loading || !attemptId) return;
+    const t = setTimeout(() => {
+      try { localStorage.setItem(`exam_${attemptId}_answers`, JSON.stringify(answersRef.current)); }
+      catch { /* storage full / unavailable */ }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [answers, loading, attemptId]);
+
+  // ── Leave the exam page ──
+  const finishAndLeave = useCallback((auto: boolean, error = false) => {
+    if (!error) {
+      try {
+        localStorage.removeItem(`exam_${attemptId}_answers`);
+        localStorage.removeItem(`exam_${attemptId}_questions`);
+      } catch { /* ignore */ }
+    }
+    cleanup();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    const qs = `attempt=${attemptId}${auto ? '&auto=true' : ''}${error ? '&error=true' : ''}`;
+    router.push(`/assessment/exam/submitted?${qs}`);
+  }, [attemptId, cleanup, router]);
+
+  // ── Load exam data ──
   const loadExamData = useCallback(async () => {
     if (!attemptId) return;
     setLoading(true);
     try {
       const res  = await api.get(`/api/assessment/exam-attempts/${attemptId}/questions/`);
       const data = res.data;
+
+      // Already submitted / closed: nothing to take — go to the result page
+      if (['submitted', 'auto_submitted', 'abandoned'].includes(data.attempt_status)) {
+        finishAndLeave(data.attempt_status === 'auto_submitted');
+        return;
+      }
+
       setExamTitle(data.exam_title || 'Exam');
-      setDurationMinutes(data.duration_minutes || 60);
-      setGraceEndDatetime(data.grace_end_datetime);
-      setStartedAt(data.started_at);
       setStudentName(data.student_name || '');
       setStudentClass(data.student_class || '');
       setStudentSection(data.student_section || null);
       setStudentImageUrl(data.student_image_url || null);
-      setAllowReview(data.allow_review ?? true);
       setQuestions(data.questions || []);
+
+      // Timer — server value already includes invigilator extensions.
+      // 0 on load means the attempt is expired OR already closed; we find out on submit.
+      const rem = typeof data.remaining_seconds === 'number'
+        ? data.remaining_seconds
+        : (data.duration_minutes || 60) * 60;
+      if (rem <= 0) expiredOnLoadRef.current = true;
+      setServerRemaining(rem);
+
+      // Restore answers: server copy (if the API sends it) then this device's local copy on top
+      const restored: Record<number, Answer> = {};
+      const snapshot: Record<number, string> = {};
+      if (Array.isArray(data.saved_answers)) {
+        data.saved_answers.forEach((a: any) => {
+          const qid = Number(a.exam_question_id);
+          if (isNaN(qid) || !(a.selected_option || a.answer_text)) return;
+          const ans: Answer = {
+            exam_question_id: qid,
+            ...(a.selected_option ? { selected_option: a.selected_option } : {}),
+            ...(a.answer_text ? { answer_text: a.answer_text } : {}),
+          };
+          restored[qid] = ans;
+          snapshot[qid] = answerKey(ans);
+        });
+      }
       try {
         const saved = localStorage.getItem(`exam_${attemptId}_answers`);
-        if (saved) setAnswers(JSON.parse(saved));
+        if (saved) Object.assign(restored, JSON.parse(saved));
       } catch { /* ignore */ }
-      localStorage.setItem(`exam_${attemptId}_questions`, JSON.stringify(data.questions || []));
+      savedSnapshotRef.current = snapshot;
+      answersRef.current = restored;
+      setAnswers(restored);
+
+      try { localStorage.setItem(`exam_${attemptId}_questions`, JSON.stringify(data.questions || [])); }
+      catch { /* ignore */ }
     } catch (err: any) {
       setErrorModal({
         show: true,
@@ -1044,20 +1224,25 @@ function ExamTakingPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [attemptId]);
+  }, [attemptId, setServerRemaining, finishAndLeave]);
 
-  // ── Fullscreen request ─────────────────────────────────────────────────────
+  // ── Fullscreen request ──
   const requestFullscreen = useCallback(() => {
     const el = document.documentElement;
     if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
     else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
   }, []);
 
-  // ── Camera + face detection ────────────────────────────────────────────────
+  // ── Proctoring ──
   const loadStudentDescriptor = useCallback(async (imgUrl: string) => {
     try {
-      const img = new Image(); img.crossOrigin = 'anonymous'; img.src = imgUrl;
-      await new Promise(res => { img.onload = res; });
+      const img = new Image(); img.crossOrigin = 'anonymous';
+      await new Promise<void>(res => {
+        img.onload = () => res();
+        img.onerror = () => res();
+        img.src = imgUrl;
+      });
+      if (!img.naturalWidth) return;
       const detection = await faceapi
         .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions())
         .withFaceLandmarks().withFaceDescriptor();
@@ -1066,70 +1251,102 @@ function ExamTakingPageInner() {
   }, []);
 
   const logEvent = useCallback(async (eventType: string, severity: string, eventData: any) => {
+    const payload: PendingEvent = { event_type: eventType, severity, event_data: eventData };
     try {
-      await api.post(`/api/assessment/exam-attempts/${attemptId}/log-event/`, {
-        event_type: eventType, severity, event_data: eventData,
-      });
-    } catch { /* fail silently */ }
+      await api.post(`/api/assessment/exam-attempts/${attemptId}/log-event/`, payload);
+    } catch {
+      eventQueueRef.current.push(payload);
+      if (eventQueueRef.current.length > 100) eventQueueRef.current.shift();
+    }
   }, [attemptId]);
 
+  /** Same event type is logged at most once per cooldown — keeps the DB and invigilator alerts sane. */
+  const logEventThrottled = useCallback((type: string, severity: string, data: any, cooldownMs: number) => {
+    const now = Date.now();
+    if (now - (lastEventAtRef.current[type] || 0) < cooldownMs) return;
+    lastEventAtRef.current[type] = now;
+    logEvent(type, severity, data);
+  }, [logEvent]);
+
   const startFaceDetection = useCallback(() => {
+    clearInterval(faceIntervalRef.current);
     faceIntervalRef.current = setInterval(async () => {
-      if (!videoRef.current) return;
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) return;
       try {
         const detections = await faceapi.detectAllFaces(
-          videoRef.current,
+          video,
           new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 })
         ).withFaceLandmarks().withFaceDescriptors();
 
         const count = detections.length;
+        detectedFacesRef.current = count;
         setDetectedFaces(count);
 
         if (count === 0) {
+          multiFaceStreakRef.current = 0;
+          mismatchStreakRef.current = 0;
           consecutiveNoFaceRef.current += 1;
+          setNoFaceStreak(consecutiveNoFaceRef.current);
           if (consecutiveNoFaceRef.current >= 4) {
-            logEvent('face_not_detected', 'medium', { consecutive: consecutiveNoFaceRef.current });
+            logEventThrottled('face_not_detected', 'medium',
+              { consecutive: consecutiveNoFaceRef.current }, 30000);
           }
         } else {
           consecutiveNoFaceRef.current = 0;
+          setNoFaceStreak(0);
+
           if (count > 1) {
-            logEvent('multiple_faces', 'high', { face_count: count });
+            multiFaceStreakRef.current += 1;
+            if (multiFaceStreakRef.current >= 2) {
+              logEventThrottled('multiple_faces', 'high', { face_count: count }, 20000);
+            }
+          } else {
+            multiFaceStreakRef.current = 0;
           }
+
           if (count === 1 && studentDescriptorRef.current && detections[0].descriptor) {
             const distance = faceapi.euclideanDistance(
-              studentDescriptorRef.current,
-              detections[0].descriptor
+              studentDescriptorRef.current, detections[0].descriptor
             );
             if (distance > 0.6) {
-              logEvent('identity_mismatch', 'critical', { distance: distance.toFixed(3) });
+              mismatchStreakRef.current += 1;
+              if (mismatchStreakRef.current >= 3) {
+                logEventThrottled('identity_mismatch', 'high',
+                  { distance: distance.toFixed(3) }, 60000);
+              }
+            } else {
+              mismatchStreakRef.current = 0;
             }
           }
         }
-      } catch { /* silently ignore detection errors */ }
+      } catch { /* silently ignore */ }
     }, 3000);
-  }, [logEvent]);
+  }, [logEventThrottled]);
 
   const startSnapshots = useCallback(() => {
+    clearInterval(snapshotIntervalRef.current);
     snapshotIntervalRef.current = setInterval(async () => {
-      if (!videoRef.current || !canvasRef.current) return;
+      const video = videoRef.current, canvas = canvasRef.current;
+      if (!video || !canvas || !video.videoWidth) return;
       try {
-        const canvas  = canvasRef.current;
-        canvas.width  = videoRef.current.videoWidth;
-        canvas.height = videoRef.current.videoHeight;
-        canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
-        const base64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+        const w = 480;
+        const h = Math.round((video.videoHeight / video.videoWidth) * w);
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d')?.drawImage(video, 0, 0, w, h);
+        const base64 = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
         await api.post(`/api/assessment/exam-attempts/${attemptId}/log-event/`, {
           event_type: 'webcam_snapshot',
           severity: 'low',
           event_data: {
-            faces_detected: detectedFaces,
+            faces_detected: detectedFacesRef.current,
             image_data: base64,
             size_bytes: base64.length,
           },
         }).catch(() => {});
       } catch { /* ignore */ }
-    }, 30000);
-  }, [attemptId, detectedFaces]);
+    }, 60000);
+  }, [attemptId]);
 
   const loadCamera = useCallback(async () => {
     try {
@@ -1141,40 +1358,101 @@ function ExamTakingPageInner() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480, facingMode: 'user' }
       });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setCameraEnabled(true);
-        videoRef.current.onloadedmetadata = () => {
-          startFaceDetection();
-          startSnapshots();
-        };
-      }
+      const video = videoRef.current;
+      if (!video) { stream.getTracks().forEach(t => t.stop()); return; }
+      streamRef.current = stream;
+      video.onloadedmetadata = () => { startFaceDetection(); startSnapshots(); };
+      video.srcObject = stream;
+      setCameraEnabled(true);
     } catch (err: any) {
       setCameraError(err?.message || 'Camera unavailable');
       logEvent('camera_error', 'high', { error: err?.message });
     }
   }, [logEvent, startFaceDetection, startSnapshots]);
 
-  // ── Poll invigilator warnings + time extensions ────────────────────────────
+  // ── Saving ──
+  // mode 'delta': only answers the server doesn't have yet (periodic autosave)
+  // mode 'all'  : every answer (final save before submit)
+  // Saves are chained so a slow request can never overwrite a newer one.
+  const saveNow = useCallback((mode: 'delta' | 'all'): Promise<boolean> => {
+    const run = async (): Promise<boolean> => {
+      const merged  = getMergedAnswers();
+      const entries = Object.values(merged);
+      const changed = mode === 'all'
+        ? entries
+        : entries.filter(a => savedSnapshotRef.current[a.exam_question_id] !== answerKey(a));
+      // Answers the student cleared since the last save
+      const clearedIds = Object.keys(savedSnapshotRef.current)
+        .map(Number).filter(id => !merged[id]);
+      const toSend: Array<Answer | { exam_question_id: number; cleared: true }> = [
+        ...changed,
+        ...clearedIds.map(id => ({ exam_question_id: id, cleared: true as const })),
+      ];
+      if (toSend.length === 0) return true;
+
+      setSaveStatus('saving');
+      try { localStorage.setItem(`exam_${attemptId}_answers`, JSON.stringify(merged)); }
+      catch { /* ignore */ }
+      try {
+        await api.post(`/api/assessment/exam-attempts/${attemptId}/save-answers/`, { answers: toSend });
+        changed.forEach(a => { savedSnapshotRef.current[a.exam_question_id] = answerKey(a); });
+        clearedIds.forEach(id => { delete savedSnapshotRef.current[id]; });
+        setLastSaved(new Date());
+        setSaveStatus('saved');
+        return true;
+      } catch (err: any) {
+        setSaveStatus('error');
+        // 409 = attempt closed or time is over: retrying can never succeed
+        if (err?.response?.status === 409) return true;
+        return false;
+      }
+    };
+    const p = saveChainRef.current.then(run, run);
+    saveChainRef.current = p;
+    return p;
+  }, [attemptId, getMergedAnswers]);
+
+  const autoSave = useCallback(() => {
+    if (submittingRef.current) return;
+    saveNow('delta');
+  }, [saveNow]);
+
+  // ── Invigilator warnings + server timer sync ──
+  const showWarning = useCallback((w: InvigilatorWarning | null) => {
+    activeWarningRef.current = w;
+    setActiveWarning(w);
+  }, []);
+
   const pollWarnings = useCallback(async () => {
     if (!attemptId) return;
-    // Don't suppress polling even if activeWarning is showing —
-    // time extensions should still be applied in the background.
     try {
-      const res        = await api.get(`/api/assessment/exam-attempts/${attemptId}/check-warnings/`);
-      const warnings   = (res.data?.warnings   || []) as InvigilatorWarning[];
-      const extensions = (res.data?.time_extensions || []) as Array<{ id: number; minutes: number }>;
+      const res = await api.get(`/api/assessment/exam-attempts/${attemptId}/check-warnings/`);
+      const warnings = (res.data?.warnings || []) as InvigilatorWarning[];
 
-      // Show first unacknowledged warning (only if none already showing)
-      if (warnings.length > 0 && !activeWarning) {
-        setActiveWarning(warnings[0]);
+      // Invigilator ended this exam: stop all saving/timers, tell the student, then leave.
+      const termination = warnings.find(w => w.is_termination);
+      if (termination && !submittingRef.current) {
+        submittingRef.current = true;
+        setSubmitting(true);
+        cleanup();
+        showWarning(termination);
+        return;
       }
 
-      // Apply any time extensions granted by the invigilator
+      if (warnings.length > 0 && !activeWarningRef.current) showWarning(warnings[0]);
+
+      // Server is authoritative for time (already includes granted extensions)
+      if (typeof res.data?.remaining_seconds === 'number'
+          && !timeExpiredRef.current && !submittingRef.current) {
+        setServerRemaining(res.data.remaining_seconds);
+      }
+
+      const extensions = (res.data?.time_extensions || []) as Array<{ id: number; minutes: number }>;
       if (extensions.length > 0) {
-        const addedMins = extensions.reduce((s, e) => s + (e.minutes || 0), 0);
-        setExtraSeconds(prev => prev + addedMins * 60);
-        // Acknowledge each extension so it isn't double-counted on the next poll
+        const mins = extensions.reduce((s, e) => s + (e.minutes || 0), 0);
+        setNotice(`Invigilator added ${mins} extra minute${mins !== 1 ? 's' : ''}.`);
+        clearTimeout(noticeTimerRef.current);
+        noticeTimerRef.current = setTimeout(() => setNotice(null), 8000);
         extensions.forEach(ext => {
           api.post(`/api/assessment/exam-attempts/${attemptId}/acknowledge-warning/`, {
             warning_id: ext.id,
@@ -1182,104 +1460,97 @@ function ExamTakingPageInner() {
         });
       }
     } catch { /* fail silently */ }
-  }, [attemptId, activeWarning]);
+  }, [attemptId, cleanup, setServerRemaining, showWarning]);
 
   const acknowledgeWarning = useCallback(async (id: number) => {
+    const wasTermination = !!activeWarningRef.current?.is_termination;
     try {
       await api.post(`/api/assessment/exam-attempts/${attemptId}/acknowledge-warning/`, { warning_id: id });
-      setActiveWarning(null);
-    } catch { setActiveWarning(null); }
-  }, [attemptId]);
+    } catch { /* ignore */ }
+    showWarning(null);
+    if (wasTermination) finishAndLeave(false);
+  }, [attemptId, finishAndLeave, showWarning]);
 
-  // ── Answer handling ────────────────────────────────────────────────────────
-  const handleAnswerChange = useCallback((examQuestionId: number, value: string, isOption = false) => {
-    setAnswers(prev => {
-      const next    = { ...prev };
-      const isEmpty = isOption ? !value : stripHtml(value).length === 0;
-      if (isEmpty) {
-        delete next[examQuestionId];
-      } else {
-        next[examQuestionId] = {
-          exam_question_id: examQuestionId,
-          ...(isOption ? { selected_option: value } : { answer_text: value }),
-        };
-      }
-      return next;
-    });
-  }, []);
-
-  // ── Flush all theory editor HTML before save/submit ────────────────────────
-  const flushEditors = useCallback(() => {
-    document.querySelectorAll('[data-theory-editor]').forEach((el: any) => {
-      const qid  = parseInt(el.dataset.theoryEditor);
-      const html = el.innerHTML || '';
-      if (!isNaN(qid) && html) {
-        setAnswers(prev => {
-          if (prev[qid]?.answer_text === html) return prev;
-          const next = { ...prev };
-          if (stripHtml(html).length === 0) delete next[qid];
-          else next[qid] = { exam_question_id: qid, answer_text: html };
-          return next;
-        });
-      }
-    });
-  }, []);
-
-  // ── Save answers ───────────────────────────────────────────────────────────
-  const saveAnswers = useCallback(async () => {
-    flushEditors();
-    if (Object.keys(answers).length === 0 || loading || submitting) return;
-    setSaving(true);
-    try {
-      localStorage.setItem(`exam_${attemptId}_answers`, JSON.stringify(answers));
-      await api.post(`/api/assessment/exam-attempts/${attemptId}/save-answers/`, {
-        answers: Object.values(answers),
-      });
-      setLastSaved(new Date());
-    } catch { /* answers safe in localStorage */ }
-    finally { setSaving(false); }
-  }, [answers, attemptId, flushEditors, loading, submitting]);
-
-  // ── Submit ─────────────────────────────────────────────────────────────────
+  // ── Submit (manual) ──
   const handleSubmit = useCallback(async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setShowSubmitModal(false);
     setSubmitting(true);
-    flushEditors();
-    await saveAnswers();
+
+    // The final save MUST succeed: submit_attempt() turns every unsaved question into a 0.
+    let saved = false;
+    for (let i = 0; i < 3 && !saved; i++) {
+      saved = await saveNow('all');
+      if (!saved) await sleep(1000 * (i + 1));
+    }
+    if (!saved) {
+      submittingRef.current = false;
+      setSubmitting(false);
+      setErrorModal({
+        show: true,
+        title: 'Could not save your answers',
+        message: 'Check your internet connection and try again. Your answers are safe on this computer and your exam is still open.',
+        onRetry: () => { setErrorModal(p => ({ ...p, show: false })); handleSubmit(); },
+      });
+      return;
+    }
+
     try {
-      await api.post(`/api/assessment/exam-attempts/${attemptId}/submit/`, { auto_submit: false });
-      localStorage.removeItem(`exam_${attemptId}_answers`);
-      localStorage.removeItem(`exam_${attemptId}_questions`);
-      cleanup();
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      router.push(`/assessment/exam/submitted?attempt=${attemptId}`);
+      await api.post(`/api/assessment/exam-attempts/${attemptId}/submit/`, {
+        auto_submit: false,
+        answers: Object.values(getMergedAnswers()),
+      });
+      finishAndLeave(false);
     } catch (err: any) {
+      if (isAlreadySubmitted(err)) { finishAndLeave(false); return; }
+      submittingRef.current = false;
       setSubmitting(false);
       setErrorModal({
         show: true,
         title: 'Submission Failed',
-        message: err?.response?.data?.error || err?.message || 'Failed to submit. Answers saved locally.',
+        message: err?.response?.data?.error || err?.message || 'Failed to submit. Your answers are saved.',
         onRetry: () => { setErrorModal(p => ({ ...p, show: false })); handleSubmit(); },
       });
     }
-  }, [attemptId, cleanup, flushEditors, router, saveAnswers]);
+  }, [attemptId, finishAndLeave, getMergedAnswers, saveNow]);
 
-  const handleAutoSubmit = useCallback(async () => {
-    if (submitting) return;
+  // ── Submit (time up / closed attempt) ──
+  const handleAutoSubmit = useCallback(async (opts?: { skipSave?: boolean }) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
-    flushEditors();
-    await saveAnswers();
-    try {
-      await api.post(`/api/assessment/exam-attempts/${attemptId}/submit/`, { auto_submit: true });
-      localStorage.removeItem(`exam_${attemptId}_answers`);
-      cleanup();
-      router.push(`/assessment/exam/submitted?attempt=${attemptId}&auto=true`);
-    } catch {
-      router.push(`/assessment/exam/submitted?attempt=${attemptId}&auto=true&error=true`);
-    }
-  }, [attemptId, cleanup, flushEditors, router, saveAnswers, submitting]);
+    setClosing(opts?.skipSave
+      ? { title: 'Checking your exam…', text: 'One moment please.' }
+      : { title: "Time's Up!", text: 'Saving your answers and submitting…' });
 
-  // ── Math / Graph insertion ─────────────────────────────────────────────────
+    if (!opts?.skipSave) {
+      // Keep trying for up to ~45 s — a lost final save means zeros.
+      const startedAt = Date.now();
+      while (true) {
+        const ok = await saveNow('all');
+        if (ok || Date.now() - startedAt > 45000) break;
+        await sleep(3000);
+      }
+    }
+
+    for (let i = 0; i < 5; i++) {
+      try {
+        await api.post(`/api/assessment/exam-attempts/${attemptId}/submit/`, {
+          auto_submit: true,
+          ...(opts?.skipSave ? {} : { answers: Object.values(getMergedAnswers()) }),
+        });
+        finishAndLeave(true);
+        return;
+      } catch (err: any) {
+        if (isAlreadySubmitted(err)) { finishAndLeave(true); return; }
+        await sleep(2000);
+      }
+    }
+    finishAndLeave(true, true);
+  }, [attemptId, finishAndLeave, getMergedAnswers, saveNow]);
+
+  // ── Math / Graph insertion ──
   const saveRange = useCallback(() => {
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0) {
@@ -1288,16 +1559,16 @@ function ExamTakingPageInner() {
   }, []);
 
   const insertAtSavedRange = useCallback((html: string) => {
+    const editor = document.querySelector('[data-theory-editor]') as HTMLElement | null;
+    if (!editor) return;
+    editor.focus({ preventScroll: true });
     const sel = window.getSelection();
     if (savedRangeRef.current) {
       sel?.removeAllRanges();
       sel?.addRange(savedRangeRef.current);
     }
     document.execCommand('insertHTML', false, html);
-    const active = document.querySelector('[contenteditable="true"]:focus') as any;
-    if (active) {
-      active.dispatchEvent(new Event('input', { bubbles: true }));
-    }
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
   }, []);
 
   const handleInsertMath = useCallback((latex: string) => {
@@ -1322,95 +1593,148 @@ function ExamTakingPageInner() {
     setShowGraphModal(false);
   }, [insertAtSavedRange]);
 
-  // ── On mount ───────────────────────────────────────────────────────────────
+  // ═══ Effects ═══════════════════════════════════════════════════════════════
+
+  // On mount
   useEffect(() => {
     if (!attemptId) { router.push('/assessment/exam-entry'); return; }
     loadExamData();
-    loadCamera();
     schoolInfoAPI.get().then(setSchoolInfo).catch(() => {});
     requestFullscreen();
     return cleanup;
   }, [attemptId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load KaTeX from CDN if not already bundled
+  // Start the camera only once the exam UI (and its <video>) is mounted
+  useEffect(() => {
+    if (loading || !attemptId || cameraStartedRef.current) return;
+    cameraStartedRef.current = true;
+    loadCamera();
+  }, [loading, attemptId, loadCamera]);
+
+  // KaTeX: self-hosted copy first (public/vendor/katex), CDN only as a fallback
   useEffect(() => {
     if ((window as any).katex) return;
-    const link     = document.createElement('link');
-    link.rel       = 'stylesheet';
-    link.href      = 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css';
-    document.head.appendChild(link);
-    const script   = document.createElement('script');
-    script.src     = 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js';
-    document.head.appendChild(script);
+    const LOCAL = '/vendor/katex/katex.min';
+    const CDN   = 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min';
+    const addCss = (href: string) => {
+      const l = document.createElement('link');
+      l.rel = 'stylesheet'; l.href = href;
+      document.head.appendChild(l);
+    };
+    const addJs = (src: string, onError?: () => void) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onerror = () => { s.remove(); onError?.(); };
+      document.head.appendChild(s);
+    };
+    addCss(`${LOCAL}.css`);
+    addJs(`${LOCAL}.js`, () => { addCss(`${CDN}.css`); addJs(`${CDN}.js`); });
   }, []);
 
-  // Load student face descriptor once image URL is available
+  // Student face descriptor
   useEffect(() => {
-    if (studentImageUrl) loadStudentDescriptor(studentImageUrl);
+    if (studentImageUrl) loadStudentDescriptor(getImageUrl(studentImageUrl) ?? studentImageUrl);
   }, [studentImageUrl, loadStudentDescriptor]);
 
-  // ── Timer — synced with server datetime, respects time extensions ──────────
+  // Timer display — computed from the deadline, so it cannot drift
   useEffect(() => {
-    if (!graceEndDatetime || !startedAt || !durationMinutes || loading) return;
-
-    const compute = () => {
-      const now      = Date.now();
-      const graceEnd = new Date(graceEndDatetime).getTime() + extraSeconds * 1000;
-      const started  = new Date(startedAt).getTime();
-      const personal = Math.min(
-        started + durationMinutes * 60000 + extraSeconds * 1000,
-        graceEnd,
-      );
-      return Math.max(0, Math.floor((personal - now) / 1000));
-    };
-
-    setRemainingSeconds(compute());
+    if (loading || submitting) return;
     const t = setInterval(() => {
-      const r = compute();
-      setRemainingSeconds(r);
-      if (r <= 0) { setTimeExpired(true); clearInterval(t); handleAutoSubmit(); }
+      if (deadlineRef.current === null) return;
+      setRemainingSeconds(Math.max(0, Math.ceil((deadlineRef.current - performance.now()) / 1000)));
     }, 1000);
     return () => clearInterval(t);
-  }, [graceEndDatetime, startedAt, durationMinutes, loading, extraSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading, submitting]);
 
-  // ── Auto-save every 30s ────────────────────────────────────────────────────
+  // Expiry (also handles opening an attempt that is already closed)
+  useEffect(() => {
+    if (loading || questions.length === 0) return;
+    if (deadlineRef.current === null || remainingSeconds > 0) return;
+    if (timeExpiredRef.current || submittingRef.current) return;
+    timeExpiredRef.current = true;
+    handleAutoSubmit({ skipSave: expiredOnLoadRef.current });
+  }, [remainingSeconds, loading, questions.length, handleAutoSubmit]);
+
+  // Autosave — one stable interval
   useEffect(() => {
     if (loading) return;
-    autoSaveRef.current = setInterval(saveAnswers, 30000);
+    autoSaveRef.current = setInterval(autoSave, 20000);
     return () => clearInterval(autoSaveRef.current);
-  }, [saveAnswers, loading]);
+  }, [autoSave, loading]);
 
-  // ── Poll warnings every 5s ─────────────────────────────────────────────────
+  // Poll warnings + server time every 5 s
   useEffect(() => {
     if (loading) return;
     warningPollRef.current = setInterval(pollWarnings, 5000);
     return () => clearInterval(warningPollRef.current);
   }, [pollWarnings, loading]);
 
-  // ── Security: tab switch / window blur / paste / fullscreen ───────────────
+  // Retry proctoring events that failed to send
+  useEffect(() => {
+    if (loading) return;
+    const flush = async () => {
+      if (flushingEventsRef.current || eventQueueRef.current.length === 0) return;
+      flushingEventsRef.current = true;
+      const batch = [...eventQueueRef.current];
+      eventQueueRef.current = [];
+      for (const ev of batch) {
+        try {
+          await api.post(`/api/assessment/exam-attempts/${attemptId}/log-event/`, ev);
+        } catch {
+          eventQueueRef.current.push(ev);
+        }
+      }
+      flushingEventsRef.current = false;
+    };
+    const t = setInterval(flush, 10000);
+    return () => clearInterval(t);
+  }, [attemptId, loading]);
+
+  // Persist locally when the page is hidden/closed (sync, no network needed)
+  useEffect(() => {
+    if (loading || !attemptId) return;
+    const persist = () => {
+      try {
+        localStorage.setItem(`exam_${attemptId}_answers`, JSON.stringify(getMergedAnswers()));
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('pagehide', persist);
+    return () => window.removeEventListener('pagehide', persist);
+  }, [attemptId, loading, getMergedAnswers]);
+
+  // Security: tab switch / blur / right-click / shortcuts / paste / fullscreen
   useEffect(() => {
     if (loading || submitting) return;
+
+    let blurTimerId: ReturnType<typeof setTimeout> | undefined;
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
+        if (blurTimerId) { clearTimeout(blurTimerId); blurTimerId = undefined; }
         setTabSwitchCount(p => { const n = p + 1; logEvent('tab_switch', 'high', { count: n }); return n; });
       }
     };
 
     const handleBlur = () => {
-      setWindowBlurCount(p => { const n = p + 1; logEvent('window_blur', 'medium', { count: n }); return n; });
+      // If the tab becomes hidden right after, it is a tab switch — don't double count
+      if (blurTimerId) clearTimeout(blurTimerId);
+      blurTimerId = setTimeout(() => {
+        if (!document.hidden) {
+          setWindowBlurCount(p => { const n = p + 1; logEvent('window_blur', 'medium', { count: n }); return n; });
+        }
+      }, 200);
     };
 
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
-      logEvent('right_click', 'low', {});
+      logEventThrottled('right_click', 'low', {}, 5000);
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      const isCtrl  = e.ctrlKey || e.metaKey;
-      const target  = e.target as HTMLElement;
+      const isCtrl   = e.ctrlKey || e.metaKey;
+      const target   = e.target as HTMLElement;
       const inEditor = target?.contentEditable === 'true';
       if (
         e.key === 'F12' ||
@@ -1420,24 +1744,21 @@ function ExamTakingPageInner() {
         (isCtrl && e.key === 'p')
       ) {
         e.preventDefault();
-        logEvent('shortcut_attempt', 'medium', { key: e.key });
+        logEventThrottled('shortcut_attempt', 'medium', { key: e.key }, 5000);
       }
     };
 
-    // Block ALL paste — no exceptions
     const handlePaste = (e: ClipboardEvent) => {
       e.preventDefault();
-      logEvent('paste_attempt', 'medium', {});
+      logEventThrottled('paste_attempt', 'medium', {}, 5000);
     };
 
-    // Fullscreen change: only show the "return to fullscreen" banner AFTER
-    // the student has previously entered fullscreen and then exited.
     const handleFullscreenChange = () => {
       const isFull = !!document.fullscreenElement;
       setIsCurrentlyFullscreen(isFull);
       if (isFull) {
         fullscreenEnteredOnceRef.current = true;
-      } else if (fullscreenEnteredOnceRef.current && !submitting) {
+      } else if (fullscreenEnteredOnceRef.current && !submittingRef.current) {
         setFullscreenHasExited(true);
         setFullscreenExits(p => {
           const n = p + 1;
@@ -1456,6 +1777,7 @@ function ExamTakingPageInner() {
     document.addEventListener('fullscreenchange', handleFullscreenChange);
 
     return () => {
+      if (blurTimerId) clearTimeout(blurTimerId);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleBlur);
@@ -1464,16 +1786,16 @@ function ExamTakingPageInner() {
       document.removeEventListener('paste', handlePaste);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, [loading, submitting, logEvent]);
+  }, [loading, submitting, logEvent, logEventThrottled]);
 
-  // ── Set initial tab ────────────────────────────────────────────────────────
+  // Initial tab
   useEffect(() => {
     if (availableTabs.length > 0 && !availableTabs.includes(activeTab)) {
       setActiveTab(availableTabs[0]);
     }
   }, [questions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ═══ Render ════════════════════════════════════════════════════════════════
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -1486,6 +1808,11 @@ function ExamTakingPageInner() {
 
   if (questions.length === 0) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+      <ErrorModal
+        show={errorModal.show} title={errorModal.title} message={errorModal.message}
+        onClose={() => setErrorModal(p => ({ ...p, show: false }))}
+        onRetry={errorModal.onRetry}
+      />
       <div className="text-center max-w-sm">
         <AlertCircle className="h-12 w-12 text-red-400 mx-auto mb-3" />
         <h2 className="text-xl font-bold text-slate-900 mb-2">No Questions Available</h2>
@@ -1511,10 +1838,23 @@ function ExamTakingPageInner() {
     subjective: <FileText className="h-3.5 w-3.5" />,
   };
 
+  const saveStatusText = saveStatus === 'saving'
+    ? 'Saving…'
+    : saveStatus === 'saved' && lastSaved
+    ? `Saved ${lastSaved.toLocaleTimeString()}`
+    : saveStatus === 'error'
+    ? 'Save failed — will retry'
+    : 'Not saved yet';
+
+  const saveStatusColor = saveStatus === 'error'
+    ? 'text-red-500'
+    : saveStatus === 'idle'
+    ? 'text-amber-500'
+    : 'text-slate-400';
+
   return (
     <div className="min-h-screen bg-slate-50 select-none">
 
-      {/* Webcam bottom-right */}
       <WebcamMonitor
         videoRef={videoRef as React.RefObject<HTMLVideoElement>}
         canvasRef={canvasRef as React.RefObject<HTMLCanvasElement>}
@@ -1523,13 +1863,9 @@ function ExamTakingPageInner() {
         detectedFaces={detectedFaces}
       />
 
-      {/* Invigilator warning overlay */}
       <InvigilatorWarningOverlay warning={activeWarning} onAcknowledge={acknowledgeWarning} />
 
-      {/* Math modal */}
       <MathModal open={showMathModal} onInsert={handleInsertMath} onClose={() => setShowMathModal(false)} />
-
-      {/* Graph modal */}
       <GraphModal open={showGraphModal} onInsert={handleInsertGraph} onClose={() => setShowGraphModal(false)} />
 
       <ErrorModal
@@ -1538,8 +1874,13 @@ function ExamTakingPageInner() {
         onRetry={errorModal.onRetry}
       />
 
-      {/* Fullscreen exit nudge — only shown after a confirmed exit, never on initial load */}
-      {showFullscreenBanner && !loading && !submitting && (
+      {notice && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[95] bg-emerald-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow-lg">
+          {notice}
+        </div>
+      )}
+
+      {showFullscreenBanner && !submitting && (
         <div className="fixed top-0 left-0 right-0 z-[90] bg-amber-600 text-white px-4 py-2 flex items-center justify-between gap-3 shadow-lg">
           <span className="text-sm font-semibold flex items-center gap-2">
             <Maximize className="h-4 w-4" />
@@ -1563,8 +1904,6 @@ function ExamTakingPageInner() {
 
         <div className="max-w-6xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between gap-4">
-
-            {/* Left: school + student info */}
             <div className="flex items-center gap-3 min-w-0">
               {schoolInfo?.logo ? (
                 <img src={schoolInfo.logo} alt={schoolInfo.name}
@@ -1584,7 +1923,6 @@ function ExamTakingPageInner() {
                   {studentClass && <span> &middot; {studentClass}{studentSection ? ` ${studentSection}` : ''}</span>}
                 </p>
               </div>
-              {/* Student photo avatar */}
               {studentImageUrl && (
                 <img src={getImageUrl(studentImageUrl) ?? ''} alt="You"
                   className="w-9 h-9 rounded-xl object-cover border-2 border-blue-200 flex-shrink-0 hidden sm:block"
@@ -1593,7 +1931,6 @@ function ExamTakingPageInner() {
               )}
             </div>
 
-            {/* Right: camera, timer, progress, submit */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {cameraEnabled ? (
                 <div className="flex items-center gap-1.5">
@@ -1608,6 +1945,15 @@ function ExamTakingPageInner() {
                 </span>
               ) : (
                 <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+              )}
+
+              {!isCurrentlyFullscreen && (
+                <button
+                  onClick={requestFullscreen}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                  title="Enter fullscreen">
+                  <Maximize className="h-4 w-4" />
+                </button>
               )}
 
               <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-mono font-bold ${timerColor}`}>
@@ -1635,8 +1981,6 @@ function ExamTakingPageInner() {
       {/* ── Main layout ── */}
       <div className="max-w-6xl mx-auto px-4 py-5">
         <div className="flex gap-5">
-
-          {/* ── Question panel ── */}
           <div className="flex-1 min-w-0">
 
             {/* Tab switcher */}
@@ -1660,7 +2004,6 @@ function ExamTakingPageInner() {
             {currentQ ? (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
                 <div className="p-6">
-                  {/* Question header */}
                   <div className="flex items-start gap-4 mb-5">
                     <div className="w-9 h-9 bg-blue-100 text-blue-700 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0">
                       {currentQIdx + 1}
@@ -1670,15 +2013,15 @@ function ExamTakingPageInner() {
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                           currentQ.question_type === 'objective' ? 'bg-blue-100 text-blue-700'
                           : currentQ.question_type === 'theory'  ? 'bg-purple-100 text-purple-700'
-                          : 'bg-indigo-100 text-indigo-700'
-                        }`}>{currentQ.question_type}</span>
+                          : currentQ.question_type === 'subjective' ? 'bg-indigo-100 text-indigo-700'
+                          : 'bg-slate-100 text-slate-700'
+                        }`}>{currentQ.question_type.replace('_', ' ')}</span>
                         <span className="text-xs text-slate-400">{currentQ.max_mark} mark{currentQ.max_mark !== 1 ? 's' : ''}</span>
                       </div>
                       <p className="text-base text-slate-900 leading-relaxed whitespace-pre-wrap">{currentQ.question_text}</p>
                     </div>
                   </div>
 
-                  {/* Diagram */}
                   {currentQ.diagram && (
                     <div className="mb-5 ml-12">
                       <img src={getImageUrl(currentQ.diagram) ?? ''} alt="Diagram"
@@ -1714,8 +2057,8 @@ function ExamTakingPageInner() {
                     </div>
                   )}
 
-                  {/* Theory / Subjective — uncontrolled editor */}
-                  {(currentQ.question_type === 'theory' || currentQ.question_type === 'subjective') && (
+                  {/* Every non-objective question gets the written-answer editor */}
+                  {currentQ.question_type !== 'objective' && (
                     <div className="ml-12">
                       <TheoryEditor
                         key={currentQ.exam_question_id}
@@ -1738,14 +2081,10 @@ function ExamTakingPageInner() {
                     <ChevronLeft className="h-4 w-4" /> Previous
                   </button>
 
-                  <div className="text-xs text-slate-400">
-                    {saving ? (
-                      <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Saving…</span>
-                    ) : lastSaved ? (
-                      <span>Saved {lastSaved.toLocaleTimeString()}</span>
-                    ) : (
-                      <span className="text-amber-500">Not saved yet</span>
-                    )}
+                  <div className={`text-xs ${saveStatusColor} flex items-center gap-1.5`}>
+                    {saveStatus === 'saving' && <Loader2 className="h-3 w-3 animate-spin" />}
+                    {saveStatus === 'error' && <AlertTriangle className="h-3 w-3" />}
+                    <span>{saveStatusText}</span>
                   </div>
 
                   <button onClick={() => setCurrentQIdx(p => Math.min(currentTabQs.length - 1, p + 1))}
@@ -1779,7 +2118,7 @@ function ExamTakingPageInner() {
                         <button key={q.exam_question_id}
                           onClick={() => { setActiveTab(tab); setCurrentQIdx(idx); }}
                           className={`w-full aspect-square rounded text-xs font-bold transition-all ${
-                            isCurrent  ? 'bg-blue-600 text-white shadow-sm scale-110'
+                            isCurrent    ? 'bg-blue-600 text-white shadow-sm scale-110'
                             : isAnswered ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
                             : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                           }`}>
@@ -1791,12 +2130,11 @@ function ExamTakingPageInner() {
                 </div>
               ))}
 
-              {/* Legend */}
               <div className="border-t border-slate-100 pt-3 mt-2 space-y-1.5">
                 {[
-                  { color: 'bg-blue-600',                          label: 'Current' },
+                  { color: 'bg-blue-600',                              label: 'Current' },
                   { color: 'bg-emerald-100 border border-emerald-300', label: `Answered (${answeredCount})` },
-                  { color: 'bg-slate-100 border border-slate-200',    label: `Unanswered (${questions.length - answeredCount})` },
+                  { color: 'bg-slate-100 border border-slate-200',     label: `Unanswered (${questions.length - answeredCount})` },
                 ].map(item => (
                   <div key={item.label} className="flex items-center gap-2">
                     <div className={`w-3 h-3 rounded ${item.color} flex-shrink-0`} />
@@ -1805,20 +2143,20 @@ function ExamTakingPageInner() {
                 ))}
               </div>
 
-              {/* Proctoring alerts */}
-              {(tabSwitchCount > 0 || fullscreenExits > 0 ||
-                (detectedFaces !== null && (detectedFaces > 1 || (detectedFaces === 0 && consecutiveNoFaceRef.current >= 4)))) && (
+              {(tabSwitchCount > 0 || fullscreenExits > 0 || windowBlurCount > 0 ||
+                (detectedFaces !== null && (detectedFaces > 1 || (detectedFaces === 0 && noFaceStreak >= 4)))) && (
                 <div className="border-t border-red-100 pt-3 mt-3">
                   <p className="text-xs font-bold text-red-600 mb-2 flex items-center gap-1">
                     <AlertTriangle className="h-3.5 w-3.5" /> Alerts
                   </p>
                   <div className="space-y-1 text-xs text-red-600">
                     {tabSwitchCount > 0 && <p>Tab switches: {tabSwitchCount}</p>}
+                    {windowBlurCount > 0 && <p>Window focus lost: {windowBlurCount}</p>}
                     {fullscreenExits > 0 && <p>Fullscreen exits: {fullscreenExits}</p>}
                     {detectedFaces !== null && detectedFaces > 1 && (
                       <p className="animate-pulse font-semibold">Multiple faces!</p>
                     )}
-                    {detectedFaces === 0 && cameraEnabled && consecutiveNoFaceRef.current >= 4 && (
+                    {detectedFaces === 0 && cameraEnabled && noFaceStreak >= 4 && (
                       <p>Face not detected</p>
                     )}
                   </div>
@@ -1854,23 +2192,22 @@ function ExamTakingPageInner() {
                 className="flex-1 px-4 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
                 {submitting
                   ? <><Loader2 className="h-4 w-4 animate-spin" />Submitting…</>
-                  : <><Send className="h-4 w-4" />Submit Now</>
-                }
+                  : <><Send className="h-4 w-4" />Submit Now</>}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Time expired overlay ── */}
-      {timeExpired && (
+      {/* ── Time up / closing overlay ── */}
+      {closing && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-center">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Clock className="h-8 w-8 text-red-600" />
             </div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-2">Time&apos;s Up!</h3>
-            <p className="text-slate-500 mb-5 text-sm">Your answers are being submitted automatically.</p>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2">{closing.title}</h3>
+            <p className="text-slate-500 mb-5 text-sm">{closing.text}</p>
             <Loader2 className="h-7 w-7 animate-spin text-blue-600 mx-auto" />
           </div>
         </div>

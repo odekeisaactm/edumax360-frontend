@@ -1203,39 +1203,122 @@ export interface TeacherDashboardResponse {
 // RESULT TRANSFER
 // ============================================================================
 
+export interface GroupMapping {
+  id: number;
+  transfer_config: number;
+  configuration_group: number;
+  configuration_group_name: string;
+  result_field?: number | null;
+  result_field_name?: string | null;
+  result_field_max_mark?: number | null;
+  round_to_nearest_half: boolean;
+  is_exempt: boolean;
+  notes?: string | null;
+  class_count: number;
+  attempt_count: number;
+  created_at: string;
+}
+
+export interface ClassOverride {
+  id: number;
+  transfer_config: number;
+  class_configuration: number;
+  class_name: string;
+  section_name?: string | null;
+  result_field?: number | null;
+  result_field_name?: string | null;
+  round_to_nearest_half: boolean;
+  is_exempt: boolean;
+  notes?: string | null;
+  created_at: string;
+}
+
 export interface ExamResultTransferConfig {
   id: number;
   exam: number;
   exam_name?: string;
-  result_field: number;
-  result_field_name?: string;
-  auto_transfer: boolean;
-  scale_score: boolean;
-  transfer_on_publish: boolean;
+  result_field?: number | null;
+  result_field_name?: string | null;
+  round_to_nearest_half: boolean;
+  is_transferred: boolean;
   last_transfer_date?: string | null;
   students_transferred: number;
+  group_mappings: GroupMapping[];
+  group_count: number;
   created_at: string;
   updated_at: string;
 }
 
-export interface TransferPreviewItem {
-  student: string;
-  subject: string;
-  original_score: number;
-  scaled_score?: number | null;
-  final_score: number;
+export interface GroupSummary {
+  group_id: number;
+  group_name: string;
+  class_names: string[];
+  class_count: number;
+  attempt_count: number;
+  available_fields: Array<{
+    id: number;
+    name: string;
+    max_mark: number;
+    field_type: 'ca' | 'exam';
+  }>;
+  mapping: GroupMapping | null;
 }
 
-export interface TransferPreviewResponse {
-  config: ExamResultTransferConfig;
-  total_students: number;
-  preview: TransferPreviewItem[];
-  note: string;
+export interface GroupsSummaryResponse {
+  exam_id: number;
+  exam_name: string;
+  groups: GroupSummary[];
 }
 
-export interface TransferExecuteResponse {
+export interface GroupMappingInput {
+  configuration_group_id: number;
+  result_field_id?: number | null;
+  round_to_nearest_half?: boolean;
+  is_exempt?: boolean;
+  notes?: string;
+}
+
+export interface SetGroupMappingsResponse {
   success: boolean;
-  students_transferred: number;
+  updated_count: number;
+  errors: string[] | null;
+}
+
+export interface PreviewRow {
+  student_id: number;
+  student_name: string;
+  class: string;
+  group: string;
+  subject: string;
+  raw_score: number;
+  exam_max: number;
+  target_field: string;
+  target_field_max: number;
+  converted_score: number;
+  override_applied: boolean;
+}
+
+export interface PreviewError {
+  student: string;
+  class: string;
+  subject?: string;
+  reason: string;
+}
+
+export interface PreviewResponse {
+  exam_id: number;
+  exam_name: string;
+  total_attempts: number;
+  transferrable: number;
+  exempted: number;
+  errors: PreviewError[];
+  rows: PreviewRow[];
+  can_execute: boolean;
+}
+
+export interface ExecuteTransferResponse {
+  success: boolean;
+  transferred: number;
   transfer_date: string;
 }
 

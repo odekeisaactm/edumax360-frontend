@@ -311,6 +311,12 @@ export interface Allocation {
   amount: string;
 }
 
+export interface ReceiptPeriodSummary {
+  id: number;
+  name: string;
+  order: number;
+}
+
 export interface PaymentReceipt {
   id: number;
   parent?: number | null;
@@ -339,7 +345,11 @@ export interface PaymentReceipt {
   reverted_by?: number | null;
   reverted_at?: string | null;
   reversal_reason?: string | null;
+  session?: number | null;
+  session_display?: string | null;
+  periods_covered?: { id: number; name: string; order: number }[];
   created_at: string;
+
 }
 
 // ==================== ANCILLARY DEBTS & CLEARANCES ====================

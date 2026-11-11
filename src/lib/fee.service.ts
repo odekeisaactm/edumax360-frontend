@@ -828,6 +828,17 @@ export const billingLedgerAPI = {
     return response.data;
   },
 
+  getSessionLedger: async (params: {
+    session_id: number | string;
+    parent_id?: number | string;
+    student_id?: number | string;
+  }): Promise<any> => {
+    const response = await api.get(`${FEE_API_BASE}/ledger/`, {
+      params: { ...params, mode: 'session' }
+    });
+    return response.data;
+  },
+
   bulkAction: async (payload: {
     action: 'send_reminders' | 'send_summaries';
     target_type: 'parent' | 'student';
