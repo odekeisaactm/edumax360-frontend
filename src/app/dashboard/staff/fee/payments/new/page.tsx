@@ -293,7 +293,7 @@ export default function POSCheckoutPage() {
       if (!t.session_id) return;
       if (!map.has(t.session_id)) {
         // Extract "2027/2028" from "1st Term 2027/2028" if possible, or just use the raw label
-        const sessionLabel = t.label.includes(' ') ? t.label.split(' ').pop() : t.label;
+        const sessionLabel = t.label.includes(' • ') ? t.label.split(' • ')[0] : (t.label.includes(' - ') ? t.label.split(' - ')[0] : t.label);
         map.set(t.session_id, { session_id: t.session_id, label: sessionLabel || 'Session', total_owed: 0 });
       }
       map.get(t.session_id)!.total_owed += t.total_owed;
