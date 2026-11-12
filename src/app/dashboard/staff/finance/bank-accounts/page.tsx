@@ -496,7 +496,7 @@ function BankModal({
   showToast: (type: 'success' | 'error', message: string) => void;
 }) {
   const [form, setForm] = useState<SchoolBankDetailFormValues>(
-    editing ? {
+    (editing ? {
       bank_name: editing.bank_name,
       account_number: editing.account_number,
       account_name: editing.account_name,
@@ -506,6 +506,7 @@ function BankModal({
       assigned_cashiers: (editing as any).assigned_cashiers || [],
       opening_balance: editing.opening_balance || '0.00',
       is_active: editing.is_active,
+      paystack_subaccount_code: (editing as any).paystack_subaccount_code || '',
     } : {
       bank_name: '',
       account_number: '',
@@ -516,7 +517,8 @@ function BankModal({
       assigned_cashiers: [],
       opening_balance: '0.00',
       is_active: true,
-    }
+      paystack_subaccount_code: '',
+    }) as SchoolBankDetailFormValues
   );
 
   const [banksList, setBanksList] = useState<BankOption[]>([]);
@@ -661,6 +663,20 @@ function BankModal({
                   <option value="fee_payment">Fee Collections Only</option>
                   <option value="wallet_funding">Wallet Deposits Only</option>
                 </select>
+              </div>
+            )}
+
+            {!isCashBox && form.currency === 'NGN' && (
+              <div>
+                <label className={labelCls}>Paystack Subaccount Code <span className="text-slate-400 normal-case font-normal">(optional — for online payments)</span></label>
+                <input
+                  type="text"
+                  value={(form as any).paystack_subaccount_code || ''}
+                  onChange={e => setForm(prev => ({ ...prev, paystack_subaccount_code: e.target.value } as any))}
+                  placeholder="ACCT_xxxxxxxxxxxxx"
+                  className={`${inputCls} font-mono`}
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Paste the subaccount code from Paystack dashboard. Online payments routed to this bank will settle directly into it.</p>
               </div>
             )}
 

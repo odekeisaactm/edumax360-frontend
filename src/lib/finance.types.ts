@@ -105,6 +105,7 @@ export interface SchoolBankDetail {
   currency: string; // e.g. 'NGN'
   purpose: BankPurpose;
   purpose_display?: string; // from serializer
+  paystack_subaccount_code?: string | null;
   opening_balance: string;
   current_balance: string;
   is_active: boolean;
@@ -119,6 +120,7 @@ export interface SchoolBankDetailFormValues {
   currency: string;
   purpose: BankPurpose;
   account_type: AccountType;
+  paystack_subaccount_code?: string | null;
   assigned_cashiers?: number[];
   opening_balance: string;
   is_active: boolean;
@@ -637,6 +639,8 @@ export interface PaymentGatewayConfig {
   is_active: boolean;
   is_default: boolean;
   webhook_url: string;
+  wallet_funding_settlement_bank?: number | null;
+  fee_payment_settlement_bank?: number | null;
   webhook_secret: string | null; // usually masked
   default_settlement_bank: number | null;
   created_at: string;

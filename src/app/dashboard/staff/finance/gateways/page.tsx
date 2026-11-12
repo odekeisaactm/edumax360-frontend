@@ -180,6 +180,8 @@ interface GatewayFormData {
   secret_key: string;
   webhook_secret: string;
   default_settlement_bank: string | number;
+  wallet_funding_settlement_bank: string | number;
+  fee_payment_settlement_bank: string | number;
 }
 
 function GatewayModal({ editing, isSaving, onSave, onClose, banks }: {
@@ -189,7 +191,10 @@ function GatewayModal({ editing, isSaving, onSave, onClose, banks }: {
 }) {
   const EMPTY: GatewayFormData = {
     name: '', provider: 'paystack', purpose: 'both', is_active: true, is_test_mode: true, is_default: false,
-    public_key: '', secret_key: '', webhook_secret: '', default_settlement_bank: ''
+    public_key: '', secret_key: '', webhook_secret: '',
+    default_settlement_bank: '',
+    wallet_funding_settlement_bank: '',
+    fee_payment_settlement_bank: '',
   };
 
   const [form, setForm] = useState<GatewayFormData>(
@@ -204,6 +209,8 @@ function GatewayModal({ editing, isSaving, onSave, onClose, banks }: {
       secret_key: '',
       webhook_secret: editing.webhook_secret || '',
       default_settlement_bank: editing.default_settlement_bank || '',
+      wallet_funding_settlement_bank: (editing as any).wallet_funding_settlement_bank || '',
+      fee_payment_settlement_bank: (editing as any).fee_payment_settlement_bank || '',
     } : EMPTY
   );
   const [formError, setFormError] = useState<string | null>(null);
@@ -215,10 +222,10 @@ function GatewayModal({ editing, isSaving, onSave, onClose, banks }: {
     if (!form.public_key.trim()) { setFormError('Public API key is required.'); return; }
     if (!editing && !form.secret_key.trim()) { setFormError('Secret API key is mandatory when registering a new gateway.'); return; }
 
-    const payload = { ...form };
-    if (!payload.default_settlement_bank) {
-      (payload as any).default_settlement_bank = null;
-    }
+    const payload = { ...form } as any;
+    if (!payload.default_settlement_bank) payload.default_settlement_bank = null;
+    if (!payload.wallet_funding_settlement_bank) payload.wallet_funding_settlement_bank = null;
+    if (!payload.fee_payment_settlement_bank) payload.fee_payment_settlement_bank = null;
 
     try { await onSave(payload); }
     catch (err) { setFormError(extractError(err)); }
@@ -274,16 +281,36 @@ function GatewayModal({ editing, isSaving, onSave, onClose, banks }: {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 pt-2">
+          {/* Settlement routing: three banks. Default is the fallback; the two
+              specific ones let tuckshop/wallet and fees land in different accounts. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
             <div>
-              <label className={labelCls}>Settlement Bank Account</label>
+              <label className={labelCls}>Default Bank</label>
               <select value={form.default_settlement_bank} onChange={e => setForm(f => ({ ...f, default_settlement_bank: e.target.value }))} className={inputCls}>
-                <option value="">-- No Linked Bank (Tracking Off) --</option>
+                <option value="">-- None --</option>
                 {banks.map(b => (
-                  <option key={b.id} value={b.id}>{b.bank_name} - {b.account_number}</option>
+                  <option key={b.id} value={b.id}>{b.bank_name}</option>
                 ))}
               </select>
-              <p className="text-[10px] text-slate-400 mt-1">Required if Strict Bank Tracking is ON.</p>
+              <p className="text-[10px] text-slate-400 mt-1">Fallback if the two below are unset.</p>
+            </div>
+            <div>
+              <label className={labelCls}>Tuckshop / Wallet Bank</label>
+              <select value={form.wallet_funding_settlement_bank} onChange={e => setForm(f => ({ ...f, wallet_funding_settlement_bank: e.target.value }))} className={inputCls}>
+                <option value="">-- Use Default --</option>
+                {banks.map(b => (
+                  <option key={b.id} value={b.id}>{b.bank_name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>School Fees Bank</label>
+              <select value={form.fee_payment_settlement_bank} onChange={e => setForm(f => ({ ...f, fee_payment_settlement_bank: e.target.value }))} className={inputCls}>
+                <option value="">-- Use Default --</option>
+                {banks.map(b => (
+                  <option key={b.id} value={b.id}>{b.bank_name}</option>
+                ))}
+              </select>
             </div>
           </div>
 
