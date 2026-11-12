@@ -289,7 +289,7 @@ function GatewayModal({ editing, isSaving, onSave, onClose, banks }: {
               <select value={form.default_settlement_bank} onChange={e => setForm(f => ({ ...f, default_settlement_bank: e.target.value }))} className={inputCls}>
                 <option value="">-- None --</option>
                 {banks.map(b => (
-                  <option key={b.id} value={b.id}>{b.bank_name}</option>
+                  <option key={b.id} value={b.id}>{b.bank_name} - {b.account_number}</option>
                 ))}
               </select>
               <p className="text-[10px] text-slate-400 mt-1">Fallback if the two below are unset.</p>
@@ -299,7 +299,7 @@ function GatewayModal({ editing, isSaving, onSave, onClose, banks }: {
               <select value={form.wallet_funding_settlement_bank} onChange={e => setForm(f => ({ ...f, wallet_funding_settlement_bank: e.target.value }))} className={inputCls}>
                 <option value="">-- Use Default --</option>
                 {banks.map(b => (
-                  <option key={b.id} value={b.id}>{b.bank_name}</option>
+                  <option key={b.id} value={b.id}>{b.bank_name} - {b.account_number}</option>
                 ))}
               </select>
             </div>
@@ -308,7 +308,7 @@ function GatewayModal({ editing, isSaving, onSave, onClose, banks }: {
               <select value={form.fee_payment_settlement_bank} onChange={e => setForm(f => ({ ...f, fee_payment_settlement_bank: e.target.value }))} className={inputCls}>
                 <option value="">-- Use Default --</option>
                 {banks.map(b => (
-                  <option key={b.id} value={b.id}>{b.bank_name}</option>
+                  <option key={b.id} value={b.id}>{b.bank_name} - {b.account_number}</option>
                 ))}
               </select>
             </div>
