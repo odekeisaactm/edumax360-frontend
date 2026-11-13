@@ -774,64 +774,37 @@ export const MODULES: ModuleDef[] = [
       },
     ],
   },
-  {
+    {
     key: 'assessment',
-    label: 'Assessment Permissions',
-    description: 'Classes, subjects, timetable, and academic setup',
+    label: 'Assessment Center',
+    description: 'Exams, question banks, marking, and proctoring',
     moduleCode: 'assessment',
     areas: [
       {
-        key: 'academic_settings',
-        label: 'Academic Settings',
-        description: 'Global academic rules and grading configurations',
+        key: 'question_management',
+        label: 'Question Bank Detail Page',
+        description: 'Controls the UI for viewing and managing questions',
         permissions: [
-          { codename: 'view_academicsettingmodel',  label: 'View Settings',   desc: 'Read academic settings' },
-          { codename: 'manage_academic_settings',   label: 'Manage Settings', desc: 'Update academic rules and configurations' },
+          { codename: 'view_questionmodel',   label: 'View Questions',   desc: 'Can view the question bank detail page' },
+          { codename: 'add_questionmodel',    label: 'Add Questions',     desc: 'Can see the Add and Bulk Upload buttons' },
+          { codename: 'change_questionmodel', label: 'Edit Questions',    desc: 'Can see the Edit button on questions' },
+          { codename: 'delete_questionmodel', label: 'Delete Questions',  desc: 'Can see the Delete button on questions' },
         ],
       },
       {
-        key: 'class_management',
-        label: 'Class Management',
-        description: 'Classes, sections, and their configurations',
+        key: 'marking',
+        label: 'Marking Hub',
+        description: 'Access to grade student answers',
         permissions: [
-          { codename: 'view_classmodel', label: 'View Classes',   desc: 'Read classes, sections, and configurations' },
-          { codename: 'manage_classes',  label: 'Manage Classes', desc: 'Create, edit, and delete classes and sections' },
+          { codename: 'change_studentanswermodel', label: 'Grade Student Answers', desc: 'Required for teachers to access the schedule marking list' },
         ],
       },
       {
-        key: 'subject_management',
-        label: 'Subject Management',
-        description: 'Subjects, subject groups, and class assignments',
+        key: 'global_access',
+        label: 'Elevated Access',
+        description: 'Cross-app permissions used by the assessment backend',
         permissions: [
-          { codename: 'view_subjectmodel', label: 'View Subjects',   desc: 'Read subjects and class assignments' },
-          { codename: 'manage_subjects',   label: 'Manage Subjects', desc: 'Create, edit, and delete subjects and assignments' },
-        ],
-      },
-      {
-        key: 'timetable_management',
-        label: 'Timetable',
-        description: 'Class schedules and break times',
-        permissions: [
-          { codename: 'view_timetablemodel', label: 'View Timetable',   desc: 'Read class schedules' },
-          { codename: 'manage_timetable',    label: 'Manage Timetable', desc: 'Create, edit, and delete timetable entries' },
-        ],
-      },
-      {
-        key: 'promotions_management',
-        label: 'Promotions',
-        description: 'Class promotion mappings and student academic history',
-        permissions: [
-          { codename: 'view_promotionmappingmodel', label: 'View Promotions',   desc: 'Read promotion rules and student history' },
-          { codename: 'manage_promotions',          label: 'Manage Promotions', desc: 'Create, edit, and delete promotion mappings' },
-        ],
-      },
-      {
-        key: 'leadership_roles',
-        label: 'Leadership Roles',
-        description: 'Academic leadership positions (e.g., Head Teacher, Principal)',
-        permissions: [
-          { codename: 'view_leadershiprolemodel',  label: 'View Leadership Roles',   desc: 'Read leadership assignments' },
-          { codename: 'manage_leadership_roles',   label: 'Manage Leadership Roles', desc: 'Assign, edit, and remove leadership roles' },
+          { codename: 'can_publish_result', label: 'View All Exams', desc: 'From the Result app. Grants access to all exams, not just assigned ones' },
         ],
       },
     ],
