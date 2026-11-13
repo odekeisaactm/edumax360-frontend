@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useWard } from '@/context/WardContext';
+import { useAuth } from '@/context/AuthContext';
 import {
   Award, ChevronRight, Loader2, Zap, GraduationCap,
   CreditCard, Wallet, UserCircle, Briefcase, Info, BookOpen,
@@ -73,6 +74,7 @@ function StatCard({ title, value, icon: Icon, gradient, linkText, linkHref, dela
 
 export default function ParentDashboard() {
   const { selectedWard, loading: wardLoading, refreshWards } = useWard();
+  const { activeModules } = useAuth(); // Added useAuth hook
   const [mounted, setMounted] = useState(false);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [queries, setQueries] = useState<Query[]>([]);
@@ -122,7 +124,7 @@ export default function ParentDashboard() {
   const wardName = selectedWard.full_name || `${selectedWard.first_name} ${selectedWard.last_name}`;
   const parentName = selectedWard.parent_name || 'Parent';
 
-  // EXACTLY 3 Quick Links
+  // EXACTLY 3 Quick Links, dynamically filtered
   const quickLinks = [
     {
       id: 1,
@@ -131,6 +133,7 @@ export default function ParentDashboard() {
       href: '/dashboard/parent/result',
       icon: Award,
       iconColor: 'text-indigo-600',
+      moduleCode: 'result', // Added module code
     },
     {
       id: 2,
@@ -139,16 +142,24 @@ export default function ParentDashboard() {
       href: '/dashboard/parent/fees',
       icon: Receipt,
       iconColor: 'text-blue-600',
+      moduleCode: 'fee',
     },
     {
       id: 3,
       name: 'Make Payment',
       description: 'Upload payment proof or fund wallet.',
-      href: '/dashboard/parent/fees/upload',
+      href: '/dashboard/parent/fees/checkout', // Fixed 404 link
       icon: CreditCard,
       iconColor: 'text-emerald-600',
+      moduleCode: 'fee',
     }
-  ];
+  ].filter(link => {
+    // If there is a moduleCode, check if the module is active. Otherwise, show it.
+    if (link.moduleCode) {
+      return activeModules.some(m => m.code === link.moduleCode);
+    }
+    return true;
+  });
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-10">
