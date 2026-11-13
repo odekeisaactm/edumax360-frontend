@@ -375,7 +375,7 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               href: '/dashboard/staff/assessment/devices',
               icon: <Smartphone className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/assessment/devices'),
-              requiredPermissions: ['assessment_center.view_devicemodel'],
+              requiredPermissions: ['assessment_center.view_authorizeddevicemodel'],
             },
             {
               name: 'Settings',
