@@ -241,23 +241,51 @@ function ParentCheckoutContent() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [bankData, gatewaysData, posTermsRes] = await Promise.all([
+        const [bankData, gatewaysData, posTermsRes, curSessRaw, curPerRes] = await Promise.all([
           feeAPI.getBankAccounts({ is_active: true, account_type: 'bank' }).catch(() => []),
           gatewayAPI.list().catch(() => []),
-          feeAPI.getPosTerms({ parent_id: user?.parent_profile?.parent_id || user?.parent_id }).catch(() => ({ terms: [] }))
+          feeAPI.getPosTerms({ parent_id: user?.parent_profile?.parent_id || user?.parent_id }).catch(() => ({ terms: [] })),
+          academicCalendarAPI.getCurrentSession().catch(() => null),
+          api.get('/api/school/session-periods/current/').catch(() => null),
         ]);
 
         const filteredBanks = Array.isArray(bankData) ? bankData.filter((b: any) => b.purpose === 'fee_payment' || b.purpose === 'both') : [];
         setBanks(filteredBanks);
         setHasActiveGateway(Array.isArray(gatewaysData) && gatewaysData.some((g: any) => g.is_active));
 
+        // Resolve the school's current academic session + period so the checkout
+        // opens on today's term by default — same approach as the POS checkout page.
+        const curSess = curSessRaw?.data?.data || curSessRaw?.data || curSessRaw;
+        const curPer = curPerRes?.data?.data || curPerRes?.data;
+        const currentSessionId: number | null = curSess?.id ?? null;
+        const currentPeriodId: number | null = curPer?.id ?? null;
+
         const terms: TermOption[] = posTermsRes?.terms || [];
         setTermsWithDebt(terms);
 
         if (terms.length > 0) {
-          // Default to current session/term if available
-          const currentMatch = terms.find(t => t.period_id === Number(urlPeriod)) || terms[0];
-          setActiveTerm(currentMatch);
+          // Default term priority:
+          //   1. URL explicitly names both session AND period → honour it.
+          //   2. URL names just the period → honour it (session ignored).
+          //   3. Otherwise → the school's current session+period.
+          //   4. Otherwise → first term in the list (legacy behaviour).
+          let match: TermOption | undefined;
+
+          if (urlSession && urlPeriod) {
+            match = terms.find(
+              t => String(t.session_id) === String(urlSession) && String(t.period_id) === String(urlPeriod)
+            );
+          }
+          if (!match && urlPeriod) {
+            match = terms.find(t => String(t.period_id) === String(urlPeriod));
+          }
+          if (!match && currentSessionId != null && currentPeriodId != null) {
+            match = terms.find(
+              t => String(t.session_id) === String(currentSessionId) && String(t.period_id) === String(currentPeriodId)
+            );
+          }
+
+          setActiveTerm(match || terms[0]);
         }
       } catch (err) {
         showToast('error', 'Failed to initialize system data.');
@@ -266,7 +294,7 @@ function ParentCheckoutContent() {
       }
     };
     if (user) init();
-  }, [user, urlPeriod]);
+  }, [user, urlPeriod, urlSession]);
 
   // ─── Derive Sessions for Session Mode ───
   const sessionsWithDebt = useMemo(() => {
