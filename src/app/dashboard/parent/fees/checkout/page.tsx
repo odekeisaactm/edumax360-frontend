@@ -3,11 +3,11 @@
 import React, { useState, useEffect, useCallback, Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-// Note: financeAPI is removed, we only need feeAPI and academicCalendarAPI
 import api, { feeAPI, academicCalendarAPI, gatewayAPI, onlinePaymentAPI } from '@/lib/api';
 import {
   ArrowLeft, Loader2, Check, AlertCircle, Upload, Wallet, X,
-  Building2, UserCircle, Eye, AlertTriangle, Info, UserCheck, Percent, HelpCircle, Globe
+  Building2, UserCircle, Eye, AlertTriangle, Info, UserCheck, Percent, HelpCircle, Globe,
+  Calendar
 } from 'lucide-react';
 
 declare global {
@@ -63,7 +63,7 @@ function extractError(err: any): string {
     if (d.detail) return String(d.detail);
     if (d.message) return String(d.message);
     if (d.non_field_errors) return (d.non_field_errors as string[]).join(' ');
-    return JSON.stringify(d); // Shows specific field errors like {"bank_account_id":["This field is required."]}
+    return JSON.stringify(d);
   }
   return err?.message || 'Checkout failed. Please try again.';
 }
@@ -103,14 +103,20 @@ interface CartGroup {
   items: CartItem[];
 }
 
+interface TermOption {
+  session_id: number | null;
+  period_id: number | null;
+  label: string;
+  total_owed: number;
+}
+
 // ─── Help content ──────────────────────────────────────────────────────────
 const HELP_STEPS: [string, string][] = [
-  ['1. Choose what to pay', 'Every fee is ticked by default. Untick anything you don\u2019t want to pay right now.'],
-  ['2. Type the amount you deposited', 'Enter the total you sent to the bank at the bottom of the page. It automatically fills your fees in order, starting with the first one.'],
-  ['3. Or pay a specific fee', 'Want to control exactly how much goes to one fee? Type an amount directly into that fee\u2019s box \u2014 everything else still fills automatically around it.'],
-  ['4. Use wallet credit (optional)', 'If a ward already has money in their wallet, tick it to use that instead of a new deposit.'],
-  ['5. Add your proof', 'Select the bank account you paid into and upload your receipt or screenshot.'],
-  ['6. Preview, then submit', 'Tap "Preview Allocation" to check everything looks right, then "Submit Proof". The school will confirm it shortly after.'],
+  ['1. Choose Term or Full Session', 'You can pay for a specific term, or toggle to "Full Session" to pay for the entire academic year at once.'],
+  ['2. Type the amount you deposited', 'Enter the total you sent to the bank. It automatically fills your fees in order (oldest term first if you selected Full Session).'],
+  ['3. Use wallet credit (optional)', 'If a ward already has money in their wallet, tick it to use that instead of a new deposit.'],
+  ['4. Add your proof', 'Select the bank account you paid into and upload your receipt or screenshot.'],
+  ['5. Preview, then submit', 'Tap "Preview Allocation" to check everything looks right, then "Submit Proof". The school will confirm it shortly after.'],
 ];
 
 function HelpModal({ onClose }: { onClose: () => void }) {
@@ -161,15 +167,17 @@ function ParentCheckoutContent() {
 
   const [loading, setLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
-  const [sessions, setSessions] = useState<any[]>([]);
-  const [periods, setPeriods] = useState<any[]>([]);
   const [banks, setBanks] = useState<any[]>([]);
+  const [periodTypeName, setPeriodTypeName] = useState<string>('Terms');
 
-  const [filterSessionId, setFilterSessionId] = useState<string>(urlSession || '');
-  const [filterPeriodId, setFilterPeriodId] = useState<string>(urlPeriod || '');
+  const [viewMode, setViewMode] = useState<'single' | 'session'>('single');
+  const [termsWithDebt, setTermsWithDebt] = useState<TermOption[]>([]);
+  const [activeTerm, setActiveTerm] = useState<TermOption | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
 
   const [rawParentData, setRawParentData] = useState<any>(null);
   const [cartGroups, setCartGroups] = useState<CartGroup[]>([]);
+  const [sessionLedgerData, setSessionLedgerData] = useState<any[]>([]);
 
   // ─── State: Payment Inputs ───
   const [tenderedAmount, setTenderedAmount] = useState<string>('');
@@ -233,34 +241,23 @@ function ParentCheckoutContent() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [sessData, curSessRaw, banksData, gatewaysData] = await Promise.all([
-          academicCalendarAPI.listSessions(),
-          academicCalendarAPI.getCurrentSession().catch(() => null),
-          // Using our safe new public banks endpoint!
+        const [bankData, gatewaysData, posTermsRes] = await Promise.all([
           feeAPI.getBankAccounts({ is_active: true, account_type: 'bank' }).catch(() => []),
-          gatewayAPI.list().catch(() => [])
+          gatewayAPI.list().catch(() => []),
+          feeAPI.getPosTerms({ parent_id: user?.parent_profile?.parent_id || user?.parent_id }).catch(() => ({ terms: [] }))
         ]);
 
-        setSessions(Array.isArray(sessData) ? sessData : []);
-        const filteredBanks = Array.isArray(banksData) ? banksData.filter((b: any) => b.purpose === 'fee_payment' || b.purpose === 'both') : [];
+        const filteredBanks = Array.isArray(bankData) ? bankData.filter((b: any) => b.purpose === 'fee_payment' || b.purpose === 'both') : [];
         setBanks(filteredBanks);
         setHasActiveGateway(Array.isArray(gatewaysData) && gatewaysData.some((g: any) => g.is_active));
 
-        const curSess = curSessRaw?.data?.data || curSessRaw?.data || curSessRaw;
-        const targetSessionId = urlSession || (curSess?.id ? curSess.id.toString() : (sessData[0]?.id?.toString() || ''));
+        const terms: TermOption[] = posTermsRes?.terms || [];
+        setTermsWithDebt(terms);
 
-        if (targetSessionId) {
-          setFilterSessionId(targetSessionId);
-          const perData = await academicCalendarAPI.listSessionPeriods({ session_id: Number(targetSessionId) });
-          setPeriods(perData);
-
-          if (urlPeriod) {
-            setFilterPeriodId(urlPeriod);
-          } else {
-            const currentP = perData.find((p: any) => p.is_current);
-            if (currentP) setFilterPeriodId(currentP.id.toString());
-            else if (perData.length > 0) setFilterPeriodId(perData[0].id.toString());
-          }
+        if (terms.length > 0) {
+          // Default to current session/term if available
+          const currentMatch = terms.find(t => t.period_id === Number(urlPeriod)) || terms[0];
+          setActiveTerm(currentMatch);
         }
       } catch (err) {
         showToast('error', 'Failed to initialize system data.');
@@ -268,28 +265,33 @@ function ParentCheckoutContent() {
         setLoading(false);
       }
     };
-    init();
-  }, [urlSession, urlPeriod]);
+    if (user) init();
+  }, [user, urlPeriod]);
 
-  // Update periods list when session changes
+  // ─── Derive Sessions for Session Mode ───
+  const sessionsWithDebt = useMemo(() => {
+    const map = new Map<number, { session_id: number; label: string; total_owed: number }>();
+    termsWithDebt.forEach(t => {
+      if (!t.session_id) return;
+      if (!map.has(t.session_id)) {
+        const sessionLabel = t.label.includes(' • ') ? t.label.split(' • ')[0] : (t.label.includes(' - ') ? t.label.split(' - ')[0] : t.label);
+        map.set(t.session_id, { session_id: t.session_id, label: sessionLabel || 'Session', total_owed: 0 });
+      }
+      map.get(t.session_id)!.total_owed += t.total_owed;
+    });
+    return Array.from(map.values()).sort((a, b) => b.session_id - a.session_id);
+  }, [termsWithDebt]);
+
   useEffect(() => {
-    if (!loading && filterSessionId) {
-      academicCalendarAPI.listSessionPeriods({ session_id: Number(filterSessionId) })
-        .then(res => {
-          setPeriods(res);
-          if (res.length > 0 && !res.find((p: any) => p.id.toString() === filterPeriodId)) {
-            setFilterPeriodId(res[0].id.toString());
-          }
-        });
+    if (viewMode === 'session' && sessionsWithDebt.length > 0) {
+      if (!activeSessionId) {
+        setActiveSessionId(sessionsWithDebt[0].session_id);
+      }
     }
-  }, [filterSessionId, loading]);
+  }, [viewMode, sessionsWithDebt, activeSessionId]);
 
-  // ─── Fetch Ledger ───
-  const fetchLedger = useCallback(async () => {
-    if (!filterSessionId || !filterPeriodId) return;
-    setDataLoading(true);
-    setCartGroups([]);
-    setRawParentData(null);
+  // ─── Reset state when mode or term changes ───
+  useEffect(() => {
     setTenderedAmount('');
     setTenderedTouched(false);
     setManualOverrides({});
@@ -297,85 +299,127 @@ function ParentCheckoutContent() {
     setOverpaymentTargetId(null);
     setSplitPercentages({});
     setAttemptedSubmit(false);
+    setCartGroups([]);
+    setSessionLedgerData([]);
+    setRawParentData(null);
+  }, [viewMode, activeTerm, activeSessionId]);
 
-    try {
-      const res = await feeAPI.getBillingLedger({
-        session_id: filterSessionId,
-        period_id: filterPeriodId,
-        mode: 'parent'
-      });
-      const parentData = res.results?.[0] || res?.[0] || res;
-      if (!parentData) {
-        setRawParentData(null);
-        return;
-      }
+  // ─── Fetch Ledger (Single Term) ───
+  useEffect(() => {
+    if (viewMode !== 'single' || !activeTerm || !user) return;
 
-      setRawParentData(parentData);
-      const groups: CartGroup[] = [];
+    const fetchTermLedger = async () => {
+      setDataLoading(true);
+      try {
+        const res = await feeAPI.getBillingLedger({
+          session_id: activeTerm.session_id,
+          period_id: activeTerm.period_id,
+          mode: 'parent'
+        });
+        const parentData = res.results?.[0] || res?.[0] || res;
+        if (!parentData) return;
 
-      (parentData.students || []).forEach((stData: any) => {
-        const items: CartItem[] = [];
-        if (stData.invoice) {
-          (stData.invoice.items || []).forEach((line: any) => {
+        setRawParentData(parentData);
+        const groups: CartGroup[] = [];
+
+        (parentData.students || []).forEach((stData: any) => {
+          const items: CartItem[] = [];
+          if (stData.invoice) {
+            (stData.invoice.items || []).forEach((line: any) => {
+              const bal = parseFloat(line.balance || '0');
+              if (bal > 0) {
+                items.push({
+                  uid: `invoice_${line.id}`, targetType: 'invoice', targetId: line.id,
+                  description: cleanFeeDescription(line.description), balance: bal, allocated: '', included: true
+                });
+              }
+            });
+          }
+          if (stData.other_payments) {
+            stData.other_payments.forEach((op: any) => {
+              const bal = parseFloat(op.balance || '0');
+              if (bal > 0) {
+                items.push({
+                  uid: `ancillary_debt_${op.id}`, targetType: 'ancillary_debt', targetId: op.id,
+                  description: `${cleanFeeDescription(op.description)} (${smartTitleCase(op.category_display || '')})`, balance: bal, allocated: '', included: true
+                });
+              }
+            });
+          }
+          if (items.length > 0) {
+            const st = stData.student || {};
+            const name = toTitleCase(st.full_name || stData.__str__ || 'Student');
+            const classInfo = [st.current_class_name, st.current_class_section_name].filter(Boolean).join(' ');
+            const groupMeta = [st.registration_number, classInfo].filter(Boolean).join(' • ');
+            groups.push({ groupId: `stu_${stData.student_id || stData.id}`, groupName: name, groupMeta, isFamily: false, items });
+          }
+        });
+
+        if (parentData.family_invoice) {
+          const items: CartItem[] = [];
+          (parentData.family_invoice.items || []).forEach((line: any) => {
             const bal = parseFloat(line.balance || '0');
             if (bal > 0) {
               items.push({
-                uid: `invoice_${line.id}`, targetType: 'invoice', targetId: line.id,
+                uid: `family_invoice_${line.id}`, targetType: 'family_invoice', targetId: line.id,
                 description: cleanFeeDescription(line.description), balance: bal, allocated: '', included: true
               });
             }
           });
-        }
-        if (stData.other_payments) {
-          stData.other_payments.forEach((op: any) => {
-            const bal = parseFloat(op.balance || '0');
-            if (bal > 0) {
-              items.push({
-                uid: `ancillary_debt_${op.id}`, targetType: 'ancillary_debt', targetId: op.id,
-                description: `${cleanFeeDescription(op.description)} (${smartTitleCase(op.category_display || '')})`, balance: bal, allocated: '', included: true
-              });
-            }
-          });
-        }
-        if (items.length > 0) {
-          const st = stData.student || {};
-          const name = toTitleCase(st.full_name || stData.__str__ || 'Student');
-          const classInfo = [st.current_class_name, st.current_class_section_name].filter(Boolean).join(' ');
-          const groupMeta = [st.registration_number, classInfo].filter(Boolean).join(' • ');
-          groups.push({ groupId: `stu_${stData.student_id || stData.id}`, groupName: name, groupMeta, isFamily: false, items });
-        }
-      });
-
-      if (parentData.family_invoice) {
-        const items: CartItem[] = [];
-        (parentData.family_invoice.items || []).forEach((line: any) => {
-          const bal = parseFloat(line.balance || '0');
-          if (bal > 0) {
-            items.push({
-              uid: `family_invoice_${line.id}`, targetType: 'family_invoice', targetId: line.id,
-              description: cleanFeeDescription(line.description), balance: bal, allocated: '', included: true
-            });
+          if (items.length > 0) {
+            groups.push({ groupId: 'family_shared', groupName: 'Family Shared Fees', isFamily: true, items });
           }
-        });
-        if (items.length > 0) {
-          groups.push({ groupId: 'family_shared', groupName: 'Family Shared Fees', isFamily: true, items });
         }
+
+        setCartGroups(groups);
+      } catch (err: any) {
+        showToast('error', 'Failed to load line items for this term.');
+      } finally {
+        setDataLoading(false);
       }
+    };
 
-      setCartGroups(groups);
-    } catch (err: any) {
-      showToast('error', 'Failed to load line items for this term.');
-    } finally {
-      setDataLoading(false);
-    }
-  }, [filterSessionId, filterPeriodId]);
+    fetchTermLedger();
+  }, [viewMode, activeTerm, user]);
 
+  // ─── Fetch Ledger (Full Session) ───
   useEffect(() => {
-    fetchLedger();
-  }, [fetchLedger]);
+    if (viewMode !== 'session' || !activeSessionId || !user) return;
+
+    const fetchSessionLedger = async () => {
+      setDataLoading(true);
+      try {
+        const res = await feeAPI.getSessionLedger({
+          session_id: activeSessionId,
+          parent_id: user?.parent_profile?.parent_id || user?.parent_id
+        });
+        setSessionLedgerData(res.results || []);
+      } catch (err: any) {
+        showToast('error', 'Failed to load session line items.');
+      } finally {
+        setDataLoading(false);
+      }
+    };
+
+    fetchSessionLedger();
+  }, [viewMode, activeSessionId, user]);
 
   // ─── Ward Info & Wallet Math ───
-  const wards = useMemo(() => rawParentData?.students || [], [rawParentData]);
+  const wards = useMemo(() => {
+    if (viewMode === 'single') return rawParentData?.students || [];
+    const uniqueStudents = new Map();
+    sessionLedgerData.forEach(term => {
+      term.students?.forEach((st: any) => {
+        if (!uniqueStudents.has(st.student_id)) {
+          uniqueStudents.set(st.student_id, {
+            student: { id: st.student_id, full_name: st.name, fee_balance: '0' }
+          });
+        }
+      });
+    });
+    return Array.from(uniqueStudents.values());
+  }, [rawParentData, sessionLedgerData, viewMode]);
+
   const eligibleWalletWards = useMemo(() => wards.filter((w: any) => Number(w.student?.fee_balance || 0) > 0), [wards]);
 
   const walletContributionKobo = useMemo(
@@ -385,7 +429,7 @@ function ParentCheckoutContent() {
   const tenderedKobo = toKobo(tenderedAmount);
   const totalAvailableKobo = tenderedKobo + walletContributionKobo;
 
-  // ─── Manual Sum & Waterfall Allocation ───
+  // ─── Manual Sum & Waterfall Allocation (Single Term) ───
   const manualSumKobo = useMemo(() => {
     let s = 0;
     cartGroups.forEach(g => g.items.forEach(it => {
@@ -415,11 +459,60 @@ function ParentCheckoutContent() {
     }));
   }, [cartGroups, manualOverrides, totalAvailableKobo, manualSumKobo]);
 
+  // ─── Waterfall (Full Session) ───
+  const sortedSessionData = useMemo(() => {
+    return [...sessionLedgerData].sort((a, b) => {
+      const orderA = a.period_order || 0;
+      const orderB = b.period_order || 0;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.period_id - b.period_id;
+    });
+  }, [sessionLedgerData]);
+
+  const sessionTermAllocations = useMemo(() => {
+    if (viewMode !== 'session') return {};
+    const map: Record<number, number> = {};
+    let rem = totalAvailableKobo;
+    sortedSessionData.forEach(term => {
+      const dueKobo = toKobo(term.total_due);
+      const allocKobo = Math.min(rem, dueKobo);
+      map[term.period_id] = allocKobo;
+      rem -= allocKobo;
+    });
+    return map;
+  }, [sortedSessionData, totalAvailableKobo, viewMode]);
+
+  const sessionFlatAllocations = useMemo(() => {
+    if (viewMode !== 'session') return [];
+    const allocs: any[] = [];
+    sortedSessionData.forEach(term => {
+      let termRem = sessionTermAllocations[term.period_id] || 0;
+      if (termRem <= 0) return;
+
+      const processItems = (items: any[]) => {
+        items.forEach(item => {
+          if (termRem <= 0) return;
+          const balKobo = toKobo(item.balance);
+          const payKobo = Math.min(termRem, balKobo);
+          if (payKobo > 0) {
+            allocs.push({ target_type: item.target_type, target_id: item.target_id, amount: String(fromKobo(payKobo)) });
+            termRem -= payKobo;
+          }
+        });
+      };
+
+      term.students?.forEach((st: any) => processItems(st.items || []));
+      if (term.family_invoice?.items) processItems(term.family_invoice.items);
+      term.students?.forEach((st: any) => processItems(st.ancillary || []));
+    });
+    return allocs;
+  }, [sortedSessionData, sessionTermAllocations, viewMode]);
+
   // Auto-sync tendered amount if the parent only touches the item boxes directly
   useEffect(() => {
-    if (tenderedTouched) return;
+    if (tenderedTouched || viewMode === 'session') return;
     setTenderedAmount(manualSumKobo > 0 ? String(fromKobo(manualSumKobo)) : '');
-  }, [manualSumKobo, tenderedTouched]);
+  }, [manualSumKobo, tenderedTouched, viewMode]);
 
   // ─── Input Handlers ───
   const handleTenderedChange = (val: string) => {
@@ -478,7 +571,14 @@ function ParentCheckoutContent() {
     [cartGroups]
   );
 
-  const overpaymentKobo = Math.max(0, totalAvailableKobo - totalAllocatedKobo);
+  const overpaymentKobo = useMemo(() => {
+    if (viewMode === 'session') {
+      const totalAllocated = Object.values(sessionTermAllocations).reduce((s, v) => s + v, 0);
+      return Math.max(0, totalAvailableKobo - totalAllocated);
+    }
+    return Math.max(0, totalAvailableKobo - totalAllocatedKobo);
+  }, [viewMode, sessionTermAllocations, totalAvailableKobo, totalAllocatedKobo]);
+
   const manualCount = Object.keys(manualOverrides).length;
 
   // ─── Overpayment Logic ───
@@ -562,19 +662,21 @@ function ParentCheckoutContent() {
   // ─── Pre-submit Warnings ───
   const getPreSubmitWarnings = (): string[] => {
     const warnings: string[] = [];
-    wards.forEach((w: any) => {
-      const sid = w.student.id;
-      if (walletContributions[sid] !== undefined) return;
-      const balKobo = toKobo(w.student?.fee_balance || 0);
-      if (balKobo <= 0) return;
-      const group = finalGroups.find(g => g.groupId === `stu_${sid}`);
-      const wardAllocKobo = group ? group.items.reduce((s, it) => s + toKobo(it.allocated || 0), 0) : 0;
-      if (wardAllocKobo > 0 && balKobo >= wardAllocKobo && tenderedKobo > 0) {
-        warnings.push(
-          `${toTitleCase(w.student.full_name)} has ${formatCurrency(fromKobo(balKobo))} in their wallet — enough to cover the ${formatCurrency(fromKobo(wardAllocKobo))} currently being charged. Consider ticking their wallet instead. Continue anyway?`
-        );
-      }
-    });
+    if (viewMode === 'single') {
+      wards.forEach((w: any) => {
+        const sid = w.student.id;
+        if (walletContributions[sid] !== undefined) return;
+        const balKobo = toKobo(w.student?.fee_balance || 0);
+        if (balKobo <= 0) return;
+        const group = finalGroups.find(g => g.groupId === `stu_${sid}`);
+        const wardAllocKobo = group ? group.items.reduce((s, it) => s + toKobo(it.allocated || 0), 0) : 0;
+        if (wardAllocKobo > 0 && balKobo >= wardAllocKobo && tenderedKobo > 0) {
+          warnings.push(
+            `${toTitleCase(w.student.full_name)} has ${formatCurrency(fromKobo(balKobo))} in their wallet — enough to cover the ${formatCurrency(fromKobo(wardAllocKobo))} currently being charged. Consider ticking their wallet instead. Continue anyway?`
+          );
+        }
+      });
+    }
     return warnings;
   };
 
@@ -674,13 +776,18 @@ function ParentCheckoutContent() {
 
     try {
       const debtAllocations: any[] = [];
-      finalGroups.forEach(g => {
-        g.items.forEach(a => {
-          if (parseFloat(a.allocated) > 0) {
-            debtAllocations.push({ target_type: a.targetType, target_id: a.targetId, amount: a.allocated });
-          }
+      if (viewMode === 'session') {
+        debtAllocations.push(...sessionFlatAllocations);
+      } else {
+        finalGroups.forEach(g => {
+          g.items.forEach(a => {
+            if (parseFloat(a.allocated) > 0) {
+              debtAllocations.push({ target_type: a.targetType, target_id: a.targetId, amount: a.allocated });
+            }
+          });
         });
-      });
+      }
+
       const overpayAllocPayload = overpaymentAllocations
         .filter(o => o.amountKobo > 0)
         .map(o => ({ target_type: 'wallet_funding', target_id: o.studentId, amount: String(fromKobo(o.amountKobo)) }));
@@ -802,14 +909,28 @@ function ParentCheckoutContent() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {finalGroups.flatMap(g => g.items).filter(i => parseFloat(i.allocated) > 0).map(item => (
-                    <tr key={item.uid}>
-                      <td className="py-3 font-bold text-slate-800 truncate max-w-[200px]">{item.description}</td>
-                      <td className="py-3 text-right font-medium text-slate-500">{formatCurrency(item.balance)}</td>
-                      <td className="py-3 text-right font-black text-emerald-600">+{formatCurrency(Number(item.allocated))}</td>
-                      <td className="py-3 text-right font-black text-indigo-600">{formatCurrency(item.balance - Number(item.allocated))}</td>
-                    </tr>
-                  ))}
+                  {viewMode === 'session' ? (
+                    sortedSessionData.filter(term => sessionTermAllocations[term.period_id] > 0).map(term => {
+                      const alloc = sessionTermAllocations[term.period_id] || 0;
+                      return (
+                        <tr key={term.period_id}>
+                          <td className="py-3 font-bold text-slate-800">{term.period_name}</td>
+                          <td className="py-3 text-right font-medium text-slate-500">{formatCurrency(term.total_due)}</td>
+                          <td className="py-3 text-right font-black text-emerald-600">+{formatCurrency(fromKobo(alloc))}</td>
+                          <td className="py-3 text-right font-black text-indigo-600">{formatCurrency(fromKobo(toKobo(term.total_due) - alloc))}</td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    finalGroups.flatMap(g => g.items).filter(i => parseFloat(i.allocated) > 0).map(item => (
+                      <tr key={item.uid}>
+                        <td className="py-3 font-bold text-slate-800 truncate max-w-[200px]">{item.description}</td>
+                        <td className="py-3 text-right font-medium text-slate-500">{formatCurrency(item.balance)}</td>
+                        <td className="py-3 text-right font-black text-emerald-600">+{formatCurrency(Number(item.allocated))}</td>
+                        <td className="py-3 text-right font-black text-indigo-600">{formatCurrency(item.balance - Number(item.allocated))}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
 
@@ -883,330 +1004,414 @@ function ParentCheckoutContent() {
         </button>
       </div>
 
-      {/* ── Term Selector ── */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3 justify-between items-center">
-        <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-          <div className="w-full sm:w-48">
-            <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Academic Session</label>
-            <select value={filterSessionId} onChange={e => setFilterSessionId(e.target.value)} className="w-full px-3 py-2.5 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 outline-none">
-              {sessions.map(s => <option key={s.id} value={s.id}>{s.start_year}/{s.end_year}</option>)}
-            </select>
-          </div>
-          <div className="w-full sm:w-48">
-            <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Term / Period</label>
-            <select value={filterPeriodId} onChange={e => setFilterPeriodId(e.target.value)} disabled={!filterSessionId} className="w-full px-3 py-2.5 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 outline-none">
-              {periods.map(p => <option key={p.id} value={p.id}>{p.name || p.period?.name}</option>)}
-            </select>
-          </div>
+      {/* ── Mode Toggle & Term Selector ── */}
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 w-fit shrink-0">
+          <button
+            onClick={() => setViewMode('single')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === 'single' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Single Term
+          </button>
+          <button
+            onClick={() => setViewMode('session')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === 'session' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Full Session
+          </button>
         </div>
       </div>
 
       {/* ── Data Views ── */}
       {dataLoading ? (
         <div className="py-20 flex justify-center bg-white rounded-2xl border border-slate-200"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>
-      ) : cartGroups.length === 0 ? (
+      ) : (viewMode === 'single' && cartGroups.length === 0) || (viewMode === 'session' && sessionLedgerData.length === 0) ? (
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3">
           <Check className="w-12 h-12 text-emerald-500 mx-auto bg-emerald-50 p-2 rounded-full" />
           <h3 className="font-black text-slate-800 text-base">All Caught Up!</h3>
-          <p className="text-xs text-slate-400">No outstanding balance for this selected term.</p>
+          <p className="text-xs text-slate-400">No outstanding balance for this selection.</p>
           <button onClick={() => router.push('/dashboard/parent/fees')} className="px-5 py-2.5 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-sm mt-2">
             Return to Ledger
           </button>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
 
-          {/* Line Items */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-2">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h3 className="text-sm font-black text-slate-800">Fee Allocation Breakdown</h3>
-                <span className="text-[10px] font-bold text-slate-500 px-2.5 py-1 bg-white border border-slate-200 rounded-full">
-                  Selected Bills: {formatCurrency(fromKobo(selectedTotalKobo))}
-                </span>
-                {manualCount > 0 && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-full">
-                    <span className="text-[9px] font-black text-amber-700 uppercase tracking-wide">Manual: {manualCount} item{manualCount > 1 ? 's' : ''}</span>
-                    <button onClick={resetToAutoFill} className="text-[9px] font-black text-indigo-600 underline">Reset to Auto-fill</button>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="px-5 pt-3 pb-1">
-              <p className="text-[11px] text-slate-400 font-medium">
-                Uncheck an item to exclude it, or type an amount directly into a box — everything else fills automatically based on your deposit amount.
-              </p>
-            </div>
+          {/* Left Sidebar: Term or Session Navigation */}
+          <div className="w-full lg:w-1/4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm self-start lg:sticky lg:top-4">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-indigo-500"/>
+              {viewMode === 'session' ? 'Sessions with Debt' : 'Terms with Debt'}
+            </h3>
 
-            {/* Column headers — desktop/tablet only, mobile stacks instead */}
-            <div className="hidden sm:flex items-center gap-3 px-5 py-2.5 bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest border-y-2 border-slate-200">
-              <div className="w-6"></div>
-              <div className="flex-1">Description</div>
-              <div className="w-28 text-right">Balance Due</div>
-              <div className="w-36 text-right">Allocated Pay</div>
-            </div>
+            {viewMode === 'session' ? (
+              sessionsWithDebt.length === 0 ? (
+                <p className="text-xs font-medium text-slate-400 text-center py-8">No debt found.</p>
+              ) : (
+                <div className="space-y-2">
+                  {sessionsWithDebt.map((sess) => (
+                    <button key={sess.session_id} onClick={() => setActiveSessionId(sess.session_id)} className={`w-full text-left p-3 rounded-xl border-2 transition-all relative ${activeSessionId === sess.session_id ? 'border-indigo-500 bg-indigo-50' : 'border-transparent hover:bg-slate-50'}`}>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <p className={`text-[11px] font-bold ${activeSessionId === sess.session_id ? 'text-indigo-900' : 'text-slate-700'}`}>{sess.label}</p>
+                      </div>
+                      <p className="text-[10px] font-bold text-rose-500">Owes: {formatCurrency(sess.total_owed)}</p>
+                    </button>
+                  ))}
+                </div>
+              )
+            ) : (
+              termsWithDebt.length === 0 ? (
+                <p className="text-xs font-medium text-slate-400 text-center py-8">No debt found.</p>
+              ) : (
+                <div className="space-y-2">
+                  {termsWithDebt.map((term, idx) => (
+                    <button key={idx} onClick={() => setActiveTerm(term)} className={`w-full text-left p-3 rounded-xl border-2 transition-all relative ${activeTerm?.session_id === term.session_id && activeTerm?.period_id === term.period_id ? 'border-indigo-500 bg-indigo-50' : 'border-transparent hover:bg-slate-50'}`}>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <p className={`text-[11px] font-bold ${activeTerm?.session_id === term.session_id && activeTerm?.period_id === term.period_id ? 'text-indigo-900' : 'text-slate-700'}`}>{term.label}</p>
+                      </div>
+                      <p className="text-[10px] font-bold text-rose-500">Owes: {formatCurrency(term.total_owed)}</p>
+                    </button>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
 
-            <div className="divide-y divide-slate-100 min-h-[120px]">
-              {finalGroups.map(group => (
-                <div key={group.groupId}>
-                  <div className={`flex items-center gap-2 px-5 py-2 ${group.isFamily ? 'bg-purple-50 border-y border-purple-100' : 'bg-slate-50 border-y border-slate-200'}`}>
-                    {group.isFamily ? <Building2 className="w-4 h-4 text-purple-400 shrink-0"/> : <UserCircle className="w-4 h-4 text-slate-400 shrink-0"/>}
-                    <span className={`text-xs font-black truncate ${group.isFamily ? 'text-purple-900' : 'text-slate-800'}`}>{group.groupName}</span>
-                    {group.groupMeta && (
-                      <span className="text-[10px] font-bold text-slate-400 normal-case shrink-0">• {group.groupMeta}</span>
+          {/* Right Panel: Allocation Breakdown */}
+          <div className="w-full lg:w-3/4 space-y-6">
+
+            {/* Line Items Table (Single Term Mode) */}
+            {viewMode === 'single' && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-2">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <h3 className="text-sm font-black text-slate-800">Fee Allocation Breakdown</h3>
+                    <span className="text-[10px] font-bold text-slate-500 px-2.5 py-1 bg-white border border-slate-200 rounded-full">
+                      Selected Bills: {formatCurrency(fromKobo(selectedTotalKobo))}
+                    </span>
+                    {manualCount > 0 && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-full">
+                        <span className="text-[9px] font-black text-amber-700 uppercase tracking-wide">Manual: {manualCount} item{manualCount > 1 ? 's' : ''}</span>
+                        <button onClick={resetToAutoFill} className="text-[9px] font-black text-indigo-600 underline">Reset to Auto-fill</button>
+                      </div>
                     )}
                   </div>
+                </div>
+                <div className="px-5 pt-3 pb-1">
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Uncheck an item to exclude it, or type an amount directly into a box — everything else fills automatically based on your deposit amount.
+                  </p>
+                </div>
 
-                  {group.items.map(item => {
-                    const excluded = item.included === false;
-                    return (
-                      <div
-                        key={item.uid}
-                        className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-5 py-3 transition-colors ${excluded ? 'opacity-40' : group.isFamily ? 'hover:bg-purple-50/50' : 'hover:bg-slate-50'} ${item.targetType === 'ancillary_debt' ? 'bg-amber-50/20' : ''}`}
-                      >
-                        {/* Checkbox + description (+ balance on mobile) */}
-                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                          <input
-                            type="checkbox"
-                            checked={!excluded}
-                            onChange={() => toggleItemIncluded(item.uid)}
-                            className="w-3.5 h-3.5 mt-0.5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer shrink-0"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className={`text-xs font-bold text-slate-700 break-words ${excluded ? 'line-through' : ''}`}>
-                              {item.targetType === 'ancillary_debt' && (
-                                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] mr-1.5 align-middle">FINE</span>
+                <div className="hidden sm:flex items-center gap-3 px-5 py-2.5 bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest border-y-2 border-slate-200">
+                  <div className="w-6"></div>
+                  <div className="flex-1">Description</div>
+                  <div className="w-28 text-right">Balance Due</div>
+                  <div className="w-36 text-right">Allocated Pay</div>
+                </div>
+
+                <div className="divide-y divide-slate-100 min-h-[120px]">
+                  {finalGroups.map(group => (
+                    <div key={group.groupId}>
+                      <div className={`flex items-center gap-2 px-5 py-2 ${group.isFamily ? 'bg-purple-50 border-y border-purple-100' : 'bg-slate-50 border-y border-slate-200'}`}>
+                        {group.isFamily ? <Building2 className="w-4 h-4 text-purple-400 shrink-0"/> : <UserCircle className="w-4 h-4 text-slate-400 shrink-0"/>}
+                        <span className={`text-xs font-black truncate ${group.isFamily ? 'text-purple-900' : 'text-slate-800'}`}>{group.groupName}</span>
+                        {group.groupMeta && (
+                          <span className="text-[10px] font-bold text-slate-400 normal-case shrink-0">• {group.groupMeta}</span>
+                        )}
+                      </div>
+
+                      {group.items.map(item => {
+                        const excluded = item.included === false;
+                        return (
+                          <div
+                            key={item.uid}
+                            className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-5 py-3 transition-colors ${excluded ? 'opacity-40' : group.isFamily ? 'hover:bg-purple-50/50' : 'hover:bg-slate-50'} ${item.targetType === 'ancillary_debt' ? 'bg-amber-50/20' : ''}`}
+                          >
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={!excluded}
+                                onChange={() => toggleItemIncluded(item.uid)}
+                                className="w-3.5 h-3.5 mt-0.5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer shrink-0"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className={`text-xs font-bold text-slate-700 break-words ${excluded ? 'line-through' : ''}`}>
+                                  {item.targetType === 'ancillary_debt' && (
+                                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] mr-1.5 align-middle">FINE</span>
+                                  )}
+                                  {item.description}
+                                </p>
+                                <p className="text-[11px] font-black text-rose-600 sm:hidden mt-0.5">
+                                  Balance: {formatCurrency(item.balance)}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="hidden sm:block w-28 text-right text-xs font-black text-rose-600 shrink-0">
+                              {formatCurrency(item.balance)}
+                            </div>
+
+                            <div className="w-full sm:w-36 shrink-0 pl-6 sm:pl-0">
+                              {excluded ? (
+                                <span className="text-[10px] text-slate-300 italic">excluded</span>
+                              ) : (
+                                <input
+                                  type="number"
+                                  value={item.allocated}
+                                  onChange={e => handleManualAllocation(item.uid, e.target.value)}
+                                  placeholder="0.00"
+                                  className="w-full px-2 py-1.5 text-xs font-bold border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none text-right shadow-sm bg-white"
+                                />
                               )}
-                              {item.description}
-                            </p>
-                            <p className="text-[11px] font-black text-rose-600 sm:hidden mt-0.5">
-                              Balance: {formatCurrency(item.balance)}
-                            </p>
+                            </div>
                           </div>
-                        </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-                        {/* Balance due — desktop/tablet only */}
-                        <div className="hidden sm:block w-28 text-right text-xs font-black text-rose-600 shrink-0">
-                          {formatCurrency(item.balance)}
-                        </div>
+            {/* Session Terms Table (Full Session Mode) */}
+            {viewMode === 'session' && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-2">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <h3 className="text-sm font-black text-slate-800">Academic Breakdown</h3>
+                    <span className="text-[10px] font-bold text-slate-500 px-2.5 py-1 bg-white border border-slate-200 rounded-full">
+                      Total Session Due: {formatCurrency(sortedSessionData.reduce((sum, t) => sum + Number(t.total_due), 0))}
+                    </span>
+                  </div>
+                </div>
+                <div className="px-5 pt-3 pb-1">
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Entering a tendered amount will automatically fill the oldest term first. You cannot skip a term that has an outstanding balance.
+                  </p>
+                </div>
 
-                        {/* Allocated input */}
-                        <div className="w-full sm:w-36 shrink-0 pl-6 sm:pl-0">
-                          {excluded ? (
-                            <span className="text-[10px] text-slate-300 italic">excluded</span>
-                          ) : (
-                            <input
-                              type="number"
-                              value={item.allocated}
-                              onChange={e => handleManualAllocation(item.uid, e.target.value)}
-                              placeholder="0.00"
-                              className="w-full px-2 py-1.5 text-xs font-bold border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none text-right shadow-sm bg-white"
-                            />
-                          )}
+                <div className="overflow-x-auto min-h-[160px]">
+                  <table className="w-full text-left whitespace-nowrap table-fixed">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b-2 border-slate-200">
+                        <th className="px-4 py-3 w-1/2 bg-slate-100">Academic Term</th>
+                        <th className="px-4 py-3 text-right w-32 bg-slate-100">Total Due</th>
+                        <th className="px-4 py-3 text-right w-40 bg-slate-100">Allocated Pay</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {sortedSessionData.map((term) => (
+                        <tr key={term.period_id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-3 text-sm font-bold text-slate-700">{term.period_name}</td>
+                          <td className="px-4 py-3 text-sm font-black text-rose-600 text-right">{formatCurrency(term.total_due)}</td>
+                          <td className="px-4 py-3 text-sm font-black text-emerald-600 text-right">
+                            {formatCurrency(fromKobo(sessionTermAllocations[term.period_id] || 0))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Wallet Pull */}
+            {viewMode === 'single' && eligibleWalletWards.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50">
+                  <h3 className="text-sm font-black text-slate-800 flex items-center gap-2"><Wallet className="w-4 h-4 text-indigo-500"/> Apply Wallet Credit</h3>
+                  <p className="text-[11px] text-slate-400 font-medium mt-0.5">Use existing wallet balances to reduce the cash/transfer required.</p>
+                </div>
+                <div className="p-4 space-y-2.5">
+                  {eligibleWalletWards.map((w: any) => {
+                    const sid = w.student.id;
+                    const maxBal = Number(w.student.fee_balance);
+                    const checked = walletContributions[sid] !== undefined;
+                    return (
+                      <div key={sid} className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${checked ? 'border-indigo-300 bg-indigo-50/50' : 'border-slate-100'}`}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleWalletWard(sid, maxBal)} className="w-4 h-4 text-indigo-600 rounded cursor-pointer" />
+                        <div className="flex-1">
+                          <p className="text-xs font-bold text-slate-800">{toTitleCase(w.student.full_name)}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">Available: {formatCurrency(maxBal)}</p>
                         </div>
+                        {checked && (
+                          <div className="relative w-32">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">₦</span>
+                            <input type="number" value={walletContributions[sid]} onChange={e => handleWalletAmountChange(sid, e.target.value, maxBal)}
+                              className="w-full pl-5 pr-2 py-1.5 text-xs font-bold border border-indigo-200 rounded-lg text-right outline-none bg-white" />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Wallet Pull */}
-          {eligibleWalletWards.length > 0 && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50">
-                <h3 className="text-sm font-black text-slate-800 flex items-center gap-2"><Wallet className="w-4 h-4 text-indigo-500"/> Apply Wallet Credit</h3>
-                <p className="text-[11px] text-slate-400 font-medium mt-0.5">Use existing wallet balances to reduce the cash/transfer required.</p>
               </div>
-              <div className="p-4 space-y-2.5">
-                {eligibleWalletWards.map((w: any) => {
-                  const sid = w.student.id;
-                  const maxBal = Number(w.student.fee_balance);
-                  const checked = walletContributions[sid] !== undefined;
-                  return (
-                    <div key={sid} className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${checked ? 'border-indigo-300 bg-indigo-50/50' : 'border-slate-100'}`}>
-                      <input type="checkbox" checked={checked} onChange={() => toggleWalletWard(sid, maxBal)} className="w-4 h-4 text-indigo-600 rounded cursor-pointer" />
-                      <div className="flex-1">
-                        <p className="text-xs font-bold text-slate-800">{toTitleCase(w.student.full_name)}</p>
-                        <p className="text-[10px] text-slate-400 font-medium">Available: {formatCurrency(maxBal)}</p>
-                      </div>
-                      {checked && (
-                        <div className="relative w-32">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">₦</span>
-                          <input type="number" value={walletContributions[sid]} onChange={e => handleWalletAmountChange(sid, e.target.value, maxBal)}
-                            className="w-full pl-5 pr-2 py-1.5 text-xs font-bold border border-indigo-200 rounded-lg text-right outline-none bg-white" />
-                        </div>
+            )}
+
+            {/* Upload Proof / Payment Details Card */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                  {paymentMode === 'online' ? <Globe className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-indigo-500" />}
+                  {paymentMode === 'online' ? 'Online Payment Details' : 'Payment Proof Details'}
+                </h3>
+                {hasActiveGateway && (
+                  <div className="flex bg-slate-100 p-0.5 rounded-lg text-xs font-semibold shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('offline')}
+                      className={`px-3 py-1.5 rounded-md transition-all ${paymentMode === 'offline' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      Offline
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('online')}
+                      className={`px-3 py-1.5 rounded-md transition-all ${paymentMode === 'online' ? 'bg-white text-blue-700 shadow-sm border border-slate-200 flex items-center gap-1.5' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      <Globe className="h-3.5 w-3.5" /> Pay Online
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {paymentMode === 'offline' && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                        School Bank Account Paid Into <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={bankAccountId}
+                        onChange={e => setBankAccountId(e.target.value)}
+                        className={`w-full px-3.5 py-3 border rounded-xl text-xs font-bold outline-none bg-slate-50 transition-colors ${attemptedSubmit && bankRequired && !bankAccountId ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
+                      >
+                        <option value="">Select an account...</option>
+                        {banks.map(b => <option key={b.id} value={b.id}>{b.bank_name} - {b.account_number}</option>)}
+                      </select>
+                      {attemptedSubmit && bankRequired && !bankAccountId && (
+                        <p className="text-[10px] text-red-500 font-bold mt-1">Please select which account you paid into.</p>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                        Transfer Reference <span className="text-slate-300 font-medium normal-case">(optional)</span>
+                      </label>
+                      <input type="text" value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. TRF-2026-XXXX" className="w-full px-3.5 py-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50" />
+                    </div>
+                  </div>
 
-          {/* Upload Proof / Payment Details Card */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                {paymentMode === 'online' ? <Globe className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-indigo-500" />} 
-                {paymentMode === 'online' ? 'Online Payment Details' : 'Payment Proof Details'}
-              </h3>
-              {hasActiveGateway && (
-                <div className="flex bg-slate-100 p-0.5 rounded-lg text-xs font-semibold shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('offline')}
-                    className={`px-3 py-1.5 rounded-md transition-all ${paymentMode === 'offline' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
-                  >
-                    Offline
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('online')}
-                    className={`px-3 py-1.5 rounded-md transition-all ${paymentMode === 'online' ? 'bg-white text-blue-700 shadow-sm border border-slate-200 flex items-center gap-1.5' : 'text-slate-500 hover:text-slate-800'}`}
-                  >
-                    <Globe className="h-3.5 w-3.5" /> Pay Online
-                  </button>
+                  <div className="pt-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                      Receipt / Screenshot Document <span className="text-red-500">*</span>
+                    </label>
+                    <label className={`flex items-center justify-center gap-3 w-full px-4 py-6 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 transition-all ${attemptedSubmit && proofRequired && !proofFile ? 'border-red-300 bg-red-50 text-red-600' : 'border-slate-200 bg-slate-50/50 text-slate-600'}`}>
+                      <Upload className={`w-5 h-5 shrink-0 ${proofFile ? 'text-emerald-500' : 'text-slate-400'}`} />
+                      <span className="font-bold text-sm truncate max-w-sm">{proofFile ? proofFile.name : 'Click to Browse File (PDF, JPG, PNG)'}</span>
+                      <input type="file" accept="image/*,.pdf" className="hidden" onChange={e => setProofFile(e.target.files?.[0] || null)} required />
+                    </label>
+                    {attemptedSubmit && proofRequired && !proofFile && (
+                      <p className="text-[10px] text-red-500 font-bold mt-1.5">Please upload your payment receipt.</p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {paymentMode === 'online' && (
+                <div className="p-4 bg-indigo-50/30 rounded-xl border border-slate-100 mt-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">
+                    Billing Email <span className="text-red-500">*</span>
+                  </label>
+                  {isManualEmail ? (
+                    <div>
+                      <input
+                        type="email"
+                        required
+                        value={billingEmail}
+                        onChange={e => setBillingEmail(e.target.value)}
+                        placeholder="Enter payer email address"
+                        className="w-full px-3.5 py-2.5 text-sm font-medium border-2 border-slate-200 rounded-xl bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 outline-none"
+                      />
+                      <p className="text-[10px] text-amber-600 font-medium mt-1.5 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Required for online checkout receipt.</p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between px-3.5 py-2.5 bg-white rounded-xl border-2 border-slate-200">
+                      <span className="font-bold text-sm text-slate-700 truncate">{billingEmail}</span>
+                      <button type="button" onClick={() => setIsManualEmail(true)} className="text-[11px] text-indigo-600 font-black hover:underline uppercase tracking-wider shrink-0 ml-2">
+                        Change
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-[11px] text-slate-500 font-medium mt-3 leading-relaxed">
+                    An online checkout window will open. Once payment is confirmed, the ledger will be automatically updated.
+                  </p>
                 </div>
               )}
             </div>
 
-            {paymentMode === 'offline' && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                      School Bank Account Paid Into <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={bankAccountId}
-                      onChange={e => setBankAccountId(e.target.value)}
-                      className={`w-full px-3.5 py-3 border rounded-xl text-xs font-bold outline-none bg-slate-50 transition-colors ${attemptedSubmit && bankRequired && !bankAccountId ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
-                    >
-                      <option value="">Select an account...</option>
-                      {banks.map(b => <option key={b.id} value={b.id}>{b.bank_name} - {b.account_number}</option>)}
-                    </select>
-                    {attemptedSubmit && bankRequired && !bankAccountId && (
-                      <p className="text-[10px] text-red-500 font-bold mt-1">Please select which account you paid into.</p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                      Transfer Reference <span className="text-slate-300 font-medium normal-case">(optional)</span>
-                    </label>
-                    <input type="text" value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. TRF-2026-XXXX" className="w-full px-3.5 py-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50" />
-                  </div>
+            {/* Overpayment Logic */}
+            {overpaymentKobo > 0 && (
+              <div className="bg-amber-50 rounded-2xl border-2 border-amber-200 shadow-sm overflow-hidden mb-6">
+                <div className="px-5 py-4 border-b border-amber-200 bg-amber-100/60">
+                  <h3 className="text-sm font-black text-amber-900 flex items-center gap-2"><Info className="w-4 h-4"/> Excess Deposit Detected</h3>
+                  <p className="text-xs text-amber-800 font-medium mt-0.5">
+                    {formatCurrency(totalAllocatedKobo / 100)} will clear the selected bills. The remaining <strong>{formatCurrency(fromKobo(overpaymentKobo))}</strong> will be saved to your {wards.length === 1 ? "ward's" : "wards'"} wallet for future use.
+                  </p>
                 </div>
+                <div className="p-5">
+                  {wards.length <= 1 ? (
+                    <p className="text-xs font-bold text-amber-800 flex items-center gap-2"><UserCheck className="w-4 h-4"/> Safely depositing to {toTitleCase(wards[0]?.student.full_name || 'student')}'s wallet.</p>
+                  ) : (
+                    <>
+                      <div className="flex gap-2 mb-4 p-1 bg-white rounded-lg border border-amber-200 w-fit">
+                        <button onClick={() => setOverpaymentMode('select')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${overpaymentMode === 'select' ? 'bg-amber-600 text-white' : 'text-amber-700'}`}>Select Ward</button>
+                        <button onClick={() => setOverpaymentMode('split')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${overpaymentMode === 'split' ? 'bg-amber-600 text-white' : 'text-amber-700'}`}>Split Among Wards</button>
+                      </div>
 
-                <div className="pt-2">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                    Receipt / Screenshot Document <span className="text-red-500">*</span>
-                  </label>
-                  <label className={`flex items-center justify-center gap-3 w-full px-4 py-6 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 transition-all ${attemptedSubmit && proofRequired && !proofFile ? 'border-red-300 bg-red-50 text-red-600' : 'border-slate-200 bg-slate-50/50 text-slate-600'}`}>
-                    <Upload className={`w-5 h-5 shrink-0 ${proofFile ? 'text-emerald-500' : 'text-slate-400'}`} />
-                    <span className="font-bold text-sm truncate max-w-sm">{proofFile ? proofFile.name : 'Click to Browse File (PDF, JPG, PNG)'}</span>
-                    <input type="file" accept="image/*,.pdf" className="hidden" onChange={e => setProofFile(e.target.files?.[0] || null)} required />
-                  </label>
-                  {attemptedSubmit && proofRequired && !proofFile && (
-                    <p className="text-[10px] text-red-500 font-bold mt-1.5">Please upload your payment receipt.</p>
+                      {overpaymentMode === 'select' ? (
+                        <div className="space-y-2">
+                          {wards.map((w: any) => (
+                            <label key={w.student.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${overpaymentTargetId === w.student.id ? 'border-amber-500 bg-white' : 'border-transparent bg-white/50 hover:bg-white'}`}>
+                              <input type="radio" checked={overpaymentTargetId === w.student.id} onChange={() => setOverpaymentTargetId(w.student.id)} className="w-4 h-4 text-amber-600 cursor-pointer" />
+                              <span className="text-xs font-bold text-slate-800">{toTitleCase(w.student.full_name)}</span>
+                            </label>
+                          ))}
+                          {attemptedSubmit && overpaymentNeedsTarget && (
+                            <p className="text-[10px] text-red-600 font-bold">Please select which ward should receive the excess balance.</p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {wards.map((w: any) => (
+                            <div key={w.student.id} className="flex items-center gap-3 p-3 rounded-xl border-2 border-transparent bg-white">
+                              <span className="text-xs font-bold text-slate-800 flex-1">{toTitleCase(w.student.full_name)}</span>
+                              <div className="relative w-24">
+                                <input type="number" min={0} max={100} value={splitPercentages[w.student.id] ?? 0}
+                                  onChange={e => rebalanceSplit(w.student.id, Number(e.target.value))}
+                                  className="w-full pr-6 pl-2 py-1.5 text-xs font-bold border border-slate-300 rounded-lg text-right outline-none focus:ring-1 focus:ring-amber-500" />
+                                <Percent className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+                              </div>
+                              <span className="text-xs font-black text-amber-700 w-24 text-right">
+                                {formatCurrency(fromKobo(Math.round(overpaymentKobo * (splitPercentages[w.student.id] ?? 0) / 100)))}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
-              </>
-            )}
-
-            {paymentMode === 'online' && (
-              <div className="p-4 bg-indigo-50/30 rounded-xl border border-slate-100 mt-2">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">
-                  Billing Email <span className="text-red-500">*</span>
-                </label>
-                {isManualEmail ? (
-                  <div>
-                    <input
-                      type="email"
-                      required
-                      value={billingEmail}
-                      onChange={e => setBillingEmail(e.target.value)}
-                      placeholder="Enter payer email address"
-                      className="w-full px-3.5 py-2.5 text-sm font-medium border-2 border-slate-200 rounded-xl bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 outline-none"
-                    />
-                    <p className="text-[10px] text-amber-600 font-medium mt-1.5 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Required for online checkout receipt.</p>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between px-3.5 py-2.5 bg-white rounded-xl border-2 border-slate-200">
-                    <span className="font-bold text-sm text-slate-700 truncate">{billingEmail}</span>
-                    <button type="button" onClick={() => setIsManualEmail(true)} className="text-[11px] text-indigo-600 font-black hover:underline uppercase tracking-wider shrink-0 ml-2">
-                      Change
-                    </button>
-                  </div>
-                )}
-                <p className="text-[11px] text-slate-500 font-medium mt-3 leading-relaxed">
-                  An online checkout window will open. Once payment is confirmed, the ledger will be automatically updated.
-                </p>
               </div>
             )}
+
           </div>
-
-          {/* Overpayment Logic */}
-          {overpaymentKobo > 0 && (
-            <div className="bg-amber-50 rounded-2xl border-2 border-amber-200 shadow-sm overflow-hidden mb-6">
-              <div className="px-5 py-4 border-b border-amber-200 bg-amber-100/60">
-                <h3 className="text-sm font-black text-amber-900 flex items-center gap-2"><Info className="w-4 h-4"/> Excess Deposit Detected</h3>
-                <p className="text-xs text-amber-800 font-medium mt-0.5">
-                  {formatCurrency(totalAllocatedKobo / 100)} will clear the selected bills. The remaining <strong>{formatCurrency(fromKobo(overpaymentKobo))}</strong> will be saved to your {wards.length === 1 ? "ward's" : "wards'"} wallet for future use.
-                </p>
-              </div>
-              <div className="p-5">
-                {wards.length <= 1 ? (
-                  <p className="text-xs font-bold text-amber-800 flex items-center gap-2"><UserCheck className="w-4 h-4"/> Safely depositing to {toTitleCase(wards[0]?.student.full_name || 'student')}'s wallet.</p>
-                ) : (
-                  <>
-                    <div className="flex gap-2 mb-4 p-1 bg-white rounded-lg border border-amber-200 w-fit">
-                      <button onClick={() => setOverpaymentMode('select')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${overpaymentMode === 'select' ? 'bg-amber-600 text-white' : 'text-amber-700'}`}>Select Ward</button>
-                      <button onClick={() => setOverpaymentMode('split')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${overpaymentMode === 'split' ? 'bg-amber-600 text-white' : 'text-amber-700'}`}>Split Among Wards</button>
-                    </div>
-
-                    {overpaymentMode === 'select' ? (
-                      <div className="space-y-2">
-                        {wards.map((w: any) => (
-                          <label key={w.student.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${overpaymentTargetId === w.student.id ? 'border-amber-500 bg-white' : 'border-transparent bg-white/50 hover:bg-white'}`}>
-                            <input type="radio" checked={overpaymentTargetId === w.student.id} onChange={() => setOverpaymentTargetId(w.student.id)} className="w-4 h-4 text-amber-600 cursor-pointer" />
-                            <span className="text-xs font-bold text-slate-800">{toTitleCase(w.student.full_name)}</span>
-                          </label>
-                        ))}
-                        {attemptedSubmit && overpaymentNeedsTarget && (
-                          <p className="text-[10px] text-red-600 font-bold">Please select which ward should receive the excess balance.</p>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {wards.map((w: any) => (
-                          <div key={w.student.id} className="flex items-center gap-3 p-3 rounded-xl border-2 border-transparent bg-white">
-                            <span className="text-xs font-bold text-slate-800 flex-1">{toTitleCase(w.student.full_name)}</span>
-                            <div className="relative w-24">
-                              <input type="number" min={0} max={100} value={splitPercentages[w.student.id] ?? 0}
-                                onChange={e => rebalanceSplit(w.student.id, Number(e.target.value))}
-                                className="w-full pr-6 pl-2 py-1.5 text-xs font-bold border border-slate-300 rounded-lg text-right outline-none focus:ring-1 focus:ring-amber-500" />
-                              <Percent className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
-                            </div>
-                            <span className="text-xs font-black text-amber-700 w-24 text-right">
-                              {formatCurrency(fromKobo(Math.round(overpaymentKobo * (splitPercentages[w.student.id] ?? 0) / 100)))}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
         </div>
       )}
 
       {/* ── Fixed Bottom Action Bar ── */}
-      {cartGroups.length > 0 && (
+      {((viewMode === 'single' && cartGroups.length > 0) || (viewMode === 'session' && sessionLedgerData.length > 0)) && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] z-40 px-4 py-3 md:px-8">
           <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
             <div className="flex flex-wrap items-center gap-3">
@@ -1224,7 +1429,7 @@ function ParentCheckoutContent() {
                 </div>
               </div>
 
-              <button onClick={handlePreviewClick} disabled={totalAllocatedKobo <= 0 && overpaymentKobo <= 0} className="self-end flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-200 disabled:opacity-50 transition-colors">
+              <button onClick={handlePreviewClick} disabled={totalAvailableKobo <= 0} className="self-end flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-200 disabled:opacity-50 transition-colors">
                 <Eye className="w-3.5 h-3.5" /> Preview Allocation
               </button>
             </div>
