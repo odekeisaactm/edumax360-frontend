@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { myFundingAPI } from '@/lib/api';
 import {
   Search, X, Loader2, AlertCircle, RefreshCw, ChevronLeft,
   ChevronRight, Eye, CheckCircle, XCircle, Clock, ArrowUpCircle,
   FileText, Check, DollarSign, FilterX, UserCircle, Phone,
-  Building2, Printer, Wallet,
+  Building2, Printer, Wallet, PlusCircle,
 } from 'lucide-react';
 
 // ─── Helpers & Types ──────────────────────────────────────────────────────────
@@ -214,6 +215,7 @@ function AuditDrawer({ item, onClose, schoolName, onError }: any) {
 
 // ─── Main Page Component ───────────────────────────────────────────────────────
 export default function StaffMyFundingPage() {
+  const router = useRouter();
   const { user, schoolInfo } = useAuth();
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
@@ -336,6 +338,12 @@ export default function StaffMyFundingPage() {
           </h1>
           <p className="text-sm text-slate-400 mt-1 pl-12">View personal wallet top-ups, track live balances, and print receipt slips</p>
         </div>
+        <button
+          onClick={() => router.push('/dashboard/staff/finance/fund')}
+          className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition-colors shadow-md shadow-indigo-200 shrink-0"
+        >
+          <PlusCircle className="h-4 w-4" /> Fund My Wallet
+        </button>
       </div>
 
       {/* Hero Section: Staff Profile & Live Wallet Balance */}
