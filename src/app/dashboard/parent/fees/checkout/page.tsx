@@ -116,15 +116,94 @@ interface TermOption {
   total_owed: number;
 }
 
+// ─── Period naming (multi-tenant: Term / Quarter / Semester …) ──────────────
+interface PeriodLabels {
+  /** "Term", "Quarter" … (title case) */
+  singular: string;
+  /** "Terms", "Quarters" … (title case) */
+  plural: string;
+  /** Ordered period names for one session, e.g. ["First Term", "Second Term", "Third Term"] */
+  names: string[];
+}
+
+const DEFAULT_PERIOD_LABELS: PeriodLabels = {
+  singular: 'Term', plural: 'Terms', names: ['1st Term', '2nd Term', '3rd Term'],
+};
+
+/** Minimal shapes read from /api/school/period-types/ and /api/school/session-periods/. */
+interface PeriodTypeLite {
+  is_active?: boolean;
+  singular_name?: string;
+  plural_name?: string;
+  periods_per_session?: number;
+  periods?: { name?: string; order?: number }[];
+}
+interface SessionPeriodLite {
+  id?: number;
+  session?: { id?: number; start_year?: number } | null;
+  period?: { order?: number } | null;
+}
+
+/** Read the school's active period type (as configured under Academic Calendar → Period Types). */
+function buildPeriodLabels(types: unknown): PeriodLabels {
+  if (!Array.isArray(types) || types.length === 0) return DEFAULT_PERIOD_LABELS;
+  const list = types as PeriodTypeLite[];
+  const active = list.find(t => t?.is_active) ?? (list.length === 1 ? list[0] : null);
+  if (!active) return DEFAULT_PERIOD_LABELS;
+
+  const singular = smartTitleCase(String(active.singular_name || '').trim()) || DEFAULT_PERIOD_LABELS.singular;
+  const plural = smartTitleCase(String(active.plural_name || '').trim()) || `${singular}s`;
+  let names: string[] = [...(active.periods || [])]
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map(p => String(p.name || '').trim())
+    .filter(Boolean);
+  if (names.length === 0) {
+    const count = Number(active.periods_per_session) || 3;
+    names = Array.from({ length: count }, (_, i) => `${singular} ${i + 1}`);
+  }
+  return { singular, plural, names };
+}
+
+// ─── Chronological ordering of periods ──────────────────────────────────────
+/** [session start year, period order within the session] */
+type PeriodRank = [number, number];
+
+function compareRank(a: PeriodRank, b: PeriodRank): number {
+  return a[0] - b[0] || a[1] - b[1];
+}
+
+/**
+ * Builds a ranker from the session-period catalogue. pos-terms returns
+ * session-period ids, so each debt entry is looked up to find its session's
+ * start year and the period's order. Unknown ids fall back to raw ids.
+ */
+function buildPeriodRanker(sessionPeriods: SessionPeriodLite[]) {
+  const byId = new Map<number, SessionPeriodLite>();
+  const sessionYear = new Map<number, number>();
+  sessionPeriods.forEach(sp => {
+    if (sp?.id != null) byId.set(Number(sp.id), sp);
+    if (sp?.session?.id != null && sp.session.start_year) sessionYear.set(Number(sp.session.id), Number(sp.session.start_year));
+  });
+
+  return (t: { session_id: number | null; period_id: number | null }, known?: SessionPeriodLite): PeriodRank => {
+    const sp = known ?? (t.period_id != null ? byId.get(Number(t.period_id)) : undefined);
+    const sessionId = Number(sp?.session?.id ?? t.session_id ?? 0);
+    const year = Number(sp?.session?.start_year) || sessionYear.get(sessionId) || sessionId;
+    const order = Number(sp?.period?.order) || Number(t.period_id) || 0;
+    return [year, order];
+  };
+}
+
 // ─── Help content ──────────────────────────────────────────────────────────
-function getHelpSteps(mode: PaymentMode): [string, string][] {
+function getHelpSteps(mode: PaymentMode, L: PeriodLabels): [string, string][] {
+  const s = L.singular.toLowerCase();
   const shared: [string, string][] = [
-    ['Choose This Term or Full Session', 'This Term (the default) pays the bills for one term. Full Session pays for the whole academic year at once, clearing the oldest term first.'],
+    [`Choose This ${L.singular} or Full Session`, `This ${L.singular} (the default) pays the bills for one ${s}. Full Session pays for the whole academic year at once, clearing the oldest ${s} first.`],
     [
       mode === 'online' ? 'Enter how much you want to pay' : 'Enter the amount you deposited',
       'Type the amount at the bottom of the page. It fills your bills automatically, top to bottom. You can untick a bill or type into its box to control exactly where the money goes.',
     ],
-    ['Use wallet credit (optional, This Term only)', 'If a ward already has money in their fee wallet, tick it to use that balance and pay less.'],
+    [`Use wallet credit (optional, This ${L.singular} only)`, 'If a ward already has money in their fee wallet, tick it to use that balance and pay less.'],
   ];
   const finish: [string, string][] = mode === 'online'
     ? [
@@ -138,8 +217,8 @@ function getHelpSteps(mode: PaymentMode): [string, string][] {
   return [...shared, ...finish];
 }
 
-function HelpModal({ mode, onClose }: { mode: PaymentMode; onClose: () => void }) {
-  const steps = getHelpSteps(mode);
+function HelpModal({ mode, labels, onClose }: { mode: PaymentMode; labels: PeriodLabels; onClose: () => void }) {
+  const steps = getHelpSteps(mode, labels);
   return (
     <ModalShell open onClose={onClose} labelledBy="checkout-help-title">
       <div className="px-6 py-4 border-b border-indigo-100 bg-indigo-50 flex items-center justify-between shrink-0">
@@ -170,25 +249,29 @@ function HelpModal({ mode, onClose }: { mode: PaymentMode; onClose: () => void }
   );
 }
 
-// ─── Term vs Session explainer ──────────────────────────────────────────────
-/** Mini timeline: three terms, highlighting what a payment covers. */
-function TermStrip({ variant }: { variant: 'term' | 'session' }) {
-  const terms = ['1st', '2nd', '3rd'];
+// ─── Period vs Session explainer ────────────────────────────────────────────
+/** Mini timeline of the school's own periods, highlighting what a payment covers. */
+function PeriodStrip({ variant, names }: { variant: 'single' | 'session'; names: string[] }) {
+  // In single mode, highlight a middle period so it reads as "just this one".
+  const highlight = names.length > 1 ? 1 : 0;
+  const showArrows = variant === 'session' && names.length <= 4;
   return (
     <div className="flex items-center gap-1" aria-hidden>
-      {terms.map((t, i) => {
-        const on = variant === 'session' || i === 1;
+      {names.map((name, i) => {
+        const on = variant === 'session' || i === highlight;
         return (
-          <React.Fragment key={t}>
-            <div className={`flex-1 rounded-lg px-1.5 py-2 text-center border transition-colors ${
-              on
-                ? variant === 'session' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-emerald-500 border-emerald-500 text-white'
-                : 'bg-white border-dashed border-slate-300 text-slate-400'
-            }`}>
-              <p className="text-[10px] font-black leading-none">{t}</p>
-              <p className={`text-[8.5px] font-bold mt-1 leading-none ${on ? 'text-white/80' : 'text-slate-300'}`}>Term</p>
+          <React.Fragment key={`${name}-${i}`}>
+            <div
+              title={name}
+              className={`flex-1 min-w-0 rounded-lg px-1.5 py-2 text-center border transition-colors ${
+                on
+                  ? variant === 'session' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-emerald-500 border-emerald-500 text-white'
+                  : 'bg-white border-dashed border-slate-300 text-slate-400'
+              }`}
+            >
+              <p className="text-[9.5px] font-black leading-tight truncate">{name}</p>
             </div>
-            {variant === 'session' && i < terms.length - 1 && (
+            {showArrows && i < names.length - 1 && (
               <ArrowRight className="w-3 h-3 text-indigo-300 shrink-0" />
             )}
           </React.Fragment>
@@ -198,28 +281,32 @@ function TermStrip({ variant }: { variant: 'term' | 'session' }) {
   );
 }
 
-function TermVsSessionModal({
-  open, current, onClose, onChoose,
+function PeriodVsSessionModal({
+  open, current, labels, onClose, onChoose,
 }: {
   open: boolean;
   current: 'single' | 'session';
+  labels: PeriodLabels;
   onClose: () => void;
   onChoose: (mode: 'single' | 'session') => void;
 }) {
+  const s = labels.singular.toLowerCase();
+  const p = labels.plural.toLowerCase();
+  const count = labels.names.length;
   const options = [
     {
       key: 'single' as const,
       Icon: CalendarCheck,
-      title: 'This Term',
+      title: `This ${labels.singular}`,
       tag: 'Default',
       tagClass: 'bg-emerald-100 text-emerald-700 border-emerald-200',
       ring: 'border-emerald-500 bg-emerald-50/40',
       points: [
-        'Pays the bills for one term at a time',
+        `Pays the bills for one ${s} at a time`,
         'Untick any bill you’d rather pay later',
         'Wallet credit can be applied',
       ],
-      best: 'Best if you pay term by term.',
+      best: `Best if you pay ${s} by ${s}.`,
     },
     {
       key: 'session' as const,
@@ -229,25 +316,26 @@ function TermVsSessionModal({
       tagClass: 'bg-indigo-100 text-indigo-700 border-indigo-200',
       ring: 'border-indigo-500 bg-indigo-50/40',
       points: [
-        'Pays for every term in the academic year',
-        'Clears the oldest term first, then the next',
-        'One payment, no need to come back each term',
+        `Pays for every ${s} in the academic year`,
+        `Clears the oldest ${s} first, then the next`,
+        `One payment, no need to come back each ${s}`,
       ],
       best: 'Best if you want the whole year settled.',
     },
   ];
 
   return (
-    <ModalShell open={open} onClose={onClose} labelledBy="term-session-title" maxWidth="max-w-2xl">
+    <ModalShell open={open} onClose={onClose} labelledBy="period-session-title" maxWidth="max-w-2xl">
       <div className="px-6 pt-6 pb-4 shrink-0 flex items-start justify-between gap-4">
         <div>
           <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Quick guide</p>
-          <h2 id="term-session-title" className="text-lg font-black text-slate-900 mt-1 leading-tight">
-            Pay for one term, or the whole session?
+          <h2 id="period-session-title" className="text-lg font-black text-slate-900 mt-1 leading-tight">
+            Pay for one {s}, or the whole session?
           </h2>
           <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
-            An academic <span className="font-bold text-slate-700">session</span> is the full school year, usually three terms.
-            You can pay one term now, or settle the entire session in one go.
+            An academic <span className="font-bold text-slate-700">session</span> is the full school year
+            {count > 0 && <>, made up of {count} {count === 1 ? s : p}</>}.
+            You can pay one {s} now, or settle the entire session in one go.
           </p>
         </div>
         <button onClick={onClose} className="p-1.5 -mr-1.5 hover:bg-slate-100 rounded-lg shrink-0" aria-label="Close">
@@ -275,7 +363,7 @@ function TermVsSessionModal({
                 <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md border ${o.tagClass}`}>{o.tag}</span>
               </div>
               <div className="mt-3.5">
-                <TermStrip variant={o.key === 'single' ? 'term' : 'session'} />
+                <PeriodStrip variant={o.key} names={labels.names} />
               </div>
               <ul className="mt-3.5 space-y-1.5">
                 {o.points.map(p => (
@@ -305,7 +393,7 @@ function TermVsSessionModal({
             autoFocus
             className="flex-1 sm:flex-none px-4 py-2.5 text-xs font-black text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-colors"
           >
-            Continue with this term
+            Continue with this {s}
           </button>
         </div>
       </div>
@@ -332,7 +420,7 @@ function ParentCheckoutContent() {
   const [loading, setLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
   const [banks, setBanks] = useState<any[]>([]);
-  const [periodTypeName, setPeriodTypeName] = useState<string>('Terms');
+  const [periodLabels, setPeriodLabels] = useState<PeriodLabels>(DEFAULT_PERIOD_LABELS);
 
   const [viewMode, setViewMode] = useState<'single' | 'session'>('single');
   const [termsWithDebt, setTermsWithDebt] = useState<TermOption[]>([]);
@@ -413,13 +501,18 @@ function ParentCheckoutContent() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [bankData, gatewaysData, posTermsRes, curSessRaw, curPerRes] = await Promise.all([
+        const [bankData, gatewaysData, posTermsRes, curSessRaw, curPerRes, periodTypes, sessionPeriods] = await Promise.all([
           feeAPI.getBankAccounts({ is_active: true, account_type: 'bank' }).catch(() => []),
           gatewayAPI.list().catch(() => []),
           feeAPI.getPosTerms({ parent_id: user?.parent_profile?.parent_id || user?.parent_id }).catch(() => ({ terms: [] })),
           academicCalendarAPI.getCurrentSession().catch(() => null),
           api.get('/api/school/session-periods/current/').catch(() => null),
+          academicCalendarAPI.listPeriodTypes().catch(() => []),
+          academicCalendarAPI.listSessionPeriods().catch(() => []),
         ]);
+
+        // Tenant-specific period naming (Term / Quarter / Semester …)
+        setPeriodLabels(buildPeriodLabels(periodTypes));
 
         const filteredBanks = Array.isArray(bankData) ? bankData.filter((b: any) => b.purpose === 'fee_payment' || b.purpose === 'both') : [];
         setBanks(filteredBanks);
@@ -435,15 +528,20 @@ function ParentCheckoutContent() {
         const currentSessionId: number | null = curSess?.id ?? null;
         const currentPeriodId: number | null = curPer?.id ?? null;
 
-        const terms: TermOption[] = posTermsRes?.terms || [];
+        // pos-terms carries no ordering, so rank each period chronologically
+        // (session start year → period order) using the session-period catalogue.
+        const rankOf = buildPeriodRanker(Array.isArray(sessionPeriods) ? (sessionPeriods as SessionPeriodLite[]) : []);
+        const terms: TermOption[] = [...(posTermsRes?.terms || [])].sort((a, b) => compareRank(rankOf(a), rankOf(b)));
         setTermsWithDebt(terms);
 
         if (terms.length > 0) {
-          // Default term priority:
+          // Default period priority:
           //   1. URL explicitly names both session AND period → honour it.
           //   2. URL names just the period → honour it (session ignored).
-          //   3. Otherwise → the school's current session+period.
-          //   4. Otherwise → first term in the list (legacy behaviour).
+          //   3. The school's current session+period, if it has debt.
+          //   4. Otherwise the next period with debt after the current one,
+          //      or, if all debts are older, the one closest before it.
+          //   5. No current period known → the oldest period with debt.
           let match: TermOption | undefined;
 
           if (urlSession && urlPeriod) {
@@ -458,6 +556,12 @@ function ParentCheckoutContent() {
             match = terms.find(
               t => String(t.session_id) === String(currentSessionId) && String(t.period_id) === String(currentPeriodId)
             );
+          }
+
+          if (!match && curPer) {
+            const curRank = rankOf({ session_id: curPer.session?.id ?? currentSessionId, period_id: curPer.id }, curPer);
+            match = terms.find(t => compareRank(rankOf(t), curRank) > 0)
+              ?? [...terms].reverse().find(t => compareRank(rankOf(t), curRank) < 0);
           }
 
           setActiveTerm(match || terms[0]);
@@ -590,7 +694,7 @@ function ParentCheckoutContent() {
 
         setCartGroups(groups);
       } catch (err: any) {
-        showToast('error', 'Failed to load line items for this term.');
+        showToast('error', 'Failed to load line items for this selection.');
       } finally {
         setDataLoading(false);
       }
@@ -868,8 +972,9 @@ function ParentCheckoutContent() {
   const externalNeeded = tenderedKobo > 0;
   // A wallet-only settlement has nothing to charge online, so it goes through the
   // offline route (no bank/proof needed), the same as it did before online was the default.
-  const submitMode: PaymentMode = externalNeeded ? paymentMode : 'offline';
+  // An empty amount is NOT wallet-only: it keeps the parent's chosen method (and label).
   const isWalletOnly = !externalNeeded && walletContributionKobo > 0;
+  const submitMode: PaymentMode = isWalletOnly ? 'offline' : paymentMode;
   const bankRequired = submitMode === 'offline' && externalNeeded;
   const proofRequired = submitMode === 'offline' && externalNeeded;
   const overpaymentNeedsTarget = overpaymentKobo > 0 && wards.length > 1 && overpaymentMode === 'select' && !overpaymentTargetId;
@@ -1083,7 +1188,7 @@ function ParentCheckoutContent() {
       <ToastStack toasts={toasts} onDismiss={id => setToasts(p => p.filter(t => t.id !== id))} />
 
       {/* ── Help Modal ── */}
-      {showHelp && <HelpModal mode={paymentMode} onClose={() => setShowHelp(false)} />}
+      {showHelp && <HelpModal mode={paymentMode} labels={periodLabels} onClose={() => setShowHelp(false)} />}
 
       {/* ── One-time: online payment announcement ── */}
       <OnlinePaymentIntroModal
@@ -1093,10 +1198,11 @@ function ParentCheckoutContent() {
         onPaidToBank={() => { setPaymentMode('offline'); onlineIntro.markSeen(); }}
       />
 
-      {/* ── Term vs Session explainer (auto once per session, or on demand) ── */}
-      <TermVsSessionModal
+      {/* ── Period vs Session explainer (auto once per session, or on demand) ── */}
+      <PeriodVsSessionModal
         open={termExplainerOpen}
         current={viewMode}
+        labels={periodLabels}
         onClose={() => closeTermExplainer()}
         onChoose={(m) => closeTermExplainer(m)}
       />
@@ -1273,7 +1379,7 @@ function ParentCheckoutContent() {
               onClick={() => setViewMode('single')}
               className={`flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === 'single' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              <CalendarCheck className={`w-3.5 h-3.5 ${viewMode === 'single' ? 'text-emerald-600' : ''}`} /> This Term
+              <CalendarCheck className={`w-3.5 h-3.5 ${viewMode === 'single' ? 'text-emerald-600' : ''}`} /> This {periodLabels.singular}
             </button>
             <button
               role="radio"
@@ -1290,14 +1396,14 @@ function ParentCheckoutContent() {
             <p className="text-[11.5px] text-slate-600 font-medium leading-relaxed">
               {viewMode === 'single' ? (
                 <>
-                  <span className="font-black text-slate-800">Paying for one term.</span>{' '}
-                  Pick a term below and untick any bill you&apos;d rather pay later.
+                  <span className="font-black text-slate-800">Paying for one {periodLabels.singular.toLowerCase()}.</span>{' '}
+                  Pick a {periodLabels.singular.toLowerCase()} below and untick any bill you&apos;d rather pay later.
                   {sessionsWithDebt.length > 0 && <> Want the whole year sorted? Switch to <span className="font-bold text-indigo-700">Full Session</span>.</>}
                 </>
               ) : (
                 <>
                   <span className="font-black text-slate-800">Paying for the whole academic session.</span>{' '}
-                  Your payment clears the oldest term first, then the next. Wallet credit isn&apos;t available in this mode.
+                  Your payment clears the oldest {periodLabels.singular.toLowerCase()} first, then the next. Wallet credit isn&apos;t available in this mode.
                 </>
               )}
             </p>
@@ -1332,7 +1438,7 @@ function ParentCheckoutContent() {
           <div className="w-full lg:w-1/4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm self-start lg:sticky lg:top-4">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
               <Calendar className="w-4 h-4 text-indigo-500"/>
-              {viewMode === 'session' ? 'Sessions with Debt' : 'Terms with Debt'}
+              {viewMode === 'session' ? 'Sessions with Debt' : `${periodLabels.plural} with Debt`}
             </h3>
 
             {viewMode === 'session' ? (
@@ -1478,7 +1584,7 @@ function ParentCheckoutContent() {
                 </div>
                 <div className="px-5 pt-3 pb-1">
                   <p className="text-[11px] text-slate-400 font-medium">
-                    Entering a tendered amount will automatically fill the oldest term first. You cannot skip a term that has an outstanding balance.
+                    Entering an amount automatically fills the oldest {periodLabels.singular.toLowerCase()} first. You cannot skip a {periodLabels.singular.toLowerCase()} that has an outstanding balance.
                   </p>
                 </div>
 
@@ -1486,7 +1592,7 @@ function ParentCheckoutContent() {
                   <table className="w-full text-left whitespace-nowrap table-fixed">
                     <thead className="sticky top-0 z-10">
                       <tr className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b-2 border-slate-200">
-                        <th className="px-4 py-3 w-1/2 bg-slate-100">Academic Term</th>
+                        <th className="px-4 py-3 w-1/2 bg-slate-100">Academic {periodLabels.singular}</th>
                         <th className="px-4 py-3 text-right w-32 bg-slate-100">Total Due</th>
                         <th className="px-4 py-3 text-right w-40 bg-slate-100">Allocated Pay</th>
                       </tr>
