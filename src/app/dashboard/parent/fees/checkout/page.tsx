@@ -7,8 +7,14 @@ import api, { feeAPI, academicCalendarAPI, gatewayAPI, onlinePaymentAPI } from '
 import {
   ArrowLeft, Loader2, Check, AlertCircle, Upload, Wallet, X,
   Building2, UserCircle, Eye, AlertTriangle, Info, UserCheck, Percent, HelpCircle, Globe,
-  Calendar
+  Calendar, CalendarCheck, CalendarRange, ArrowRight
 } from 'lucide-react';
+import {
+  PaymentMethodPicker, PaidToBankHint, OnlinePaymentIntroModal, ModalShell,
+  useOneTimeFlag, ONLINE_INTRO_SEEN_KEY, type PaymentMode,
+} from '@/components/payment/PaymentMethodUI';
+
+const TERM_EXPLAINER_SEEN_KEY = 'ssaas.feeCheckout.termVsSession.seen.v1';
 
 declare global {
   interface Window {
@@ -111,41 +117,199 @@ interface TermOption {
 }
 
 // ─── Help content ──────────────────────────────────────────────────────────
-const HELP_STEPS: [string, string][] = [
-  ['1. Choose Term or Full Session', 'You can pay for a specific term, or toggle to "Full Session" to pay for the entire academic year at once.'],
-  ['2. Type the amount you deposited', 'Enter the total you sent to the bank. It automatically fills your fees in order (oldest term first if you selected Full Session).'],
-  ['3. Use wallet credit (optional)', 'If a ward already has money in their wallet, tick it to use that instead of a new deposit.'],
-  ['4. Add your proof', 'Select the bank account you paid into and upload your receipt or screenshot.'],
-  ['5. Preview, then submit', 'Tap "Preview Allocation" to check everything looks right, then "Submit Proof". The school will confirm it shortly after.'],
-];
+function getHelpSteps(mode: PaymentMode): [string, string][] {
+  const shared: [string, string][] = [
+    ['Choose This Term or Full Session', 'This Term (the default) pays the bills for one term. Full Session pays for the whole academic year at once, clearing the oldest term first.'],
+    [
+      mode === 'online' ? 'Enter how much you want to pay' : 'Enter the amount you deposited',
+      'Type the amount at the bottom of the page. It fills your bills automatically, top to bottom. You can untick a bill or type into its box to control exactly where the money goes.',
+    ],
+    ['Use wallet credit (optional, This Term only)', 'If a ward already has money in their fee wallet, tick it to use that balance and pay less.'],
+  ];
+  const finish: [string, string][] = mode === 'online'
+    ? [
+        ['Pay securely online', 'Confirm your email, then tap "Pay Online". A secure checkout opens where you can pay by card, bank transfer or USSD.'],
+        ['Done, instantly', 'Once payment goes through, your ledger updates automatically. No receipt to upload.'],
+      ]
+    : [
+        ['Add your proof', 'Select the school bank account you paid into and upload your receipt or screenshot.'],
+        ['Preview, then submit', 'Tap "Preview" to check everything, then "Submit Proof". The school will confirm it shortly after.'],
+      ];
+  return [...shared, ...finish];
+}
 
-function HelpModal({ onClose }: { onClose: () => void }) {
+function HelpModal({ mode, onClose }: { mode: PaymentMode; onClose: () => void }) {
+  const steps = getHelpSteps(mode);
   return (
-    <div className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={onClose}>
-      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b border-indigo-100 bg-indigo-50 flex items-center justify-between">
-          <h3 className="font-black text-indigo-900 text-sm flex items-center gap-2">
-            <HelpCircle className="w-4 h-4" /> How This Page Works
-          </h3>
-          <button onClick={onClose} className="p-1 hover:bg-indigo-100 rounded-md" aria-label="Close">
-            <X className="w-4 h-4 text-indigo-600" />
-          </button>
-        </div>
-        <div className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
-          {HELP_STEPS.map(([title, body]) => (
-            <div key={title}>
+    <ModalShell open onClose={onClose} labelledBy="checkout-help-title">
+      <div className="px-6 py-4 border-b border-indigo-100 bg-indigo-50 flex items-center justify-between shrink-0">
+        <h3 id="checkout-help-title" className="font-black text-indigo-900 text-sm flex items-center gap-2">
+          <HelpCircle className="w-4 h-4" /> How This Page Works
+        </h3>
+        <button onClick={onClose} className="p-1 hover:bg-indigo-100 rounded-md" aria-label="Close">
+          <X className="w-4 h-4 text-indigo-600" />
+        </button>
+      </div>
+      <ol className="p-6 space-y-4 overflow-y-auto">
+        {steps.map(([title, body], i) => (
+          <li key={title} className="flex gap-3">
+            <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0">{i + 1}</span>
+            <div>
               <p className="text-xs font-black text-slate-800">{title}</p>
               <p className="text-[11px] text-slate-500 font-medium leading-relaxed mt-0.5">{body}</p>
             </div>
-          ))}
+          </li>
+        ))}
+      </ol>
+      <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
+        <button onClick={onClose} className="px-5 py-2.5 font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700">
+          Got it
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ─── Term vs Session explainer ──────────────────────────────────────────────
+/** Mini timeline: three terms, highlighting what a payment covers. */
+function TermStrip({ variant }: { variant: 'term' | 'session' }) {
+  const terms = ['1st', '2nd', '3rd'];
+  return (
+    <div className="flex items-center gap-1" aria-hidden>
+      {terms.map((t, i) => {
+        const on = variant === 'session' || i === 1;
+        return (
+          <React.Fragment key={t}>
+            <div className={`flex-1 rounded-lg px-1.5 py-2 text-center border transition-colors ${
+              on
+                ? variant === 'session' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-emerald-500 border-emerald-500 text-white'
+                : 'bg-white border-dashed border-slate-300 text-slate-400'
+            }`}>
+              <p className="text-[10px] font-black leading-none">{t}</p>
+              <p className={`text-[8.5px] font-bold mt-1 leading-none ${on ? 'text-white/80' : 'text-slate-300'}`}>Term</p>
+            </div>
+            {variant === 'session' && i < terms.length - 1 && (
+              <ArrowRight className="w-3 h-3 text-indigo-300 shrink-0" />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function TermVsSessionModal({
+  open, current, onClose, onChoose,
+}: {
+  open: boolean;
+  current: 'single' | 'session';
+  onClose: () => void;
+  onChoose: (mode: 'single' | 'session') => void;
+}) {
+  const options = [
+    {
+      key: 'single' as const,
+      Icon: CalendarCheck,
+      title: 'This Term',
+      tag: 'Default',
+      tagClass: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      ring: 'border-emerald-500 bg-emerald-50/40',
+      points: [
+        'Pays the bills for one term at a time',
+        'Untick any bill you’d rather pay later',
+        'Wallet credit can be applied',
+      ],
+      best: 'Best if you pay term by term.',
+    },
+    {
+      key: 'session' as const,
+      Icon: CalendarRange,
+      title: 'Full Session',
+      tag: 'Whole year',
+      tagClass: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+      ring: 'border-indigo-500 bg-indigo-50/40',
+      points: [
+        'Pays for every term in the academic year',
+        'Clears the oldest term first, then the next',
+        'One payment, no need to come back each term',
+      ],
+      best: 'Best if you want the whole year settled.',
+    },
+  ];
+
+  return (
+    <ModalShell open={open} onClose={onClose} labelledBy="term-session-title" maxWidth="max-w-2xl">
+      <div className="px-6 pt-6 pb-4 shrink-0 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Quick guide</p>
+          <h2 id="term-session-title" className="text-lg font-black text-slate-900 mt-1 leading-tight">
+            Pay for one term, or the whole session?
+          </h2>
+          <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
+            An academic <span className="font-bold text-slate-700">session</span> is the full school year, usually three terms.
+            You can pay one term now, or settle the entire session in one go.
+          </p>
         </div>
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-          <button onClick={onClose} className="px-5 py-2.5 font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700">
-            Got it
+        <button onClick={onClose} className="p-1.5 -mr-1.5 hover:bg-slate-100 rounded-lg shrink-0" aria-label="Close">
+          <X className="w-4 h-4 text-slate-500" />
+        </button>
+      </div>
+
+      <div className="px-6 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-3 overflow-y-auto">
+        {options.map(o => {
+          const active = current === o.key;
+          return (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => onChoose(o.key)}
+              className={`text-left p-4 rounded-2xl border-2 transition-all hover:shadow-md focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-500/20 ${
+                active ? o.ring : 'border-slate-200 bg-white hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <o.Icon className={`w-4 h-4 ${o.key === 'single' ? 'text-emerald-600' : 'text-indigo-600'}`} />
+                  <p className="text-sm font-black text-slate-900">{o.title}</p>
+                </div>
+                <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md border ${o.tagClass}`}>{o.tag}</span>
+              </div>
+              <div className="mt-3.5">
+                <TermStrip variant={o.key === 'single' ? 'term' : 'session'} />
+              </div>
+              <ul className="mt-3.5 space-y-1.5">
+                {o.points.map(p => (
+                  <li key={p} className="flex items-start gap-2 text-[11.5px] font-medium text-slate-600 leading-snug">
+                    <Check className={`w-3.5 h-3.5 shrink-0 mt-px ${o.key === 'single' ? 'text-emerald-500' : 'text-indigo-500'}`} strokeWidth={3} />
+                    {p}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 pt-3 border-t border-slate-100 text-[11px] font-bold text-slate-500">{o.best}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0">
+        <p className="text-[11px] text-slate-400 font-medium">You can switch anytime using the toggle at the top.</p>
+        <div className="flex gap-2.5">
+          <button
+            onClick={() => onChoose('session')}
+            className="flex-1 sm:flex-none px-4 py-2.5 text-xs font-black text-indigo-700 bg-white border-2 border-indigo-200 rounded-xl hover:bg-indigo-50 transition-colors"
+          >
+            Pay full session
+          </button>
+          <button
+            onClick={() => onChoose('single')}
+            autoFocus
+            className="flex-1 sm:flex-none px-4 py-2.5 text-xs font-black text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-colors"
+          >
+            Continue with this term
           </button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }
 
@@ -208,6 +372,14 @@ function ParentCheckoutContent() {
   const [showPreview, setShowPreview] = useState(false);
   const [warningModal, setWarningModal] = useState<{ warnings: string[]; action: 'preview' | 'submit' } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [showTermExplainer, setShowTermExplainer] = useState(false);
+
+  // One-time announcements:
+  //  - "You can now pay online" → once ever (localStorage, shared with wallet funding)
+  //  - Term vs Session explainer → once per browser session (sessionStorage)
+  const onlineIntro = useOneTimeFlag(ONLINE_INTRO_SEEN_KEY, 'local');
+  const termExplainer = useOneTimeFlag(TERM_EXPLAINER_SEEN_KEY, 'session');
+  const showOnlineIntro = !loading && hasActiveGateway && onlineIntro.ready && !onlineIntro.seen;
 
   // Dynamically Load Payment Gateway Scripts
   useEffect(() => {
@@ -251,7 +423,10 @@ function ParentCheckoutContent() {
 
         const filteredBanks = Array.isArray(bankData) ? bankData.filter((b: any) => b.purpose === 'fee_payment' || b.purpose === 'both') : [];
         setBanks(filteredBanks);
-        setHasActiveGateway(Array.isArray(gatewaysData) && gatewaysData.some((g: any) => g.is_active));
+        const onlineAvailable = Array.isArray(gatewaysData) && gatewaysData.some((g: any) => g.is_active);
+        setHasActiveGateway(onlineAvailable);
+        // Online is the primary route whenever the school has a live gateway.
+        setPaymentMode(onlineAvailable ? 'online' : 'offline');
 
         // Resolve the school's current academic session + period so the checkout
         // opens on today's term by default — same approach as the POS checkout page.
@@ -309,6 +484,20 @@ function ParentCheckoutContent() {
     });
     return Array.from(map.values()).sort((a, b) => b.session_id - a.session_id);
   }, [termsWithDebt]);
+
+  // The Term vs Session explainer opens on its own once per browser session,
+  // only after the online-payment announcement (if any) is dismissed, so they never stack.
+  const autoOpenTermExplainer = !loading
+    && termExplainer.ready && !termExplainer.seen
+    && onlineIntro.ready
+    && sessionsWithDebt.length > 0;
+  const termExplainerOpen = (showTermExplainer || autoOpenTermExplainer) && !showOnlineIntro;
+
+  const closeTermExplainer = (choice?: 'single' | 'session') => {
+    if (choice) setViewMode(choice);
+    setShowTermExplainer(false);
+    termExplainer.markSeen();
+  };
 
   useEffect(() => {
     if (viewMode === 'session' && sessionsWithDebt.length > 0) {
@@ -677,15 +866,25 @@ function ParentCheckoutContent() {
 
   // ─── Validation ───
   const externalNeeded = tenderedKobo > 0;
-  const bankRequired = paymentMode === 'offline' && externalNeeded;
-  const proofRequired = paymentMode === 'offline' && externalNeeded;
+  // A wallet-only settlement has nothing to charge online, so it goes through the
+  // offline route (no bank/proof needed), the same as it did before online was the default.
+  const submitMode: PaymentMode = externalNeeded ? paymentMode : 'offline';
+  const isWalletOnly = !externalNeeded && walletContributionKobo > 0;
+  const bankRequired = submitMode === 'offline' && externalNeeded;
+  const proofRequired = submitMode === 'offline' && externalNeeded;
   const overpaymentNeedsTarget = overpaymentKobo > 0 && wards.length > 1 && overpaymentMode === 'select' && !overpaymentTargetId;
 
   const canConfirm = totalAvailableKobo > 0
     && !(bankRequired && !bankAccountId)
     && !(proofRequired && !proofFile)
     && !overpaymentNeedsTarget
-    && (paymentMode === 'offline' || (billingEmail && isValidEmail(billingEmail.trim())));
+    && (submitMode === 'offline' || (billingEmail && isValidEmail(billingEmail.trim())));
+
+  const submitLabel = submitMode === 'online'
+    ? <><Globe className="w-4 h-4" /> Pay Online</>
+    : isWalletOnly
+      ? <><Wallet className="w-4 h-4" /> Apply Wallet Credit</>
+      : <><Check className="w-4 h-4" /> Submit Proof</>;
 
   // ─── Pre-submit Warnings ───
   const getPreSubmitWarnings = (): string[] => {
@@ -796,7 +995,7 @@ function ParentCheckoutContent() {
       else if (bankRequired && !bankAccountId) showToast('error', 'Select the school bank account you transferred to.');
       else if (proofRequired && !proofFile) showToast('error', 'Upload your payment receipt.');
       else if (overpaymentNeedsTarget) showToast('error', 'Select which ward should receive the excess wallet credit.');
-      else if (paymentMode === 'online' && (!billingEmail || !isValidEmail(billingEmail))) showToast('error', 'Enter a valid billing email.');
+      else if (submitMode === 'online' && (!billingEmail || !isValidEmail(billingEmail))) showToast('error', 'Enter a valid billing email.');
       return;
     }
 
@@ -833,11 +1032,11 @@ function ParentCheckoutContent() {
 
       const formData = new FormData();
       formData.append('total_amount', String(fromKobo(totalAvailableKobo)));
-      formData.append('mode', paymentMode);
+      formData.append('mode', submitMode);
 
       if (tenderedKobo > 0) {
         formData.append('external_amount', String(fromKobo(tenderedKobo)));
-        if (paymentMode === 'offline') {
+        if (submitMode === 'offline') {
           if (bankAccountId) formData.append('bank_account_id', bankAccountId);
           if (reference) formData.append('reference', reference);
           if (proofFile) formData.append('proof_of_payment', proofFile);
@@ -852,8 +1051,10 @@ function ParentCheckoutContent() {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      if (paymentMode === 'offline') {
-        showToast('success', 'Payment proof submitted successfully for confirmation!');
+      if (submitMode === 'offline') {
+        showToast('success', isWalletOnly
+          ? 'Wallet credit applied successfully!'
+          : 'Payment proof submitted successfully for confirmation!');
         setShowPreview(false);
         setTimeout(() => {
           router.push('/dashboard/parent/fees/history');
@@ -882,7 +1083,23 @@ function ParentCheckoutContent() {
       <ToastStack toasts={toasts} onDismiss={id => setToasts(p => p.filter(t => t.id !== id))} />
 
       {/* ── Help Modal ── */}
-      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+      {showHelp && <HelpModal mode={paymentMode} onClose={() => setShowHelp(false)} />}
+
+      {/* ── One-time: online payment announcement ── */}
+      <OnlinePaymentIntroModal
+        open={showOnlineIntro}
+        subject="fees"
+        onPayOnline={() => { setPaymentMode('online'); onlineIntro.markSeen(); }}
+        onPaidToBank={() => { setPaymentMode('offline'); onlineIntro.markSeen(); }}
+      />
+
+      {/* ── Term vs Session explainer (auto once per session, or on demand) ── */}
+      <TermVsSessionModal
+        open={termExplainerOpen}
+        current={viewMode}
+        onClose={() => closeTermExplainer()}
+        onChoose={(m) => closeTermExplainer(m)}
+      />
 
       {/* ── Warning Modal ── */}
       {warningModal && (
@@ -922,7 +1139,9 @@ function ParentCheckoutContent() {
         <div className="fixed inset-0 z-[90] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowPreview(false)}>
           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[85vh]" onClick={e => e.stopPropagation()}>
             <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
-              <h3 className="font-black text-slate-800 text-lg">Preview Upload Transaction</h3>
+              <h3 className="font-black text-slate-800 text-lg">
+                {submitMode === 'online' ? 'Review Your Payment' : isWalletOnly ? 'Review Wallet Settlement' : 'Preview Upload Transaction'}
+              </h3>
               <button onClick={() => setShowPreview(false)} className="p-1.5 hover:bg-slate-200 rounded-md" aria-label="Close"><X className="w-5 h-5"/></button>
             </div>
             <div className="p-6 overflow-y-auto">
@@ -976,8 +1195,12 @@ function ParentCheckoutContent() {
                       );
                     })}
                     {tenderedKobo > 0 && (
-                      <div className="flex justify-between text-sm bg-slate-100 px-3 py-2 rounded-lg">
-                        <span className="font-bold text-slate-700">Bank Transfer / Deposit</span>
+                      <div className={`flex justify-between text-sm px-3 py-2 rounded-lg ${submitMode === 'online' ? 'bg-blue-50' : 'bg-slate-100'}`}>
+                        <span className={`font-bold flex items-center gap-1.5 ${submitMode === 'online' ? 'text-blue-800' : 'text-slate-700'}`}>
+                          {submitMode === 'online'
+                            ? <><Globe className="w-3.5 h-3.5" /> Online Payment</>
+                            : 'Bank Transfer / Deposit'}
+                        </span>
                         <span className="font-black text-slate-700">{formatCurrency(fromKobo(tenderedKobo))}</span>
                       </div>
                     )}
@@ -1000,14 +1223,16 @@ function ParentCheckoutContent() {
               )}
 
               <div className="flex justify-between items-center bg-slate-100 p-4 rounded-xl border border-slate-200">
-                <span className="font-bold text-slate-600">Total Upload Proof Amount</span>
+                <span className="font-bold text-slate-600">
+                  {submitMode === 'online' ? 'Total Payment' : isWalletOnly ? 'Total Settlement' : 'Total Upload Proof Amount'}
+                </span>
                 <span className="font-black text-2xl text-slate-900">{formatCurrency(fromKobo(totalAvailableKobo))}</span>
               </div>
             </div>
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3 shrink-0">
               <button onClick={() => setShowPreview(false)} className="px-5 py-2.5 font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-100">Cancel</button>
-              <button onClick={handleConfirmClick} disabled={isSubmitting || isVerifying || !canConfirm} className={`px-6 py-2.5 font-bold text-white rounded-xl flex items-center gap-2 disabled:opacity-50 ${paymentMode === 'online' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
-                {isSubmitting || isVerifying ? <Loader2 className="w-4 h-4 animate-spin"/> : paymentMode === 'online' ? <><Globe className="w-4 h-4"/> Pay Online</> : <><Check className="w-4 h-4"/> Confirm &amp; Process</>}
+              <button onClick={handleConfirmClick} disabled={isSubmitting || isVerifying || !canConfirm} className={`px-6 py-2.5 font-bold text-white rounded-xl flex items-center gap-2 disabled:opacity-50 ${submitMode === 'online' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                {isSubmitting || isVerifying ? <Loader2 className="w-4 h-4 animate-spin"/> : submitLabel}
               </button>
             </div>
           </div>
@@ -1020,8 +1245,14 @@ function ParentCheckoutContent() {
           <ArrowLeft className="h-4 w-4 text-slate-600" />
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-lg font-black text-slate-900">Upload Payment Proof</h1>
-          <p className="text-xs text-slate-400">Allocate your bank transfer across your wards securely.</p>
+          <h1 className="text-lg font-black text-slate-900">
+            {paymentMode === 'online' ? 'Pay School Fees' : 'Upload Payment Proof'}
+          </h1>
+          <p className="text-xs text-slate-400">
+            {paymentMode === 'online'
+              ? 'Pay securely online and your ledger updates instantly.'
+              : 'Allocate your bank transfer across your wards securely.'}
+          </p>
         </div>
         <button
           onClick={() => setShowHelp(true)}
@@ -1032,20 +1263,52 @@ function ParentCheckoutContent() {
         </button>
       </div>
 
-      {/* ── Mode Toggle & Term Selector ── */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 w-fit shrink-0">
+      {/* ── What am I paying for? (Term vs Session) ── */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center gap-4">
+          <div role="radiogroup" aria-label="Payment period" className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 w-full md:w-auto shrink-0">
+            <button
+              role="radio"
+              aria-checked={viewMode === 'single'}
+              onClick={() => setViewMode('single')}
+              className={`flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === 'single' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <CalendarCheck className={`w-3.5 h-3.5 ${viewMode === 'single' ? 'text-emerald-600' : ''}`} /> This Term
+            </button>
+            <button
+              role="radio"
+              aria-checked={viewMode === 'session'}
+              onClick={() => setViewMode('session')}
+              className={`flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === 'session' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <CalendarRange className="w-3.5 h-3.5" /> Full Session
+            </button>
+          </div>
+
+          <div className="flex items-start gap-2.5 flex-1 min-w-0">
+            <div className={`w-1 self-stretch rounded-full shrink-0 ${viewMode === 'single' ? 'bg-emerald-400' : 'bg-indigo-500'}`} aria-hidden />
+            <p className="text-[11.5px] text-slate-600 font-medium leading-relaxed">
+              {viewMode === 'single' ? (
+                <>
+                  <span className="font-black text-slate-800">Paying for one term.</span>{' '}
+                  Pick a term below and untick any bill you&apos;d rather pay later.
+                  {sessionsWithDebt.length > 0 && <> Want the whole year sorted? Switch to <span className="font-bold text-indigo-700">Full Session</span>.</>}
+                </>
+              ) : (
+                <>
+                  <span className="font-black text-slate-800">Paying for the whole academic session.</span>{' '}
+                  Your payment clears the oldest term first, then the next. Wallet credit isn&apos;t available in this mode.
+                </>
+              )}
+            </p>
+          </div>
+
           <button
-            onClick={() => setViewMode('single')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === 'single' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            type="button"
+            onClick={() => setShowTermExplainer(true)}
+            className="self-start md:self-center flex items-center gap-1.5 text-[11px] font-black text-indigo-600 hover:text-indigo-800 hover:underline shrink-0"
           >
-            Single Term
-          </button>
-          <button
-            onClick={() => setViewMode('session')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === 'session' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-            Full Session
+            <Info className="w-3.5 h-3.5" /> What&apos;s the difference?
           </button>
         </div>
       </div>
@@ -1278,31 +1541,25 @@ function ParentCheckoutContent() {
             )}
 
             {/* Upload Proof / Payment Details Card */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
+              <div>
                 <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
                   {paymentMode === 'online' ? <Globe className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-indigo-500" />}
-                  {paymentMode === 'online' ? 'Online Payment Details' : 'Payment Proof Details'}
+                  How would you like to pay?
                 </h3>
-                {hasActiveGateway && (
-                  <div className="flex bg-slate-100 p-0.5 rounded-lg text-xs font-semibold shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMode('offline')}
-                      className={`px-3 py-1.5 rounded-md transition-all ${paymentMode === 'offline' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
-                    >
-                      Offline
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMode('online')}
-                      className={`px-3 py-1.5 rounded-md transition-all ${paymentMode === 'online' ? 'bg-white text-blue-700 shadow-sm border border-slate-200 flex items-center gap-1.5' : 'text-slate-500 hover:text-slate-800'}`}
-                    >
-                      <Globe className="h-3.5 w-3.5" /> Pay Online
-                    </button>
-                  </div>
+                {isWalletOnly && (
+                  <p className="text-[11px] text-indigo-600 font-bold mt-1 flex items-center gap-1.5">
+                    <Wallet className="w-3.5 h-3.5" /> Wallet credit covers this payment, so nothing else is needed.
+                  </p>
                 )}
               </div>
+
+              <PaymentMethodPicker
+                value={paymentMode}
+                onChange={setPaymentMode}
+                onlineAvailable={hasActiveGateway}
+                hideLabel
+              />
 
               {paymentMode === 'offline' && (
                 <>
@@ -1348,7 +1605,7 @@ function ParentCheckoutContent() {
               )}
 
               {paymentMode === 'online' && (
-                <div className="p-4 bg-indigo-50/30 rounded-xl border border-slate-100 mt-2">
+                <div className="p-4 bg-blue-50/30 rounded-xl border border-blue-100">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">
                     Billing Email <span className="text-red-500">*</span>
                   </label>
@@ -1373,8 +1630,11 @@ function ParentCheckoutContent() {
                     </div>
                   )}
                   <p className="text-[11px] text-slate-500 font-medium mt-3 leading-relaxed">
-                    An online checkout window will open. Once payment is confirmed, the ledger will be automatically updated.
+                    A secure checkout window will open. Once payment is confirmed, your ledger updates automatically.
                   </p>
+                  <div className="mt-3.5">
+                    <PaidToBankHint onSwitch={() => setPaymentMode('offline')} />
+                  </div>
                 </div>
               )}
             </div>
@@ -1444,7 +1704,9 @@ function ParentCheckoutContent() {
           <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
             <div className="flex flex-wrap items-center gap-3">
               <div>
-                <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Amount Deposited</label>
+                <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                  {paymentMode === 'online' ? 'Amount to Pay' : 'Total Amount Deposited'}
+                </label>
                 <div className="relative w-44">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">₦</span>
                   <input
@@ -1471,9 +1733,9 @@ function ParentCheckoutContent() {
                 onClick={handleConfirmClick}
                 disabled={!canConfirm || isSubmitting || isVerifying}
                 title={!canConfirm ? 'Enter amount and fill required details' : undefined}
-                className={`px-7 py-3 text-white text-sm font-bold rounded-xl shadow-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2 ${paymentMode === 'online' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'}`}
+                className={`px-7 py-3 text-white text-sm font-bold rounded-xl shadow-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2 ${submitMode === 'online' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'}`}
               >
-                {isSubmitting || isVerifying ? <Loader2 className="w-5 h-5 animate-spin"/> : paymentMode === 'online' ? <><Globe className="w-4 h-4"/> Pay Online</> : <><Check className="w-4 h-4"/> Submit Proof</>}
+                {isSubmitting || isVerifying ? <Loader2 className="w-5 h-5 animate-spin"/> : submitLabel}
               </button>
             </div>
           </div>

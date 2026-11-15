@@ -11,6 +11,10 @@ import {
   ShieldCheck, Clock, ArrowRight, Banknote, UtensilsCrossed, ArrowLeft, Globe
 } from 'lucide-react';
 import type { SchoolBankDetail } from '@/lib/types';
+import {
+  PaymentMethodPicker, PaidToBankHint, OnlinePaymentIntroModal,
+  useOneTimeFlag, ONLINE_INTRO_SEEN_KEY,
+} from '@/components/payment/PaymentMethodUI';
 
 declare global {
   interface Window {
@@ -99,6 +103,10 @@ export default function ParentFundWalletPage() {
   // Derived
   const selectedBank = banks.find(b => String(b.id) === String(bankAccount));
 
+  // One-time "you can now pay online" announcement (shared with fee checkout)
+  const onlineIntro = useOneTimeFlag(ONLINE_INTRO_SEEN_KEY, 'local');
+  const showOnlineIntro = !loadingBanks && hasActiveGateway && onlineIntro.ready && !onlineIntro.seen;
+
   // Dynamically Load Payment Gateway Scripts
   useEffect(() => {
     if (!document.getElementById('paystack-script')) {
@@ -148,7 +156,10 @@ export default function ParentFundWalletPage() {
         ]);
         const filteredBanks = bankData.filter((b: any) => b.purpose === 'wallet_funding' || b.purpose === 'both');
         setBanks(filteredBanks);
-        setHasActiveGateway(Array.isArray(gatewaysData) && gatewaysData.some((g: any) => g.is_active));
+        const onlineAvailable = Array.isArray(gatewaysData) && gatewaysData.some((g: any) => g.is_active);
+        setHasActiveGateway(onlineAvailable);
+        // Online is the primary route whenever the school has a live gateway.
+        setPaymentMode(onlineAvailable ? 'online' : 'offline');
       } catch (err) {
         showToast('error', 'Failed to load school bank accounts or payment gateways.');
       } finally {
@@ -333,6 +344,13 @@ export default function ParentFundWalletPage() {
         onDismiss={(id) => setToasts((t) => t.filter((x) => x.id !== id))}
       />
 
+      <OnlinePaymentIntroModal
+        open={showOnlineIntro}
+        subject="wallet"
+        onPayOnline={() => { setPaymentMode('online'); onlineIntro.markSeen(); }}
+        onPaidToBank={() => { setPaymentMode('offline'); onlineIntro.markSeen(); }}
+      />
+
       {/* ── Header Card ── */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
         <div className="flex items-center justify-between gap-3">
@@ -352,28 +370,12 @@ export default function ParentFundWalletPage() {
                 Fund Wallet
               </h1>
               <p className="text-[11px] font-medium text-slate-500 truncate">
-                Upload payment proof or pay online to top-up
+                {hasActiveGateway
+                  ? 'Top up instantly online, or upload a bank deposit'
+                  : 'Upload your bank deposit receipt to top up'}
               </p>
             </div>
           </div>
-          {hasActiveGateway && (
-            <div className="flex bg-slate-100 p-0.5 rounded-lg text-xs font-semibold shrink-0">
-              <button
-                type="button"
-                onClick={() => setPaymentMode('offline')}
-                className={`px-3 py-1.5 rounded-md transition-all ${paymentMode === 'offline' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
-              >
-                Offline
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentMode('online')}
-                className={`px-3 py-1.5 rounded-md transition-all ${paymentMode === 'online' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200 flex items-center gap-1.5' : 'text-slate-500 hover:text-slate-800'}`}
-              >
-                <Globe className="h-3.5 w-3.5" /> Pay Online
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
@@ -487,7 +489,17 @@ export default function ParentFundWalletPage() {
               </div>
             </div>
 
-            {paymentMode === 'offline' && (
+            {/* ─── Payment Method ─── */}
+            <div className="px-4 sm:px-5 py-3.5">
+              <PaymentMethodPicker
+                value={paymentMode}
+                onChange={(m) => { setPaymentMode(m); setError(null); }}
+                onlineAvailable={hasActiveGateway}
+                loading={loadingBanks}
+              />
+            </div>
+
+            {!loadingBanks && paymentMode === 'offline' && (
               <>
                 {/* ─── Bank Account Selection ─── */}
                 <div className="px-4 sm:px-5 py-3.5 border-t border-slate-100">
@@ -614,8 +626,8 @@ export default function ParentFundWalletPage() {
               </>
             )}
 
-            {paymentMode === 'online' && (
-              <div className="px-4 sm:px-5 py-4 border-t border-slate-100 bg-indigo-50/30">
+            {!loadingBanks && paymentMode === 'online' && (
+              <div className="px-4 sm:px-5 py-4 border-t border-slate-100 bg-blue-50/30">
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">
                   Billing Email <span className="text-red-500">*</span>
                 </label>
@@ -640,8 +652,11 @@ export default function ParentFundWalletPage() {
                   </div>
                 )}
                 <p className="text-[11px] text-slate-500 font-medium mt-3 leading-relaxed">
-                  An online checkout window will open. Once payment is confirmed, your ward's wallet will be funded automatically.
+                  A secure checkout window will open. Once payment is confirmed, your ward&apos;s wallet is funded automatically.
                 </p>
+                <div className="mt-3.5">
+                  <PaidToBankHint onSwitch={() => { setPaymentMode('offline'); setError(null); }} />
+                </div>
               </div>
             )}
           </div>
@@ -676,7 +691,7 @@ export default function ParentFundWalletPage() {
           <div className="p-4 sm:p-5 pt-3">
             <button
               type="submit"
-              disabled={isSubmitting || isVerifying}
+              disabled={isSubmitting || isVerifying || loadingBanks}
               className={`w-full flex items-center justify-center gap-2.5 py-3 text-sm font-black text-white rounded-xl disabled:opacity-50 transition-all shadow-lg active:scale-[0.99] ${
                 paymentMode === 'online' 
                   ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200 hover:shadow-blue-300' 
