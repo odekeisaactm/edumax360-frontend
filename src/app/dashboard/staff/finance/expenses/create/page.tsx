@@ -18,9 +18,10 @@ import type {
 } from '@/lib/finance.types';
 import {
   ArrowDownRight, ArrowLeft, Check, AlertCircle, Loader2, UploadCloud,
-  DollarSign, Wallet, FileText, Tag, Lock, ChevronDown, ChevronUp,
-  Plus, Trash2, UserCheck, CreditCard, Layers, ListPlus, X, Search,
+  Coins, Wallet, FileText, Tag, Lock, ChevronDown, ChevronUp,
+  Plus, Trash2, UserCheck, CreditCard, Layers, ListPlus, X, Search, Info,
 } from 'lucide-react';
+import { buildCurrencyCatalog, currencySymbol, fmtCurrency } from '@/lib/currency';
 
 // ─── Interfaces & Types ────────────────────────────────────────────────────────
 let _toastId = 0;
@@ -229,11 +230,8 @@ export default function ExpenseCreatePage() {
   const [notes, setNotes] = useState<string>('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
-  // Multi-Currency State
-  const [selectedCurrency, setSelectedCurrency] = useState<string>('NGN');
+  // Amount — always entered in the source account's own currency (no conversion)
   const [amount, setAmount] = useState<string>('');
-  const [foreignAmount, setForeignAmount] = useState<string>('');
-  const [exchangeRate, setExchangeRate] = useState<string>('');
 
   // Itemized Breakdown State
   const [useLineItems, setUseLineItems] = useState(false);
@@ -298,10 +296,6 @@ export default function ExpenseCreatePage() {
       }));
       setStaffList(formattedStaff);
 
-      if (settingsRes?.currency_config?.base_currency) {
-        setSelectedCurrency(settingsRes.currency_config.base_currency);
-      }
-
       if (user) {
         const match = formattedStaff.find((s: any) => s.staff_id === getattrUserStaffId(user));
         if (match) setPreparedBy(match.id);
@@ -315,77 +309,41 @@ export default function ExpenseCreatePage() {
 
   useEffect(() => { fetchReferences(); }, [fetchReferences]);
 
-  const baseCurrencyCode = settings?.currency_config?.base_currency || 'NGN';
-  const isForeign = !!settings?.strict_multi_currency && selectedCurrency !== baseCurrencyCode;
+  // ─── Currency: always the currency of the account the money leaves ───
+  const catalog = useMemo(
+    () => buildCurrencyCatalog(settings, banks.map(b => b.currency)),
+    [settings, banks],
+  );
+  const baseCurrencyCode = catalog.base;
+  const cashVaults = useMemo(() => banks.filter(b => b.account_type === 'cash_vault' && b.is_active !== false), [banks]);
+  const selectedBank = useMemo(() => banks.find(b => b.id === Number(bankAccount)), [banks, bankAccount]);
 
-  // 2. Strict Currency Locking Rules
-  useEffect(() => {
-    if (!baseCurrencyCode) return;
-
+  const selectedCurrency = useMemo(() => {
     if (paymentMethod === 'cash') {
-      setSelectedCurrency(baseCurrencyCode);
-      setForeignAmount('');
-      setExchangeRate('');
-    } else if (bankAccount) {
-      const selectedBank = banks.find(b => b.id === Number(bankAccount));
-      const targetCurrency = selectedBank?.currency || baseCurrencyCode;
-      setSelectedCurrency(targetCurrency);
-
-      if (targetCurrency === baseCurrencyCode) {
-        setForeignAmount('');
-        setExchangeRate('');
-      } else {
-        const cfg = settings?.currency_config?.supported_currencies?.[targetCurrency];
-        const rateStr = cfg?.rate_to_base ? String(cfg.rate_to_base) : '1';
-        setExchangeRate(rateStr);
-        if (foreignAmount && !useLineItems) {
-          const calcBase = parseFloat(foreignAmount) * parseFloat(rateStr);
-          setAmount(calcBase.toFixed(2));
-        }
-      }
+      // The backend debits the cashier's assigned vault; with a single vault we know its currency.
+      return String((cashVaults.length === 1 ? cashVaults[0].currency : null) || baseCurrencyCode).toUpperCase();
     }
-  }, [paymentMethod, bankAccount, banks, baseCurrencyCode, settings, foreignAmount, useLineItems]);
+    return String(selectedBank?.currency || baseCurrencyCode).toUpperCase();
+  }, [paymentMethod, cashVaults, selectedBank, baseCurrencyCode]);
 
-  const handleForeignAmountChange = (val: string) => {
-    if (useLineItems) return;
-    setForeignAmount(val);
-    const numForeign = parseFloat(val);
-    const numRate = parseFloat(exchangeRate);
-    if (!isNaN(numForeign) && !isNaN(numRate) && numRate > 0) {
-      setAmount((numForeign * numRate).toFixed(2));
-    } else {
-      setAmount('');
-    }
-  };
+  const currencyMeta = catalog.byCode[selectedCurrency];
+  const symbol = currencySymbol(selectedCurrency, catalog) || selectedCurrency;
+  const isNonBase = selectedCurrency !== baseCurrencyCode;
+  const sourceAvailable = paymentMethod === 'cash'
+    ? (cashVaults.length === 1 ? cashVaults[0].current_balance : null)
+    : (selectedBank?.current_balance ?? null);
 
   const handleMethodChange = (method: GeneralPaymentMethod) => {
     setPaymentMethod(method);
     if (method === 'cash') setBankAccount('');
   };
 
-  // ─── DYNAMIC LINE ITEMS SUMMATION ───
+  // ─── DYNAMIC LINE ITEMS SUMMATION (same currency as the amount) ───
   useEffect(() => {
     if (!useLineItems) return;
     const total = lineItems.reduce((acc, item) => acc + (parseFloat(item.amount) || 0), 0);
-
-    if (total > 0) {
-      if (isForeign) {
-        setForeignAmount(total.toFixed(2));
-        const numRate = parseFloat(exchangeRate);
-        if (!isNaN(numRate) && numRate > 0) {
-          setAmount((total * numRate).toFixed(2));
-        } else {
-          setAmount('');
-        }
-      } else {
-        setAmount(total.toFixed(2));
-        setForeignAmount('');
-      }
-    } else {
-      setAmount('');
-      setForeignAmount('');
-    }
-  }, [lineItems, useLineItems, isForeign, exchangeRate]);
+    setAmount(total > 0 ? total.toFixed(2) : '');
+  }, [lineItems, useLineItems]);
 
   const addLineItem = () => {
     setLineItems(prev => [...prev, { id: Math.random().toString(36).substring(2, 9), date: expenseDate, particular: '', amount: '' }]);
@@ -441,11 +399,9 @@ export default function ExpenseCreatePage() {
       formData.append('expense_date', expenseDate);
 
       if (paymentMethod !== 'cash' && bankAccount) formData.append('bank_account', String(bankAccount));
-      if (isForeign && foreignAmount && exchangeRate) {
-        formData.append('foreign_currency', selectedCurrency);
-        formData.append('foreign_amount', foreignAmount);
-        formData.append('exchange_rate', exchangeRate);
-      }
+      // The amount is in the source account's currency. Sent so the server can
+      // reject a mismatch; for cash with several vaults the server decides.
+      if (paymentMethod !== 'cash' || cashVaults.length === 1) formData.append('currency', selectedCurrency);
       if (description.trim()) formData.append('description', description.trim());
       if (notes.trim()) formData.append('notes', notes.trim());
       if (receiptFile) formData.append('receipt', receiptFile);
@@ -479,7 +435,7 @@ export default function ExpenseCreatePage() {
 
       setTimeout(() => {
         if (postSubmitAction === 'create_another') {
-          setAmount(''); setForeignAmount(''); setDescription(''); setNotes(''); setReceiptFile(null);
+          setAmount(''); setDescription(''); setNotes(''); setReceiptFile(null);
           setBeneficiaryName(''); setVoteAndSubhead(''); setLineItems([]); setUseLineItems(false);
           setChequeNumber(''); setBankName(''); setChequeBy('');
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -567,7 +523,7 @@ export default function ExpenseCreatePage() {
                   <option value="">Select source bank account...</option>
                   {banks.filter(b => b.account_type !== 'cash_vault').map(b => (
                     <option key={b.id} value={b.id}>
-                      {b.bank_name} ({b.account_number}) — Bal: {b.currency} {parseFloat(b.current_balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      [{String(b.currency || baseCurrencyCode).toUpperCase()}] {b.bank_name} ({b.account_number}) — Bal: {fmtCurrency(b.current_balance, b.currency || baseCurrencyCode, catalog)}
                     </option>
                   ))}
                 </select>
@@ -578,36 +534,33 @@ export default function ExpenseCreatePage() {
 
         {/* Card 2: Currency & Amounts */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3 gap-3">
             <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-emerald-600" /> Amount & Currency
+              <Coins className="h-4 w-4 text-emerald-600" /> Amount
             </h3>
-            <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700">
-              <Lock className="h-3 w-3 text-slate-400" />
-              <span>{isForeign ? 'LOCKED CURRENCY' : 'CURRENCY'}: {isForeign ? selectedCurrency : baseCurrencyCode}</span>
+            <div
+              title="The currency follows the source account — money leaves that account in its own currency."
+              className={`flex items-center gap-1.5 px-3 py-1 border rounded-lg text-xs font-bold ${isNonBase ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-100 border-slate-200 text-slate-700'}`}
+            >
+              <Lock className="h-3 w-3 opacity-60" />
+              <span>{selectedCurrency}{currencyMeta?.name && currencyMeta.name !== selectedCurrency ? ` · ${currencyMeta.name}` : ''}</span>
             </div>
           </div>
 
-          {isForeign && (
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Foreign Amount ({selectedCurrency}) <span className="text-red-500">*</span></label>
-                <input type="number" step="0.01" min="0.01" required={!useLineItems} disabled={useLineItems} placeholder={`0.00 ${selectedCurrency}`} value={foreignAmount} onChange={e => handleForeignAmountChange(e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Direct Conversion Rate (Locked)</label>
-                <div className="relative">
-                  <input type="text" readOnly disabled value={exchangeRate ? `1 ${selectedCurrency} = ${baseCurrencyCode} ${parseFloat(exchangeRate).toLocaleString()}` : 'No rate defined'} className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-100 text-slate-600 font-semibold pr-10 cursor-not-allowed" />
-                  <Lock className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                </div>
-              </div>
+          {isNonBase && (
+            <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+              <Info className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+              <p className="text-xs font-medium leading-relaxed">
+                You&apos;re paying from a <strong>{selectedCurrency}</strong> account. Enter the amount in <strong>{currencyMeta?.name || selectedCurrency}</strong>.
+                It is recorded and debited exactly as entered, with no conversion to {baseCurrencyCode}.
+              </p>
             </div>
           )}
 
           <div>
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                Total Expenditure Recorded ({baseCurrencyCode}) <span className="text-red-500">*</span>
+                Amount Paid ({selectedCurrency}) <span className="text-red-500">*</span>
               </label>
               {useLineItems && (
                 <span className="text-[11px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-200">
@@ -615,7 +568,19 @@ export default function ExpenseCreatePage() {
                 </span>
               )}
             </div>
-            <input type="number" step="0.01" min="0.01" required readOnly={isForeign || useLineItems} placeholder="0.00" value={amount} onChange={e => !isForeign && !useLineItems && setAmount(e.target.value)} className={`${inputCls} text-lg font-bold ${isForeign || useLineItems ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'text-slate-900'}`} />
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-black text-slate-400 pointer-events-none">{symbol}</span>
+              <input
+                type="number" step="0.01" min="0.01" required readOnly={useLineItems} placeholder="0.00" value={amount}
+                onChange={e => !useLineItems && setAmount(e.target.value)}
+                className={`${inputCls} text-lg font-bold ${symbol.length > 2 ? 'pl-14' : 'pl-9'} ${useLineItems ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'text-slate-900'}`}
+              />
+            </div>
+            {sourceAvailable != null && (
+              <p className={`text-[11px] font-medium mt-1.5 ${parseFloat(amount || '0') > parseFloat(String(sourceAvailable)) ? 'text-red-600' : 'text-slate-400'}`}>
+                Available in source account: {fmtCurrency(sourceAvailable, selectedCurrency, catalog)}
+              </p>
+            )}
           </div>
 
           <div className="pt-2">

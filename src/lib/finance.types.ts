@@ -405,7 +405,10 @@ export interface Expense {
   id: number;
   category: number;
   category_name?: string;
+  /** Amount in `currency` — the source account's own currency. Never converted. */
   amount: string;
+  currency: string;
+  /** Legacy conversion fields (pre-migration rows only). Read-only. */
   foreign_currency: string | null;
   foreign_amount: string | null;
   exchange_rate: string | null;
@@ -443,10 +446,10 @@ export interface Expense {
 
 export interface ExpenseFormValues {
   category: number;
+  /** Amount in the source account's currency. */
   amount: string;
-  foreign_currency?: string;
-  foreign_amount?: string;
-  exchange_rate?: string;
+  /** Optional safety check — the backend derives the currency from the source account. */
+  currency?: string;
   expense_date: string;
   payment_method: GeneralPaymentMethod;
   bank_account?: number | null;
@@ -469,8 +472,11 @@ export interface ExpenseFormValues {
 }
 
 export interface ExpenseListFilters {
-  category?: number;
+  category?: number | string;
   payment_method?: GeneralPaymentMethod;
+  currency?: string;
+  session_id?: number | string;
+  academic_period_id?: number | string;
   start_date?: string;
   end_date?: string;
   search?: string;
@@ -724,6 +730,9 @@ export interface StaffWalletTransaction {
 
 // ==================== FINANCE REPORTS ====================
 
+// Every report is in ONE currency (default: base). Amounts in different
+// currencies are never converted or added together by the backend.
+
 export interface FinanceReportQueryParams {
   session_id?: string;
   period_id?: string;
@@ -732,69 +741,143 @@ export interface FinanceReportQueryParams {
   currency?: string;    // e.g. 'NGN', 'USD'
 }
 
-export interface DashboardKPIResponse {
-  total_income: string;
-  total_expenses: string;
-  net_cash_position: string;
-  bank_balances_total: string;
-  outstanding_purchase_advances: string;
-  monthly_trend: Array<{
-    month: string;      // e.g. "Jan 2026"
-    income: string;
-    expense: string;
-    net: string;
-  }>;
-  currency: string;
+export interface FinanceCurrencyMeta {
+  code: string;
+  name: string;
+  symbol: string;
 }
 
-export interface IncomeSummaryGroup {
+/** Fields returned by every report endpoint. */
+export interface FinanceReportScope {
+  currency: string;
+  currency_symbol: string;
+  base_currency: string;
+  currencies: FinanceCurrencyMeta[];
+  filters: {
+    session_id: number | null;
+    period_id: number | null;
+    date_from: string | null;
+    date_to: string | null;
+  };
+}
+
+export interface FinanceSourceRow {
+  key: string;
   name: string;
   amount: string;
-  percentage: number;   // 0-100, can be decimal
+  percentage: number;   // 0-100
 }
 
-export interface IncomeSummaryResponse {
-  currency: string;
-  total_income: string;
-  groups: IncomeSummaryGroup[];
-}
-
-export interface ExpenseSummaryGroup {
+export interface FinanceCategoryRow {
   name: string;
   amount: string;
+  count: number;
   percentage: number;
 }
 
-export interface ExpenseSummaryResponse {
-  currency: string;
-  total_expenses: string;
-  groups: ExpenseSummaryGroup[];
+export interface FinanceTrendPoint {
+  month: string;        // "Jan 2026"
+  month_key: string;    // "2026-01"
+  income: string;
+  expense: string;
+  net: string;
+}
+
+export interface FinanceAccountBalance {
+  id: number;
+  name: string;
+  account_number: string | null;
+  type: 'bank' | 'cash_vault' | string;
+  balance: string;
+}
+
+export interface FinanceRecentItem {
+  id?: number;
+  type?: string;
+  reference: string;
+  description: string;
+  category?: string | null;
+  date: string;
+  amount: string;
+}
+
+export interface DashboardKPIResponse extends FinanceReportScope {
+  money_in: { total: string; sources: FinanceSourceRow[] };
+  money_out: { total: string; sources: FinanceSourceRow[] };
+  net_position: string;
+  expense_categories: FinanceCategoryRow[];
+  income_categories: FinanceCategoryRow[];
+  accounts: FinanceAccountBalance[];
+  balance_total: string;
+  monthly_trend: FinanceTrendPoint[];
+  /** Only present for the base currency (fees and advances are base-only). */
+  receivables: {
+    fee_outstanding: string | null;
+    fee_collection_rate: number | null;
+    fee_net_expected: string | null;
+    advances_awaiting_disbursement: string;
+  } | null;
+  recent_income: FinanceRecentItem[];
+  recent_expenses: FinanceRecentItem[];
+}
+
+export interface FinanceSummaryRow {
+  key: string;
+  name: string;
+  group: string;
+  amount: string;
+  count: number;
+  percentage: number;
+}
+
+export interface IncomeSummaryResponse extends FinanceReportScope {
+  total: string;
+  rows: FinanceSummaryRow[];
+}
+
+export interface ExpenseSummaryResponse extends FinanceReportScope {
+  total: string;
+  rows: FinanceSummaryRow[];
 }
 
 export interface StatementLine {
   name: string;
   amount: string;
+  children: { name: string; amount: string }[];
 }
 
-export interface IncomeExpenseStatementResponse {
-  currency: string;
+export interface IncomeExpenseStatementResponse extends FinanceReportScope {
   revenue: StatementLine[];
   total_revenue: string;
   expenses: StatementLine[];
   total_expenses: string;
   net_income: string;
+  margin_pct: number | null;
 }
 
-export interface CashFlowMonth {
-  month: string;        // "YYYY-MM"
+export interface CashFlowBucket {
   inflow: string;
   outflow: string;
   net: string;
 }
 
-export interface CashFlowResponse {
-  currency: string;
+export interface CashFlowMonth extends CashFlowBucket {
+  month: string;        // "Jan 2026"
+  month_key: string;    // "2026-01"
+}
+
+export interface CashFlowResponse extends FinanceReportScope {
   months: CashFlowMonth[];
+  by_type: (CashFlowBucket & { type: string; name: string })[];
+  by_account: (CashFlowBucket & { id: number; name: string })[];
+  total_inflow: string;
+  total_outflow: string;
+  net_flow: string;
+}
+
+export interface ExpenseSummary {
+  by_currency: { currency: string; total: string; count: number }[];
+  count: number;
 }
 
 // ==================== API RESPONSE TYPES ====================

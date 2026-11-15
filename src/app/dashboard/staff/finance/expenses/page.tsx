@@ -7,13 +7,15 @@ import {
   expenseAPI, expenseCategoriesAPI, academicCalendarAPI,
   financeSettingsAPI, bankDetailsAPI, schoolInfoAPI,
 } from '@/lib/api';
-import type { Expense } from '@/lib/finance.types';
+import type { Expense, ExpenseSummary } from '@/lib/finance.types';
 import {
   ArrowDownRight, Search, X, Loader2, AlertCircle, RefreshCw, ChevronLeft,
   ChevronRight, Eye, Check, FileText, Plus, FilterX, Trash2, Landmark,
-  Wallet, Edit3, Printer, AlertTriangle, Calendar, Building2
+  Wallet, Edit3, Printer, AlertTriangle, Calendar, Coins, Receipt,
 } from 'lucide-react';
 import ExpenseExporter from './ExpenseExporter';
+import { buildCurrencyCatalog, fmtCurrency, currencySymbol, type CurrencyCatalog } from '@/lib/currency';
+import { usePeriodLabels } from '@/lib/usePeriodLabels';
 
 let _toastId = 0;
 interface ToastItem { id: number; type: 'success' | 'error'; message: string; }
@@ -33,10 +35,14 @@ function cleanName(name: string | null | undefined, fallback = '—'): string {
   return String(name);
 }
 
-function fmtMoney(amount: string | number, symbol = '₦'): string {
-  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  if (isNaN(num)) return `${symbol}0.00`;
-  return symbol + num.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Expenses are stored in their source account's currency; legacy rows may lack the field. */
+function expenseCurrency(item: Partial<Expense> | null | undefined, catalog: CurrencyCatalog | null): string {
+  return String(item?.currency || catalog?.base || 'NGN').toUpperCase();
+}
+
+/** Format an expense amount in its own currency. */
+function money(item: Partial<Expense> | null | undefined, amount: string | number | undefined, catalog: CurrencyCatalog | null): string {
+  return fmtCurrency(amount ?? 0, expenseCurrency(item, catalog), catalog);
 }
 
 function formatDate(dateStr?: string): string {
@@ -83,14 +89,14 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
   );
 }
 
-function ConfirmDeleteModal({ open, item, onConfirm, onCancel, loading }: any) {
+function ConfirmDeleteModal({ open, item, onConfirm, onCancel, loading, catalog }: any) {
   if (!open || !item) return null;
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
       <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4 animate-in zoom-in-95">
         <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto text-red-600"><Trash2 className="h-6 w-6" /></div>
         <h3 className="text-lg font-bold text-slate-900 text-center">Reverse & Delete Voucher</h3>
-        <p className="text-sm text-slate-500 text-center leading-relaxed">Are you sure you want to delete <strong className="text-slate-800">{item.voucher_number || `EXP-${item.id}`}</strong> ({fmtMoney(item.amount)})? This will atomically credit money back into the source bank account or cash vault.</p>
+        <p className="text-sm text-slate-500 text-center leading-relaxed">Are you sure you want to delete <strong className="text-slate-800">{item.voucher_number || `EXP-${item.id}`}</strong> ({money(item, item.amount, catalog)})? This will atomically credit money back into the source bank account or cash vault.</p>
         <div className="flex gap-3 pt-2">
           <button onClick={onCancel} disabled={loading} className="flex-1 py-2.5 text-sm font-bold border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">Cancel</button>
           <button onClick={onConfirm} disabled={loading} className="flex-1 py-2.5 bg-red-600 text-white text-sm font-bold rounded-xl hover:bg-red-700 flex items-center justify-center gap-1.5 shadow-md shadow-red-200 transition-colors disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete & Credit'}</button>
@@ -100,7 +106,7 @@ function ConfirmDeleteModal({ open, item, onConfirm, onCancel, loading }: any) {
   );
 }
 
-function EditExpenseModal({ open, item, onClose, onSave, loading, categories, banks, settings }: any) {
+function EditExpenseModal({ open, item, onClose, onSave, loading, categories, banks, settings, catalog }: any) {
   const [form, setForm] = useState<any>({});
   const [initialForm, setInitialForm] = useState<any>({});
 
@@ -128,7 +134,11 @@ function EditExpenseModal({ open, item, onClose, onSave, loading, categories, ba
 
   const inputCls = "w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 outline-none";
   const labelCls = "block text-xs font-semibold text-slate-500 uppercase mb-1";
-  const safeBanks = Array.isArray(banks) ? banks : [];
+  // A voucher keeps its currency: only accounts held in the same currency can be its source.
+  const itemCurrency = expenseCurrency(item, catalog);
+  const safeBanks = (Array.isArray(banks) ? banks : []).filter(
+    (b: any) => String(b.currency || catalog?.base || 'NGN').toUpperCase() === itemCurrency
+  );
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
@@ -159,7 +169,13 @@ function EditExpenseModal({ open, item, onClose, onSave, loading, categories, ba
                 {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
-            <div><label className={labelCls}>Amount</label><input type="number" step="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} className={inputCls} required /></div>
+            <div>
+              <label className={labelCls}>Amount ({itemCurrency})</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">{currencySymbol(itemCurrency, catalog) || itemCurrency}</span>
+                <input type="number" step="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} className={`${inputCls} pl-9`} required />
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -173,8 +189,9 @@ function EditExpenseModal({ open, item, onClose, onSave, loading, categories, ba
               <label className={labelCls}>Source Account</label>
               <select value={form.bank_account || ''} onChange={e => setForm({ ...form, bank_account: e.target.value })} className={inputCls} required={form.payment_method !== 'cash' && settings?.track_bank_balance} disabled={form.payment_method === 'cash'}>
                 <option value="">{form.payment_method === 'cash' ? 'Auto: Cash Vault' : 'Select Bank...'}</option>
-                {safeBanks.filter((b: any) => b.account_type !== 'cash_vault').map((b: any) => <option key={b.id} value={b.id}>{b.bank_name}</option>)}
+                {safeBanks.filter((b: any) => b.account_type !== 'cash_vault').map((b: any) => <option key={b.id} value={b.id}>{b.bank_name} ({String(b.currency || itemCurrency).toUpperCase()})</option>)}
               </select>
+              <p className="text-[10px] text-slate-400 mt-1">Only {itemCurrency} accounts are listed — a voucher keeps its currency.</p>
             </div>
           </div>
 
@@ -198,8 +215,10 @@ function EditExpenseModal({ open, item, onClose, onSave, loading, categories, ba
   );
 }
 
-function AuditDrawer({ item, onClose, onDelete, onEdit, canDelete, canEdit, setPrintA4Item, setPrintThermalItem, baseCurrency, settings }: any) {
+function AuditDrawer({ item, onClose, onDelete, onEdit, canDelete, canEdit, setPrintA4Item, setPrintThermalItem, catalog, settings }: any) {
   if (!item) return null;
+  const curCode = expenseCurrency(item, catalog);
+  const curName = catalog?.byCode[curCode]?.name;
   const windowHours = settings?.reversal_window_hours ?? 24;
   const hoursOld = (Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60);
   const isExpired = windowHours > 0 && hoursOld > windowHours;
@@ -219,10 +238,10 @@ function AuditDrawer({ item, onClose, onDelete, onEdit, canDelete, canEdit, setP
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
             <div>
               <p className="text-[11px] sm:text-xs text-slate-400 font-semibold uppercase tracking-wider">Total Disbursed</p>
-              <p className="text-xl sm:text-2xl font-black text-slate-900">{fmtMoney(item.amount, baseCurrency)}</p>
-              {item.foreign_currency && (
-                <p className="text-[10px] font-bold text-red-600 mt-1 uppercase tracking-wider">Foreign: {item.foreign_currency} {item.foreign_amount}</p>
-              )}
+              <p className="text-xl sm:text-2xl font-black text-slate-900">{money(item, item.amount, catalog)}</p>
+              <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider flex items-center gap-1">
+                <Coins className="h-3 w-3" /> {curCode}{curName && curName !== curCode ? ` · ${curName}` : ''}
+              </p>
             </div>
             <div className="flex flex-col items-end gap-1.5"><span className="text-[10px] sm:text-xs font-bold uppercase px-2.5 py-1 bg-red-100 text-red-800 rounded-md">{item.category_name || 'Expense'}</span><span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-md shadow-sm">{formatPaymentMethod(item.payment_method)}</span></div>
           </div>
@@ -230,7 +249,7 @@ function AuditDrawer({ item, onClose, onDelete, onEdit, canDelete, canEdit, setP
           {Array.isArray(parsedLineItems) && parsedLineItems.length > 0 && (
             <div className="space-y-2"><h4 className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Itemized Line Items</h4>
               <div className="border border-slate-200 rounded-xl overflow-hidden text-[11px] sm:text-xs"><table className="w-full text-left"><thead className="bg-slate-50 font-bold text-slate-600 border-b border-slate-200"><tr><th className="p-2">Date</th><th className="p-2">Particulars</th><th className="p-2 text-right">Amount</th></tr></thead>
-              <tbody className="divide-y divide-slate-100">{parsedLineItems.map((li: any, idx: number) => (<tr key={idx}><td className="p-2 text-slate-500">{li.date || '—'}</td><td className="p-2 font-medium">{li.particular}</td><td className="p-2 text-right font-bold">{fmtMoney(li.amount, baseCurrency)}</td></tr>))}</tbody></table></div>
+              <tbody className="divide-y divide-slate-100">{parsedLineItems.map((li: any, idx: number) => (<tr key={idx}><td className="p-2 text-slate-500">{li.date || '—'}</td><td className="p-2 font-medium">{li.particular}</td><td className="p-2 text-right font-bold">{money(item, li.amount, catalog)}</td></tr>))}</tbody></table></div>
             </div>
           )}
 
@@ -297,6 +316,10 @@ export default function ConsolidatedExpensePage() {
   const [loading, setLoading]               = useState(true);
   const [pageError, setPageError]           = useState<string | null>(null);
 
+  const [summary, setSummary]               = useState<ExpenseSummary | null>(null);
+  const [refsLoaded, setRefsLoaded]         = useState(false);
+  const periodLabels = usePeriodLabels();
+
   const [categories, setCategories]         = useState<any[]>([]);
   const [sessionPeriods, setSessionPeriods] = useState<any[]>([]);
   const [sessions, setSessions]             = useState<any[]>([]);
@@ -320,8 +343,17 @@ export default function ConsolidatedExpensePage() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4500);
   };
 
-  const hasActiveFilters = Boolean(categoryFilter || currencyFilter || searchQuery.trim() || sessionId || periodId || startDate || endDate);
-  const clearAllFilters = () => { setCategoryFilter(''); setCurrencyFilter(''); setSearchQuery(''); setSessionId(''); setPeriodId(''); setStartDate(''); setEndDate(''); };
+  // ── Currency catalogue: base + configured currencies + any currency an account is held in ──
+  const catalog = useMemo<CurrencyCatalog | null>(() => {
+    if (!refsLoaded) return null;
+    return buildCurrencyCatalog(settings, banks.map((b: any) => b.currency));
+  }, [refsLoaded, settings, banks]);
+  const baseCode = catalog?.base || 'NGN';
+  const isMultiCurrency = (catalog?.list.length || 0) > 1;
+
+  // The list is always scoped to ONE currency so every total is meaningful.
+  const hasActiveFilters = Boolean(categoryFilter || (currencyFilter && currencyFilter !== baseCode) || searchQuery.trim() || sessionId || periodId || startDate || endDate);
+  const clearAllFilters = () => { setCategoryFilter(''); setCurrencyFilter(baseCode); setSearchQuery(''); setSessionId(''); setPeriodId(''); setStartDate(''); setEndDate(''); };
 
   useEffect(() => {
     Promise.all([
@@ -338,6 +370,9 @@ export default function ConsolidatedExpensePage() {
       setSettings(settingsData);
       setSchoolInfo(sData);
       setBanks(Array.isArray(banksData) ? banksData : (banksData as any)?.results ?? []);
+      const base = String((settingsData as any)?.currency_config?.base_currency || 'NGN').toUpperCase();
+      setCurrencyFilter(prev => prev || base);
+      setRefsLoaded(true);
     });
   }, []);
 
@@ -346,17 +381,9 @@ export default function ConsolidatedExpensePage() {
     return sessionPeriods.filter((sp: any) => String(sp.session?.id) === String(sessionId)).map((sp: any) => sp.period).filter(Boolean);
   }, [sessionId, sessionPeriods]);
 
-  const baseCurrencySymbol = settings?.currency_config?.base_currency === 'USD' ? '$' : '₦';
-  const baseCurrencyCode = settings?.currency_config?.base_currency || 'NGN';
-  const activeCurrencies = useMemo(() => {
-    const arr = [baseCurrencyCode];
-    if (settings?.currency_config?.supported_currencies) {
-      Object.keys(settings.currency_config.supported_currencies).forEach(k => {
-        if (!arr.includes(k)) arr.push(k);
-      });
-    }
-    return arr;
-  }, [settings, baseCurrencyCode]);
+  const activeCode = (currencyFilter || baseCode).toUpperCase();
+  const activeSymbol = currencySymbol(activeCode, catalog) || `${activeCode} `;
+  const activeSummary = summary?.by_currency.find(r => r.currency === activeCode);
 
   const buildParams = useCallback(() => {
     const params: Record<string, any> = { page, page_size: PAGE_SIZE };
@@ -371,17 +398,23 @@ export default function ConsolidatedExpensePage() {
   }, [page, categoryFilter, currencyFilter, searchQuery, sessionId, periodId, startDate, endDate]);
 
   const fetchData = useCallback(async () => {
-    if (!canViewExpense) return;
+    if (!canViewExpense || !refsLoaded) return;
     setLoading(true); setPageError(null);
     try {
-      const response = await expenseAPI.list(buildParams());
+      const params = buildParams();
+      const [response, summaryRes] = await Promise.all([
+        expenseAPI.list(params),
+        expenseAPI.summary(params).catch(() => null),
+      ]);
       const results = Array.isArray(response) ? response : (response as any)?.results ?? [];
       // THE FIX: Properly fallback if count is stripped so the Next button logic doesn't break
-      const totalCount = typeof (response as any)?.count === 'number' ? (response as any).count : 0;
-      setData(results); setTotal(totalCount);
+      const totalCount = typeof (response as any)?.count === 'number'
+        ? (response as any).count
+        : (summaryRes?.count ?? 0);
+      setData(results); setTotal(totalCount); setSummary(summaryRes);
     } catch (err) { setPageError(extractError(err)); }
     finally { setLoading(false); }
-  }, [buildParams, canViewExpense]);
+  }, [buildParams, canViewExpense, refsLoaded]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { setPage(1); }, [categoryFilter, currencyFilter, searchQuery, sessionId, periodId, startDate, endDate]);
@@ -456,13 +489,13 @@ export default function ConsolidatedExpensePage() {
         onDelete={(item: Expense) => { setSelectedItem(null); setDeleteModal({ open: true, item }); }}
         onEdit={(item: Expense) => { setSelectedItem(null); setEditModal({ open: true, item }); }}
         canDelete={canDeleteExpense} canEdit={canEditExpense}
-        baseCurrency={baseCurrencySymbol} settings={settings}
+        catalog={catalog} settings={settings}
         setPrintA4Item={setPrintA4Item} setPrintThermalItem={setPrintThermalItem}
       />
 
       {/* THE FIX: Added banks array directly here */}
-      <EditExpenseModal open={editModal.open} item={editModal.item} onClose={() => setEditModal({ open: false, item: null })} onSave={handleEditSave} loading={actionLoading} categories={categories} banks={banks} settings={settings} />
-      <ConfirmDeleteModal open={deleteModal.open} item={deleteModal.item} onConfirm={handleDeleteSubmit} onCancel={() => setDeleteModal({ open: false, item: null })} loading={actionLoading} />
+      <EditExpenseModal open={editModal.open} item={editModal.item} onClose={() => setEditModal({ open: false, item: null })} onSave={handleEditSave} loading={actionLoading} categories={categories} banks={banks} settings={settings} catalog={catalog} />
+      <ConfirmDeleteModal open={deleteModal.open} item={deleteModal.item} onConfirm={handleDeleteSubmit} onCancel={() => setDeleteModal({ open: false, item: null })} loading={actionLoading} catalog={catalog} />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -481,7 +514,7 @@ export default function ConsolidatedExpensePage() {
             </button>
           )}
           <div className="flex-1 sm:flex-none">
-            <ExpenseExporter schoolName={schoolInfo?.name} getExportRows={getExportRows} baseCurrency={baseCurrencySymbol} />
+            <ExpenseExporter schoolName={schoolInfo?.name} getExportRows={getExportRows} baseCurrency={activeSymbol} />
           </div>
         </div>
       </div>
@@ -497,10 +530,23 @@ export default function ConsolidatedExpensePage() {
               <option value="">All Categories</option>
               {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            <select value={currencyFilter} onChange={(e) => setCurrencyFilter(e.target.value)} className="w-full sm:w-auto px-2.5 sm:px-3.5 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg sm:rounded-xl bg-white outline-none focus:ring-2 focus:ring-red-500 font-medium uppercase">
-              <option value="">All Currencies</option>
-              {activeCurrencies.map(curr => <option key={curr} value={curr}>{curr}</option>)}
-            </select>
+            {isMultiCurrency && (
+              <div className="relative w-full sm:w-auto">
+                <Coins className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                <select
+                  value={activeCode}
+                  onChange={(e) => setCurrencyFilter(e.target.value)}
+                  title="Expenses are listed and totalled one currency at a time"
+                  className="w-full sm:w-auto pl-8 pr-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg sm:rounded-xl bg-white outline-none focus:ring-2 focus:ring-red-500 font-bold"
+                >
+                  {catalog?.list.map(c => (
+                    <option key={c.code} value={c.code}>
+                      {c.code}{c.symbol ? ` (${c.symbol})` : ''}{c.code === baseCode ? ' · Base' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
 
@@ -512,7 +558,7 @@ export default function ConsolidatedExpensePage() {
             </select>
             {sessionId && (
               <select value={periodId} onChange={(e) => setPeriodId(e.target.value)} className="w-full sm:w-auto px-2.5 sm:px-3.5 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg sm:rounded-xl bg-white outline-none focus:ring-2 focus:ring-red-500 font-medium">
-                <option value="">All Terms</option>
+                <option value="">All {periodLabels.plural}</option>
                 {availablePeriods.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             )}
@@ -543,6 +589,29 @@ export default function ConsolidatedExpensePage() {
           </div>
         </div>
       </div>
+
+      {/* ── Summary strip: totals for the current filters, in ONE currency ── */}
+      {refsLoaded && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="col-span-2 sm:col-span-1 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-xl sm:rounded-2xl p-4 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Spent · {activeCode}</p>
+            <p className="text-xl sm:text-2xl font-black mt-1 tabular-nums truncate">
+              {fmtCurrency(activeSummary?.total ?? 0, activeCode, catalog)}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-1">{hasActiveFilters ? 'Matching the filters above' : 'All recorded expenses'}</p>
+          </div>
+          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Receipt className="h-3 w-3" /> Vouchers</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-1 tabular-nums">{(activeSummary?.count ?? 0).toLocaleString()}</p>
+          </div>
+          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Average Voucher</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-1 tabular-nums truncate">
+              {fmtCurrency(activeSummary && activeSummary.count ? Number(activeSummary.total) / activeSummary.count : 0, activeCode, catalog)}
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         {loading && page === 1 ? (
@@ -590,7 +659,7 @@ export default function ConsolidatedExpensePage() {
                         </span>
                       </td>
                       <td className="px-3 sm:px-4 py-3 text-right font-black text-slate-900 text-xs sm:text-sm">
-                        {fmtMoney(item.amount, baseCurrencySymbol)}
+                        {money(item, item.amount, catalog)}
                       </td>
                       <td className="px-3 sm:px-4 py-3 text-[11px] sm:text-xs text-slate-500 font-medium hidden md:table-cell">
                         {formatDate(item.expense_date)}
@@ -673,7 +742,7 @@ export default function ConsolidatedExpensePage() {
                         <tr key={idx}>
                           <td className="border border-black p-2 text-center">{li.date || '—'}</td>
                           <td className="border border-black p-2 font-medium">{li.particular}</td>
-                          <td className="border border-black p-2 text-right font-bold">{fmtMoney(li.amount, baseCurrencySymbol)}</td>
+                          <td className="border border-black p-2 text-right font-bold">{money(printA4Item, li.amount, catalog)}</td>
                         </tr>
                       ));
                     } else {
@@ -682,7 +751,7 @@ export default function ConsolidatedExpensePage() {
                           <tr>
                             <td className="border border-black p-2 text-center">{formatDateShort(printA4Item.expense_date)}</td>
                             <td className="border border-black p-2 font-medium">{printA4Item.category_name || 'Expenditure'} {printA4Item.description ? `— ${printA4Item.description}` : ''}</td>
-                            <td className="border border-black p-2 text-right font-bold">{fmtMoney(printA4Item.amount, baseCurrencySymbol)}</td>
+                            <td className="border border-black p-2 text-right font-bold">{money(printA4Item, printA4Item.amount, catalog)}</td>
                           </tr>
                           <tr><td className="border border-black p-3">&nbsp;</td><td className="border border-black p-3">&nbsp;</td><td className="border border-black p-3">&nbsp;</td></tr>
                         </>
@@ -693,7 +762,7 @@ export default function ConsolidatedExpensePage() {
                 <tfoot>
                   <tr className="bg-slate-50">
                     <td colSpan={2} className="text-right p-2 border border-black font-bold uppercase">TOTAL EXPENDITURE</td>
-                    <td className="text-right p-2 border border-black font-bold">{fmtMoney(printA4Item.amount, baseCurrencySymbol)}</td>
+                    <td className="text-right p-2 border border-black font-bold">{money(printA4Item, printA4Item.amount, catalog)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -756,12 +825,9 @@ export default function ConsolidatedExpensePage() {
               <div className="flex justify-between mb-3 text-[10px]"><span>Method:</span><span>{formatPaymentMethod(printThermalItem.payment_method)}</span></div>
 
               <div className="text-lg font-black my-4 text-center py-2 border-y-2 border-black">
-                {fmtMoney(printThermalItem.amount, baseCurrencySymbol)}
+                {money(printThermalItem, printThermalItem.amount, catalog)}
               </div>
-
-              {printThermalItem.foreign_currency && (
-                <div className="text-center text-[9px] font-bold mt-2">Foreign: {printThermalItem.foreign_currency} {printThermalItem.foreign_amount}</div>
-              )}
+              <div className="text-center text-[9px] font-bold -mt-2 mb-2">Currency: {expenseCurrency(printThermalItem, catalog)}</div>
 
               <div className="border-b border-dashed border-black mb-3 mt-3"></div>
               <div className="text-center">

@@ -45,6 +45,7 @@ import type {
   ExpenseSummaryResponse,
   IncomeExpenseStatementResponse,
   CashFlowResponse,
+  ExpenseSummary,
   PaginatedResponse,
 
 } from '@/lib/finance.types';
@@ -556,6 +557,18 @@ export const expenseAPI = {
   },
 
   /**
+   * Totals for the current filters, grouped by currency (never summed across currencies).
+   * GET /api/finance/expenses/summary/
+   */
+  summary: async (filters?: ExpenseListFilters): Promise<ExpenseSummary> => {
+    const params: Record<string, unknown> = { ...(filters || {}) };
+    delete params.page;
+    delete params.page_size;
+    const response = await api.get(`${FINANCE_API_BASE}/expenses/summary/`, { params });
+    return response.data?.data || response.data || { by_currency: [], count: 0 };
+  },
+
+  /**
    * Create a new expense record
    */
   create: async (data: ExpenseFormValues | FormData): Promise<Expense> => {
@@ -899,6 +912,21 @@ export const financeReportsAPI = {
    */
   cashFlow: async (params?: FinanceReportQueryParams): Promise<CashFlowResponse> => {
     const response = await api.get(`${FINANCE_API_BASE}/reports/cash-flow/`, { params });
+    return response.data;
+  },
+
+  /**
+   * Download any report (except the dashboard) as CSV.
+   * GET /api/finance/reports/<type>/?export=csv
+   */
+  exportCsv: async (
+    reportType: 'income-summary' | 'expense-summary' | 'income-expense-statement' | 'cash-flow',
+    params?: FinanceReportQueryParams,
+  ): Promise<Blob> => {
+    const response = await api.get(`${FINANCE_API_BASE}/reports/${reportType}/`, {
+      params: { ...(params || {}), export: 'csv' },
+      responseType: 'blob',
+    });
     return response.data;
   },
 };
