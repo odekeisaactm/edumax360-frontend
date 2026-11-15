@@ -804,7 +804,7 @@ export const MODULES: ModuleDef[] = [
         label: 'Elevated Access',
         description: 'Cross-app permissions used by the assessment backend',
         permissions: [
-          { codename: 'can_publish_result', label: 'View All Exams', desc: 'From the Result app. Grants access to all exams, not just assigned ones' },
+          { codename: 'can_publish_exam', label: 'View All Exams', desc: 'From the Result app. Grants access to all exams, not just assigned ones' },
         ],
       },
     ],
