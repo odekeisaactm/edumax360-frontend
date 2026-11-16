@@ -18,10 +18,11 @@ import type {
 } from '@/lib/finance.types';
 import {
   ArrowDownRight, ArrowLeft, Check, AlertCircle, Loader2, UploadCloud,
-  Coins, Wallet, FileText, Tag, Lock, ChevronDown, ChevronUp,
+  Coins, FileText, Tag, Lock, ChevronDown, ChevronUp,
   Plus, Trash2, UserCheck, CreditCard, Layers, ListPlus, X, Search, Info,
 } from 'lucide-react';
 import { buildCurrencyCatalog, currencySymbol, fmtCurrency } from '@/lib/currency';
+import CashCurrencyPicker, { vaultsInCurrency } from '../../_components/CashCurrencyPicker';
 
 // ─── Interfaces & Types ────────────────────────────────────────────────────────
 let _toastId = 0;
@@ -318,19 +319,23 @@ export default function ExpenseCreatePage() {
   const cashVaults = useMemo(() => banks.filter(b => b.account_type === 'cash_vault' && b.is_active !== false), [banks]);
   const selectedBank = useMemo(() => banks.find(b => b.id === Number(bankAccount)), [banks, bankAccount]);
 
-  const selectedCurrency = useMemo(() => {
-    if (paymentMethod === 'cash') {
-      // The backend debits the cashier's assigned vault; with a single vault we know its currency.
-      return String((cashVaults.length === 1 ? cashVaults[0].currency : null) || baseCurrencyCode).toUpperCase();
-    }
-    return String(selectedBank?.currency || baseCurrencyCode).toUpperCase();
-  }, [paymentMethod, cashVaults, selectedBank, baseCurrencyCode]);
+  // Cash vaults are currency-specific: the cashier picks which notes are paying (default: base).
+  const [cashCurrency, setCashCurrency] = useState<string>('');
+  const effectiveCashCurrency = (cashCurrency || baseCurrencyCode).toUpperCase();
+  const cashVaultsForCurrency = useMemo(
+    () => vaultsInCurrency(cashVaults, effectiveCashCurrency, baseCurrencyCode),
+    [cashVaults, effectiveCashCurrency, baseCurrencyCode],
+  );
+
+  const selectedCurrency = paymentMethod === 'cash'
+    ? effectiveCashCurrency
+    : String(selectedBank?.currency || baseCurrencyCode).toUpperCase();
 
   const currencyMeta = catalog.byCode[selectedCurrency];
   const symbol = currencySymbol(selectedCurrency, catalog) || selectedCurrency;
   const isNonBase = selectedCurrency !== baseCurrencyCode;
   const sourceAvailable = paymentMethod === 'cash'
-    ? (cashVaults.length === 1 ? cashVaults[0].current_balance : null)
+    ? (cashVaultsForCurrency.length === 1 ? cashVaultsForCurrency[0].current_balance : null)
     : (selectedBank?.current_balance ?? null);
 
   const handleMethodChange = (method: GeneralPaymentMethod) => {
@@ -401,7 +406,8 @@ export default function ExpenseCreatePage() {
       if (paymentMethod !== 'cash' && bankAccount) formData.append('bank_account', String(bankAccount));
       // The amount is in the source account's currency. Sent so the server can
       // reject a mismatch; for cash with several vaults the server decides.
-      if (paymentMethod !== 'cash' || cashVaults.length === 1) formData.append('currency', selectedCurrency);
+      // For cash this is the chosen cash currency — the server pays from the vault held in it.
+      formData.append('currency', selectedCurrency);
       if (description.trim()) formData.append('description', description.trim());
       if (notes.trim()) formData.append('notes', notes.trim());
       if (receiptFile) formData.append('receipt', receiptFile);
@@ -512,12 +518,15 @@ export default function ExpenseCreatePage() {
             </div>
 
             <div>
-              <label className={labelCls}>Source Account {paymentMethod !== 'cash' && <span className="text-red-500">*</span>}</label>
+              <label className={labelCls}>
+                {paymentMethod === 'cash' ? (catalog.list.length > 1 ? 'Cash Currency' : 'Source Cash Box') : 'Source Account'}{' '}
+                <span className="text-red-500">*</span>
+              </label>
               {paymentMethod === 'cash' ? (
-                <div className="px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 text-slate-500 flex items-center justify-between">
-                  <span>Debiting Assigned Physical Cash Vault</span>
-                  <Wallet className="h-4 w-4 text-slate-400" />
-                </div>
+                <CashCurrencyPicker
+                  catalog={catalog} vaults={cashVaults} direction="out" hideLabel
+                  value={effectiveCashCurrency} onChange={setCashCurrency}
+                />
               ) : (
                 <select required={settings?.track_bank_balance} value={bankAccount} onChange={e => setBankAccount(Number(e.target.value))} className={inputCls}>
                   <option value="">Select source bank account...</option>

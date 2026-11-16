@@ -17,9 +17,10 @@ import type {
 } from '@/lib/finance.types';
 import {
   TrendingUp, ArrowLeft, Check, AlertCircle, Loader2, UploadCloud,
-  Coins, Wallet, FileText, Tag, Lock, Search, ChevronDown, X, Info,
+  Coins, FileText, Tag, Lock, Search, ChevronDown, X, Info,
 } from 'lucide-react';
 import { buildCurrencyCatalog, currencySymbol, fmtCurrency } from '@/lib/currency';
+import CashCurrencyPicker from '../../_components/CashCurrencyPicker';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 let _toastId = 0;
@@ -213,16 +214,16 @@ export default function IncomeCreatePage() {
     [settings, banks],
   );
   const baseCurrencyCode = catalog.base;
-  const cashVaults = useMemo(() => banks.filter(b => b.account_type === 'cash_vault'), [banks]);
+  const cashVaults = useMemo(() => banks.filter(b => b.account_type === 'cash_vault' && b.is_active !== false), [banks]);
   const selectedBank = useMemo(() => banks.find(b => b.id === Number(bankAccount)), [banks, bankAccount]);
 
-  const selectedCurrency = useMemo(() => {
-    if (paymentMethod === 'cash') {
-      // The backend credits the cashier's assigned vault; with a single vault we know its currency.
-      return String((cashVaults.length === 1 ? cashVaults[0].currency : null) || baseCurrencyCode).toUpperCase();
-    }
-    return String(selectedBank?.currency || baseCurrencyCode).toUpperCase();
-  }, [paymentMethod, cashVaults, selectedBank, baseCurrencyCode]);
+  // Cash vaults are currency-specific: the cashier picks which notes were received (default: base).
+  const [cashCurrency, setCashCurrency] = useState<string>('');
+  const effectiveCashCurrency = (cashCurrency || baseCurrencyCode).toUpperCase();
+
+  const selectedCurrency = paymentMethod === 'cash'
+    ? effectiveCashCurrency
+    : String(selectedBank?.currency || baseCurrencyCode).toUpperCase();
 
   const currencyMeta = catalog.byCode[selectedCurrency];
   const symbol = currencySymbol(selectedCurrency, catalog) || selectedCurrency;
@@ -280,7 +281,8 @@ export default function IncomeCreatePage() {
 
       // The amount is in the receiving account's currency. Sent so the server can
       // reject a mismatch; for cash with several vaults the server decides.
-      if (paymentMethod !== 'cash' || cashVaults.length === 1) formData.append('currency', selectedCurrency);
+      // For cash this is the chosen cash currency — the server credits the vault held in it.
+      formData.append('currency', selectedCurrency);
 
       if (source) formData.append('source', source);
       if (reference) formData.append('reference', reference);
@@ -375,13 +377,14 @@ export default function IncomeCreatePage() {
 
             <div>
               <label className={labelCls}>
-                Destination Account {paymentMethod !== 'cash' && <span className="text-red-500">*</span>}
+                {paymentMethod === 'cash' ? (catalog.list.length > 1 ? 'Cash Currency' : 'Receiving Cash Box') : 'Destination Account'}{' '}
+                <span className="text-red-500">*</span>
               </label>
               {paymentMethod === 'cash' ? (
-                <div className="px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 text-slate-500 flex items-center justify-between">
-                  <span>Targeting Assigned Physical Cash Vault</span>
-                  <Wallet className="h-4 w-4 text-slate-400" />
-                </div>
+                <CashCurrencyPicker
+                  catalog={catalog} vaults={cashVaults} direction="in" hideLabel
+                  value={effectiveCashCurrency} onChange={setCashCurrency}
+                />
               ) : (
                 <select
                   required={settings?.track_bank_balance}

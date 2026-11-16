@@ -527,12 +527,17 @@ function BankModal({
 
   const isCashBox = form.account_type === 'cash_vault';
   const isForeignCurrency = !isCashBox && form.currency !== baseCurrency;
+  // Currency is locked once money has moved through the account (the backend enforces
+  // this against ledger history too). A brand-new or still-empty account can change it.
+  const currencyLocked = Boolean(editing) && Number(editing?.current_balance || 0) !== 0;
 
   useEffect(() => {
     if (isCashBox) {
-      setForm(prev => ({ ...prev, currency: baseCurrency, purpose: 'both', account_number: '', account_name: '' }));
+      // Cash safes are currency-specific too (e.g. a Naira safe and a Dollar cash box),
+      // so the chosen currency is kept; only bank-only metadata is cleared.
+      setForm(prev => ({ ...prev, purpose: 'both', account_number: '', account_name: '' }));
     }
-  }, [isCashBox, baseCurrency]);
+  }, [isCashBox]);
 
   useEffect(() => {
     let active = true;
@@ -607,14 +612,27 @@ function BankModal({
               </div>
             )}
 
-            {!isCashBox && (
-              <div>
-                <label className={labelCls}>Account Currency <span className="text-red-500">*</span></label>
-                <select required value={form.currency} onChange={e => set('currency', e.target.value)} className={inputCls}>
-                  {configuredCurrencies.map(curr => <option key={curr} value={curr}>{curr}</option>)}
-                </select>
-              </div>
-            )}
+            <div>
+              <label className={labelCls}>
+                {isCashBox ? 'Cash Currency' : 'Account Currency'} <span className="text-red-500">*</span>
+              </label>
+              <select
+                required value={form.currency} onChange={e => set('currency', e.target.value)}
+                disabled={currencyLocked}
+                className={`${inputCls} ${currencyLocked ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
+              >
+                {configuredCurrencies.map(curr => (
+                  <option key={curr} value={curr}>{curr}{curr === baseCurrency ? ' (Base)' : ''}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-slate-400 mt-1.5 font-medium">
+                {currencyLocked
+                  ? 'Locked: this account already holds money in this currency.'
+                  : isCashBox
+                    ? 'The physical notes kept in this safe. Use a separate cash box for each currency you collect (e.g. Naira and Dollars).'
+                    : 'Money in this account is recorded in this currency — never converted.'}
+              </p>
+            </div>
 
             <div>
               <div className="flex items-center justify-between">
