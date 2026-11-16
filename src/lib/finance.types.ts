@@ -339,8 +339,11 @@ export interface Income {
   id: number;
   category: number;
   category_name?: string;
+  /** Amount in `currency` — the receiving account's own currency. Never converted. */
   amount: string;
+  currency: string;
   payment_method?: string;
+  /** Legacy conversion fields (pre-migration rows only). Read-only. */
   foreign_currency: string | null;
   foreign_amount: string | null;
   exchange_rate: string | null;
@@ -360,11 +363,11 @@ export interface Income {
 
 export interface IncomeFormValues {
   category: number;
+  /** Amount in the receiving account's currency. */
   amount: string;
+  /** Optional safety check — the backend derives the currency from the receiving account. */
+  currency?: string;
   payment_method?: GeneralPaymentMethod;
-  foreign_currency?: string;
-  foreign_amount?: string;
-  exchange_rate?: string;
   bank_account?: number | null;
   income_date: string;
   source?: string;
@@ -374,7 +377,10 @@ export interface IncomeFormValues {
 }
 
 export interface IncomeListFilters {
-  category?: number;
+  category?: number | string;
+  currency?: string;
+  session_id?: number | string;
+  academic_period_id?: number | string;
   start_date?: string;
   end_date?: string;
   search?: string;
@@ -585,8 +591,6 @@ export interface PurchaseAdvancePaymentListFilters {
   page?: number;
   page_size?: number;
 }
-
-/
 
 // ==================== BANK & WALLET LEDGER ====================
 
@@ -875,10 +879,13 @@ export interface CashFlowResponse extends FinanceReportScope {
   net_flow: string;
 }
 
-export interface ExpenseSummary {
+/** Totals for a filtered list, grouped by currency (never summed across currencies). */
+export interface CurrencySummary {
   by_currency: { currency: string; total: string; count: number }[];
   count: number;
 }
+export type ExpenseSummary = CurrencySummary;
+export type IncomeSummary = CurrencySummary;
 
 // ==================== API RESPONSE TYPES ====================
 

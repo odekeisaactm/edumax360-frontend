@@ -17,8 +17,9 @@ import type {
 } from '@/lib/finance.types';
 import {
   TrendingUp, ArrowLeft, Check, AlertCircle, Loader2, UploadCloud,
-  DollarSign, Wallet, FileText, Tag, Lock, Search, ChevronDown, X
+  Coins, Wallet, FileText, Tag, Lock, Search, ChevronDown, X, Info,
 } from 'lucide-react';
+import { buildCurrencyCatalog, currencySymbol, fmtCurrency } from '@/lib/currency';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 let _toastId = 0;
@@ -164,11 +165,8 @@ export default function IncomeCreatePage() {
   const [notes, setNotes] = useState<string>('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
-  // Multi-Currency State
-  const [selectedCurrency, setSelectedCurrency] = useState<string>('NGN');
-  const [amount, setAmount] = useState<string>(''); // Base amount stored
-  const [foreignAmount, setForeignAmount] = useState<string>('');
-  const [exchangeRate, setExchangeRate] = useState<string>('');
+  // Amount — always entered in the receiving account's own currency (no conversion)
+  const [amount, setAmount] = useState<string>('');
 
   // Post-Submit Redirect Selection
   const [postSubmitAction, setPostSubmitAction] = useState<'list' | 'create_another' | 'detail'>('list');
@@ -200,10 +198,6 @@ export default function IncomeCreatePage() {
       setCategories(listCats.filter((c: any) => c.is_active));
       setBanks(listBanks);
       setSettings(settingsData);
-
-      if (settingsData?.currency_config?.base_currency) {
-        setSelectedCurrency(settingsData.currency_config.base_currency);
-      }
     } catch (err: any) {
       showToast('error', extractErrorMessage(err));
     } finally {
@@ -213,50 +207,26 @@ export default function IncomeCreatePage() {
 
   useEffect(() => { fetchReferences(); }, [fetchReferences]);
 
-  const baseCurrencyCode = settings?.currency_config?.base_currency || 'NGN';
+  // ─── Currency: always the currency of the account the money lands in ───
+  const catalog = useMemo(
+    () => buildCurrencyCatalog(settings, banks.map(b => b.currency)),
+    [settings, banks],
+  );
+  const baseCurrencyCode = catalog.base;
+  const cashVaults = useMemo(() => banks.filter(b => b.account_type === 'cash_vault'), [banks]);
+  const selectedBank = useMemo(() => banks.find(b => b.id === Number(bankAccount)), [banks, bankAccount]);
 
-  // 2. Strict Currency Locking Rules
-  useEffect(() => {
-    if (!baseCurrencyCode) return;
-
+  const selectedCurrency = useMemo(() => {
     if (paymentMethod === 'cash') {
-      setSelectedCurrency(baseCurrencyCode);
-      setForeignAmount('');
-      setExchangeRate('');
-    } else if (bankAccount) {
-      const selectedBank = banks.find(b => b.id === Number(bankAccount));
-      const targetCurrency = selectedBank?.currency || baseCurrencyCode;
-      setSelectedCurrency(targetCurrency);
-
-      if (targetCurrency === baseCurrencyCode) {
-        setForeignAmount('');
-        setExchangeRate('');
-      } else {
-        const cfg = settings?.currency_config?.supported_currencies?.[targetCurrency];
-        const rateStr = cfg?.rate_to_base ? String(cfg.rate_to_base) : '1';
-        setExchangeRate(rateStr);
-        if (foreignAmount) {
-          const calcBase = parseFloat(foreignAmount) * parseFloat(rateStr);
-          setAmount(calcBase.toFixed(2));
-        }
-      }
+      // The backend credits the cashier's assigned vault; with a single vault we know its currency.
+      return String((cashVaults.length === 1 ? cashVaults[0].currency : null) || baseCurrencyCode).toUpperCase();
     }
-  }, [paymentMethod, bankAccount, banks, baseCurrencyCode, settings, foreignAmount]);
+    return String(selectedBank?.currency || baseCurrencyCode).toUpperCase();
+  }, [paymentMethod, cashVaults, selectedBank, baseCurrencyCode]);
 
-  // THE FIX: Explicitly check if strict multi currency is enabled before locking into FX UI
-  const isForeign = !!settings?.strict_multi_currency && selectedCurrency !== baseCurrencyCode;
-
-  // Handle Foreign Amount Typing -> Direct Multiplier Math
-  const handleForeignAmountChange = (val: string) => {
-    setForeignAmount(val);
-    const numForeign = parseFloat(val);
-    const numRate = parseFloat(exchangeRate);
-    if (!isNaN(numForeign) && !isNaN(numRate) && numRate > 0) {
-      setAmount((numForeign * numRate).toFixed(2));
-    } else {
-      setAmount('');
-    }
-  };
+  const currencyMeta = catalog.byCode[selectedCurrency];
+  const symbol = currencySymbol(selectedCurrency, catalog) || selectedCurrency;
+  const isNonBase = selectedCurrency !== baseCurrencyCode;
 
   const handleMethodChange = (method: GeneralPaymentMethod) => {
     setPaymentMethod(method);
@@ -308,12 +278,9 @@ export default function IncomeCreatePage() {
         formData.append('bank_account', String(bankAccount));
       }
 
-      // Only append foreign details if the UI logic flagged it as a foreign transaction
-      if (isForeign && foreignAmount && exchangeRate) {
-        formData.append('foreign_currency', selectedCurrency);
-        formData.append('foreign_amount', foreignAmount);
-        formData.append('exchange_rate', exchangeRate);
-      }
+      // The amount is in the receiving account's currency. Sent so the server can
+      // reject a mismatch; for cash with several vaults the server decides.
+      if (paymentMethod !== 'cash' || cashVaults.length === 1) formData.append('currency', selectedCurrency);
 
       if (source) formData.append('source', source);
       if (reference) formData.append('reference', reference);
@@ -325,7 +292,7 @@ export default function IncomeCreatePage() {
 
       setTimeout(() => {
         if (postSubmitAction === 'create_another') {
-          setAmount(''); setForeignAmount(''); setSource(''); setReference(''); setNotes(''); setReceiptFile(null);
+          setAmount(''); setSource(''); setReference(''); setNotes(''); setReceiptFile(null);
           window.scrollTo({ top: 0, behavior: 'smooth' });
           setIsSubmitting(false);
         } else if (postSubmitAction === 'detail' && created?.id) {
@@ -425,7 +392,7 @@ export default function IncomeCreatePage() {
                   <option value="">Select destination bank...</option>
                   {banks.filter(b => b.account_type !== 'cash_vault').map(b => (
                     <option key={b.id} value={b.id}>
-                      {b.bank_name} ({b.account_number}) — Bal: {b.currency} {parseFloat(b.current_balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      [{String(b.currency || baseCurrencyCode).toUpperCase()}] {b.bank_name} ({b.account_number}) — Bal: {fmtCurrency(b.current_balance, b.currency || baseCurrencyCode, catalog)}
                     </option>
                   ))}
                 </select>
@@ -436,56 +403,49 @@ export default function IncomeCreatePage() {
 
         {/* Card 2: Currency & Amounts */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3 gap-3">
             <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-emerald-600" /> Amount & Currency
+              <Coins className="h-4 w-4 text-emerald-600" /> Amount
             </h3>
 
-            <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700">
-              <Lock className="h-3 w-3 text-slate-400" />
-              <span>{isForeign ? 'LOCKED CURRENCY' : 'CURRENCY'}: {isForeign ? selectedCurrency : baseCurrencyCode}</span>
+            <div
+              title="The currency follows the receiving account — money lands in that account in its own currency."
+              className={`flex items-center gap-1.5 px-3 py-1 border rounded-lg text-xs font-bold ${isNonBase ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-100 border-slate-200 text-slate-700'}`}
+            >
+              <Lock className="h-3 w-3 opacity-60" />
+              <span>{selectedCurrency}{currencyMeta?.name && currencyMeta.name !== selectedCurrency ? ` · ${currencyMeta.name}` : ''}</span>
             </div>
           </div>
 
-          {isForeign && (
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Amount ({selectedCurrency}) <span className="text-red-500">*</span></label>
-                <input
-                  type="number" step="0.01" min="0.01" required
-                  placeholder={`0.00 ${selectedCurrency}`}
-                  value={foreignAmount}
-                  onChange={e => handleForeignAmountChange(e.target.value)}
-                  className={inputCls}
-                />
-              </div>
-
-              <div>
-                <label className={labelCls}>Direct Conversion Rate (Locked)</label>
-                <div className="relative">
-                  <input
-                    type="text" readOnly disabled
-                    value={exchangeRate ? `1 ${selectedCurrency} = ${baseCurrencyCode} ${parseFloat(exchangeRate).toLocaleString()}` : 'No rate defined'}
-                    className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-100 text-slate-600 font-semibold pr-10 cursor-not-allowed"
-                  />
-                  <Lock className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                </div>
-              </div>
+          {isNonBase && (
+            <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+              <Info className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+              <p className="text-xs font-medium leading-relaxed">
+                This is going into a <strong>{selectedCurrency}</strong> account. Enter the amount in <strong>{currencyMeta?.name || selectedCurrency}</strong>.
+                It is recorded and credited exactly as entered, with no conversion to {baseCurrencyCode}.
+              </p>
             </div>
           )}
 
           <div>
             <label className={labelCls}>
-              Total Amount Recorded ({baseCurrencyCode}) <span className="text-red-500">*</span>
+              Amount Received ({selectedCurrency}) <span className="text-red-500">*</span>
             </label>
-            <input
-              type="number" step="0.01" min="0.01" required
-              readOnly={isForeign}
-              placeholder="0.00"
-              value={amount}
-              onChange={e => !isForeign && setAmount(e.target.value)}
-              className={`${inputCls} text-lg font-bold ${isForeign ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'text-slate-900'}`}
-            />
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-black text-slate-400 pointer-events-none">{symbol}</span>
+              <input
+                type="number" step="0.01" min="0.01" required
+                placeholder="0.00"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+                className={`${inputCls} text-lg font-bold text-slate-900 ${symbol.length > 2 ? 'pl-14' : 'pl-9'}`}
+              />
+            </div>
+            {selectedBank && paymentMethod !== 'cash' && (
+              <p className="text-[11px] font-medium mt-1.5 text-slate-400">
+                Current balance of {selectedBank.bank_name}: {fmtCurrency(selectedBank.current_balance, selectedCurrency, catalog)}
+              </p>
+            )}
           </div>
         </div>
 

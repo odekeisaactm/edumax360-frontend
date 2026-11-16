@@ -46,6 +46,7 @@ import type {
   IncomeExpenseStatementResponse,
   CashFlowResponse,
   ExpenseSummary,
+  IncomeSummary,
   PaginatedResponse,
 
 } from '@/lib/finance.types';
@@ -435,6 +436,18 @@ export const incomeAPI = {
   list: async (filters?: IncomeListFilters): Promise<any> => {
     const response = await api.get(`${FINANCE_API_BASE}/incomes/`, { params: filters });
     return response.data;
+  },
+
+  /**
+   * Totals for the current filters, grouped by currency (never summed across currencies).
+   * GET /api/finance/incomes/summary/
+   */
+  summary: async (filters?: IncomeListFilters): Promise<IncomeSummary> => {
+    const params: Record<string, unknown> = { ...(filters || {}) };
+    delete params.page;
+    delete params.page_size;
+    const response = await api.get(`${FINANCE_API_BASE}/incomes/summary/`, { params });
+    return response.data?.data || response.data || { by_currency: [], count: 0 };
   },
 
   /**

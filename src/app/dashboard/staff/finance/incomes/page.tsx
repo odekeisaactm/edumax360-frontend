@@ -8,13 +8,15 @@ import {
   incomeAPI, incomeCategoriesAPI, academicCalendarAPI,
   financeSettingsAPI, bankDetailsAPI, schoolInfoAPI,
 } from '@/lib/api';
-import type { Income } from '@/lib/finance.types';
+import type { Income, IncomeSummary } from '@/lib/finance.types';
 import {
   TrendingUp, Search, X, Loader2, AlertCircle, RefreshCw, ChevronLeft,
   ChevronRight, Eye, Check, FileText, Plus, FilterX, Trash2, Landmark,
-  Wallet, Calendar, Edit3, AlertTriangle, Printer, Building2
+  Wallet, Calendar, Edit3, AlertTriangle, Printer, Building2, Coins, Receipt,
 } from 'lucide-react';
 import type { ExportRow } from './IncomeExporter';
+import { buildCurrencyCatalog, fmtCurrency, currencySymbol, type CurrencyCatalog } from '@/lib/currency';
+import { usePeriodLabels } from '@/lib/usePeriodLabels';
 
 const IncomeExporter = dynamic(() => import('./IncomeExporter'), { ssr: false });
 
@@ -37,10 +39,14 @@ function cleanName(name: string | null | undefined, fallback = '—'): string {
   return String(name);
 }
 
-function fmtMoney(amount: string | number, symbol = '₦'): string {
-  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  if (isNaN(num)) return `${symbol}0.00`;
-  return symbol + num.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Income is stored in its receiving account's currency; legacy rows may lack the field. */
+function incomeCurrency(item: Partial<Income> | null | undefined, catalog: CurrencyCatalog | null): string {
+  return String(item?.currency || catalog?.base || 'NGN').toUpperCase();
+}
+
+/** Format an income amount in its own currency. */
+function money(item: Partial<Income> | null | undefined, amount: string | number | undefined, catalog: CurrencyCatalog | null): string {
+  return fmtCurrency(amount ?? 0, incomeCurrency(item, catalog), catalog);
 }
 
 function formatDate(dateStr?: string): string {
@@ -88,7 +94,7 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
   );
 }
 
-function ConfirmDeleteModal({ open, item, onConfirm, onCancel, loading }: any) {
+function ConfirmDeleteModal({ open, item, onConfirm, onCancel, loading, catalog }: any) {
   if (!open || !item) return null;
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
@@ -98,7 +104,7 @@ function ConfirmDeleteModal({ open, item, onConfirm, onCancel, loading }: any) {
         </div>
         <h3 className="text-lg font-bold text-slate-900 text-center">Delete & Reverse Income</h3>
         <p className="text-sm text-slate-500 text-center leading-relaxed">
-          Are you sure you want to delete <strong className="text-slate-800">Ref: {item.reference || `#${item.id}`}</strong> ({fmtMoney(item.amount)})? This will atomically debit the target bank or cash box balance.
+          Are you sure you want to delete <strong className="text-slate-800">Ref: {item.reference || `#${item.id}`}</strong> ({money(item, item.amount, catalog)})? This will atomically debit the target bank or cash box balance.
         </p>
         <div className="flex gap-3 pt-2">
           <button onClick={onCancel} disabled={loading} className="flex-1 py-2.5 text-sm font-bold border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">Cancel</button>
@@ -111,7 +117,7 @@ function ConfirmDeleteModal({ open, item, onConfirm, onCancel, loading }: any) {
   );
 }
 
-function EditIncomeModal({ open, item, onClose, onSave, loading, categories, banks, settings }: any) {
+function EditIncomeModal({ open, item, onClose, onSave, loading, categories, banks, settings, catalog }: any) {
   const [form, setForm] = useState<any>({});
   const [initialForm, setInitialForm] = useState<any>({});
 
@@ -139,6 +145,11 @@ function EditIncomeModal({ open, item, onClose, onSave, loading, categories, ban
 
   const inputCls = "w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none";
   const labelCls = "block text-xs font-semibold text-slate-500 uppercase mb-1";
+  // An entry keeps its currency: only accounts held in the same currency can receive it.
+  const itemCurrency = incomeCurrency(item, catalog);
+  const sameCurrencyBanks = (Array.isArray(banks) ? banks : []).filter(
+    (b: any) => b.account_type !== 'cash_vault' && String(b.currency || catalog?.base || 'NGN').toUpperCase() === itemCurrency
+  );
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
@@ -172,8 +183,11 @@ function EditIncomeModal({ open, item, onClose, onSave, loading, categories, ban
               </select>
             </div>
             <div>
-              <label className={labelCls}>Amount</label>
-              <input type="number" step="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} className={inputCls} required />
+              <label className={labelCls}>Amount ({itemCurrency})</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">{currencySymbol(itemCurrency, catalog) || itemCurrency}</span>
+                <input type="number" step="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} className={`${inputCls} pl-9`} required />
+              </div>
             </div>
           </div>
 
@@ -191,8 +205,9 @@ function EditIncomeModal({ open, item, onClose, onSave, loading, categories, ban
               <label className={labelCls}>Destination Account</label>
               <select value={form.bank_account || ''} onChange={e => setForm({ ...form, bank_account: e.target.value })} className={inputCls} required={form.payment_method !== 'cash' && settings?.track_bank_balance} disabled={form.payment_method === 'cash'}>
                 <option value="">{form.payment_method === 'cash' ? 'Auto: Cash Vault' : 'Select Bank...'}</option>
-                {(Array.isArray(banks) ? banks : []).filter((b: any) => b.account_type !== 'cash_vault').map((b: any) => <option key={b.id} value={b.id}>{b.bank_name}</option>)}
+                {sameCurrencyBanks.map((b: any) => <option key={b.id} value={b.id}>{b.bank_name} ({String(b.currency || itemCurrency).toUpperCase()})</option>)}
               </select>
+              <p className="text-[10px] text-slate-400 mt-1">Only {itemCurrency} accounts are listed — an entry keeps its currency.</p>
             </div>
           </div>
 
@@ -230,6 +245,10 @@ export default function ConsolidatedIncomePage() {
   const canEditIncome   = user?.is_superuser || hasPermission('finance.change_incomemodel') || hasPermission('finance.add_incomemodel');
 
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [currencyFilter, setCurrencyFilter] = useState('');
+  const [summary, setSummary]               = useState<IncomeSummary | null>(null);
+  const [refsLoaded, setRefsLoaded]         = useState(false);
+  const periodLabels = usePeriodLabels();
   const [searchQuery, setSearchQuery]       = useState('');
   const [sessionId, setSessionId]           = useState('');
   const [periodId, setPeriodId]             = useState('');
@@ -265,8 +284,20 @@ export default function ConsolidatedIncomePage() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4500);
   };
 
-  const hasActiveFilters = Boolean(categoryFilter || searchQuery.trim() || sessionId || periodId || startDate || endDate);
-  const clearAllFilters = () => { setCategoryFilter(''); setSearchQuery(''); setSessionId(''); setPeriodId(''); setStartDate(''); setEndDate(''); };
+  // ── Currency catalogue: base + configured currencies + any currency an account is held in ──
+  const catalog = useMemo<CurrencyCatalog | null>(() => {
+    if (!refsLoaded) return null;
+    return buildCurrencyCatalog(settings, banks.map((b: any) => b.currency));
+  }, [refsLoaded, settings, banks]);
+  const baseCode = catalog?.base || 'NGN';
+  const isMultiCurrency = (catalog?.list.length || 0) > 1;
+  const activeCode = (currencyFilter || baseCode).toUpperCase();
+  const activeSymbol = currencySymbol(activeCode, catalog) || `${activeCode} `;
+  const activeSummary = summary?.by_currency.find(r => r.currency === activeCode);
+
+  // The list is always scoped to ONE currency so every total is meaningful.
+  const hasActiveFilters = Boolean(categoryFilter || (currencyFilter && currencyFilter !== baseCode) || searchQuery.trim() || sessionId || periodId || startDate || endDate);
+  const clearAllFilters = () => { setCategoryFilter(''); setCurrencyFilter(baseCode); setSearchQuery(''); setSessionId(''); setPeriodId(''); setStartDate(''); setEndDate(''); };
 
   useEffect(() => {
     Promise.all([
@@ -283,6 +314,9 @@ export default function ConsolidatedIncomePage() {
       setSessionPeriods(Array.isArray(spData) ? spData : (spData as any)?.results ?? []);
       setSettings(settingsData);
       setSchoolInfo(schoolData);
+      const base = String((settingsData as any)?.currency_config?.base_currency || 'NGN').toUpperCase();
+      setCurrencyFilter(prev => prev || base);
+      setRefsLoaded(true);
     });
   }, []);
 
@@ -291,34 +325,39 @@ export default function ConsolidatedIncomePage() {
     return sessionPeriods.filter((sp: any) => String(sp.session?.id) === String(sessionId)).map((sp: any) => sp.period).filter(Boolean);
   }, [sessionId, sessionPeriods]);
 
-  const baseCurrencySymbol = settings?.currency_config?.base_currency === 'USD' ? '$' : '₦';
-
   const buildParams = useCallback(() => {
     const params: Record<string, any> = { page, page_size: PAGE_SIZE };
     if (categoryFilter) params.category = categoryFilter;
+    if (currencyFilter) params.currency = currencyFilter;
     if (searchQuery.trim()) params.search = searchQuery.trim();
     if (sessionId) params.session_id = sessionId;
     if (periodId) params.academic_period_id = periodId;
     if (startDate) params.start_date = startDate;
     if (endDate) params.end_date = endDate;
     return params;
-  }, [page, categoryFilter, searchQuery, sessionId, periodId, startDate, endDate]);
+  }, [page, categoryFilter, currencyFilter, searchQuery, sessionId, periodId, startDate, endDate]);
 
   const fetchData = useCallback(async () => {
-    if (!canViewIncome) return;
+    if (!canViewIncome || !refsLoaded) return;
     setLoading(true); setPageError(null);
     try {
-      const response = await incomeAPI.list(buildParams());
+      const params = buildParams();
+      const [response, summaryRes] = await Promise.all([
+        incomeAPI.list(params),
+        incomeAPI.summary(params).catch(() => null),
+      ]);
       const results = Array.isArray(response) ? response : (response as any)?.results ?? [];
       // THE FIX: Properly fallback if count is stripped so the Next button logic doesn't break
-      const totalCount = typeof (response as any)?.count === 'number' ? (response as any).count : 0;
-      setData(results); setTotal(totalCount);
+      const totalCount = typeof (response as any)?.count === 'number'
+        ? (response as any).count
+        : (summaryRes?.count ?? 0);
+      setData(results); setTotal(totalCount); setSummary(summaryRes);
     } catch (err) { setPageError(extractError(err)); }
     finally { setLoading(false); }
-  }, [buildParams, canViewIncome]);
+  }, [buildParams, canViewIncome, refsLoaded]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => { setPage(1); }, [categoryFilter, searchQuery, sessionId, periodId, startDate, endDate]);
+  useEffect(() => { setPage(1); }, [categoryFilter, currencyFilter, searchQuery, sessionId, periodId, startDate, endDate]);
 
   const autoOpenedRef = useRef(false);
   useEffect(() => {
@@ -391,8 +430,8 @@ export default function ConsolidatedIncomePage() {
         }
       `}} />
 
-      <ConfirmDeleteModal open={deleteModal.open} item={deleteModal.item} onConfirm={handleDeleteSubmit} onCancel={() => setDeleteModal({ open: false, item: null })} loading={actionLoading} />
-      <EditIncomeModal open={editModal.open} item={editModal.item} onClose={() => setEditModal({ open: false, item: null })} onSave={handleEditSave} loading={actionLoading} categories={categories} banks={banks} settings={settings} />
+      <ConfirmDeleteModal open={deleteModal.open} item={deleteModal.item} onConfirm={handleDeleteSubmit} onCancel={() => setDeleteModal({ open: false, item: null })} loading={actionLoading} catalog={catalog} />
+      <EditIncomeModal open={editModal.open} item={editModal.item} onClose={() => setEditModal({ open: false, item: null })} onSave={handleEditSave} loading={actionLoading} categories={categories} banks={banks} settings={settings} catalog={catalog} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -412,7 +451,7 @@ export default function ConsolidatedIncomePage() {
             </button>
           )}
           <div className="flex-1 sm:flex-none">
-            <IncomeExporter schoolName={schoolInfo?.name} getExportRows={getExportRows} baseCurrency={baseCurrencySymbol} />
+            <IncomeExporter schoolName={schoolInfo?.name} getExportRows={getExportRows} baseCurrency={activeSymbol} />
           </div>
         </div>
       </div>
@@ -433,6 +472,29 @@ export default function ConsolidatedIncomePage() {
               <option value="">All Sessions</option>
               {sessions.map(s => <option key={s.id} value={s.id}>{s.start_year}/{s.end_year}</option>)}
             </select>
+            {sessionId && (
+              <select value={periodId} onChange={(e) => setPeriodId(e.target.value)} className="w-full sm:w-auto px-2.5 sm:px-3.5 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg sm:rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                <option value="">All {periodLabels.plural}</option>
+                {availablePeriods.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            )}
+            {isMultiCurrency && (
+              <div className="relative w-full sm:w-auto">
+                <Coins className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                <select
+                  value={activeCode}
+                  onChange={(e) => setCurrencyFilter(e.target.value)}
+                  title="Income is listed and totalled one currency at a time"
+                  className="w-full sm:w-auto pl-8 pr-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg sm:rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                >
+                  {catalog?.list.map(c => (
+                    <option key={c.code} value={c.code}>
+                      {c.code}{c.symbol ? ` (${c.symbol})` : ''}{c.code === baseCode ? ' · Base' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
           <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto">
             <div className="flex items-center gap-1 sm:gap-1.5 flex-1 sm:flex-none">
@@ -459,6 +521,29 @@ export default function ConsolidatedIncomePage() {
           </div>
         </div>
       </div>
+
+      {/* ── Summary strip: totals for the current filters, in ONE currency ── */}
+      {refsLoaded && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="col-span-2 sm:col-span-1 bg-gradient-to-br from-blue-700 to-indigo-800 text-white rounded-xl sm:rounded-2xl p-4 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-blue-200">Total Received · {activeCode}</p>
+            <p className="text-xl sm:text-2xl font-black mt-1 tabular-nums truncate">
+              {fmtCurrency(activeSummary?.total ?? 0, activeCode, catalog)}
+            </p>
+            <p className="text-[11px] text-blue-200/80 mt-1">{hasActiveFilters ? 'Matching the filters above' : 'All recorded income'}</p>
+          </div>
+          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Receipt className="h-3 w-3" /> Entries</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-1 tabular-nums">{(activeSummary?.count ?? 0).toLocaleString()}</p>
+          </div>
+          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Average Entry</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-1 tabular-nums truncate">
+              {fmtCurrency(activeSummary && activeSummary.count ? Number(activeSummary.total) / activeSummary.count : 0, activeCode, catalog)}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Table Data */}
       <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
@@ -503,7 +588,7 @@ export default function ConsolidatedIncomePage() {
                         </span>
                       </td>
                       <td className="px-3 sm:px-4 py-3 text-right font-black text-slate-900 text-xs sm:text-sm">
-                        {fmtMoney(item.amount, baseCurrencySymbol)}
+                        {money(item, item.amount, catalog)}
                       </td>
                       <td className="px-3 sm:px-4 py-3 text-slate-600 font-medium text-xs hidden md:table-cell">
                         {formatPaymentMethod(item.payment_method)}
@@ -559,7 +644,12 @@ export default function ConsolidatedIncomePage() {
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
                 <div>
                   <p className="text-[11px] sm:text-xs text-slate-400 font-semibold uppercase tracking-wider">Total Recorded</p>
-                  <p className="text-xl sm:text-2xl font-black text-slate-900">{fmtMoney(selectedItem.amount, baseCurrencySymbol)}</p>
+                  <p className="text-xl sm:text-2xl font-black text-slate-900">{money(selectedItem, selectedItem.amount, catalog)}</p>
+                  <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider flex items-center gap-1">
+                    <Coins className="h-3 w-3" /> {incomeCurrency(selectedItem, catalog)}
+                    {catalog?.byCode[incomeCurrency(selectedItem, catalog)]?.name && catalog.byCode[incomeCurrency(selectedItem, catalog)].name !== incomeCurrency(selectedItem, catalog)
+                      ? ` · ${catalog.byCode[incomeCurrency(selectedItem, catalog)].name}` : ''}
+                  </p>
                 </div>
                 <div className="flex flex-col items-end gap-1.5">
                   <span className="text-[10px] sm:text-xs font-bold uppercase px-2.5 py-1 bg-blue-100 text-blue-800 rounded-md">{selectedItem.category_name || 'Revenue'}</span>
@@ -668,7 +758,10 @@ export default function ConsolidatedIncomePage() {
                     <span className="text-[9px] font-bold text-slate-500">Routing: {cleanName(printA4Item.bank_account_name, 'Cash Vault')}</span>
                   </div>
                 </div>
-                <p className="text-2xl font-black text-indigo-700 shrink-0 whitespace-nowrap">{fmtMoney(printA4Item.amount, baseCurrencySymbol)}</p>
+                <div className="text-right shrink-0">
+                  <p className="text-2xl font-black text-indigo-700 whitespace-nowrap">{money(printA4Item, printA4Item.amount, catalog)}</p>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{incomeCurrency(printA4Item, catalog)}</p>
+                </div>
               </div>
 
               <div className="mb-5">
@@ -682,11 +775,6 @@ export default function ConsolidatedIncomePage() {
                        <p className="text-[11px] text-slate-600 font-medium">{printA4Item.notes}</p>
                      ) : (
                        <p className="text-[11px] text-slate-400 italic">No additional notes recorded.</p>
-                     )}
-                     {printA4Item.foreign_currency && (
-                       <p className="text-[11px] text-emerald-600 font-bold mt-2 pt-2 border-t border-slate-100">
-                         Foreign Inflow Logged: {printA4Item.foreign_currency} {printA4Item.foreign_amount}
-                       </p>
                      )}
                   </div>
                 </div>
@@ -736,12 +824,9 @@ export default function ConsolidatedIncomePage() {
               <div className="flex justify-between mb-3 text-[10px]"><span>Method:</span><span>{formatPaymentMethod(printThermalItem.payment_method)}</span></div>
 
               <div className="text-lg font-black my-4 text-center py-2 border-y-2 border-black">
-                {fmtMoney(printThermalItem.amount, baseCurrencySymbol)}
+                {money(printThermalItem, printThermalItem.amount, catalog)}
               </div>
-
-              {printThermalItem.foreign_currency && (
-                <div className="text-center text-[9px] font-bold mt-2">Foreign: {printThermalItem.foreign_currency} {printThermalItem.foreign_amount}</div>
-              )}
+              <div className="text-center text-[9px] font-bold -mt-2 mb-2">Currency: {incomeCurrency(printThermalItem, catalog)}</div>
 
               <div className="border-b border-dashed border-black mb-3 mt-3"></div>
               <div className="text-center">
