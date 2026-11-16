@@ -13,8 +13,9 @@ import {
   CreditCard, Wallet, AlertTriangle, Check, X, ChevronLeft,
   FileText, Clock, ArrowUpCircle, History, Eye, Printer,
   RotateCcw, Plus, Minus, ArrowRightLeft, Users, Loader2,
-  AlertCircle, Download, ChevronDown, ChevronUp, Trash2,
+  AlertCircle, Download, ChevronDown, ChevronUp, Trash2, ShoppingCart,
 } from 'lucide-react';
+import InvoiceCartModal from '@/components/fee/InvoiceCartModal';
 import { academicCalendarAPI } from '@/lib/api';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -803,6 +804,7 @@ export default function StudentFinancialDashboardPage() {
   const [activeTab, setActiveTab] = useState<'invoice_history' | 'payment_history'>('invoice_history');
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [showManualInvoiceModal, setShowManualInvoiceModal] = useState(false);
+  const [showCart, setShowCart] = useState(false);
   const [showAddItemModal, setShowAddItemModal] = useState<number | null>(null);
   const [showPaymentForm, setShowPaymentForm] = useState<{ invoice: Invoice | FamilyInvoice; isFamily: boolean } | null>(null);
   const [revertModal, setRevertModal] = useState<{ id: number; isFamily: boolean } | null>(null);
@@ -1018,6 +1020,14 @@ export default function StudentFinancialDashboardPage() {
         />
       )}
 
+      {/* Invoice cart — add / remove fee lines for any period of the current session */}
+      <InvoiceCartModal
+        open={showCart}
+        studentId={studentId}
+        onClose={() => setShowCart(false)}
+        onChanged={load}
+      />
+
       {/* Student header */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1040,6 +1050,10 @@ export default function StudentFinancialDashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => setShowCart(true)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:bg-slate-800 transition-colors shadow-sm">
+              <ShoppingCart className="h-4 w-4" /> Edit Invoice Items
+            </button>
             <button onClick={() => setShowManualInvoiceModal(true)}
               className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-200 transition-colors border border-slate-200">
               <Plus className="h-4 w-4" /> Create Invoice

@@ -738,6 +738,13 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               requiredPermissions: ['finance.view_wallettransfermodel'],
             },
             {
+              name: 'Wallet Balances',
+              href: '/dashboard/staff/finance/wallet-balances',
+              icon: <Wallet className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/finance/wallet-balances'),
+              requiredPermissions: ['finance.view_wallettransactionmodel', 'finance.view_staffwallettransactionmodel'],
+            },
+            {
               name: 'Fund My Wallet',
               href: '/dashboard/staff/finance/fund',
               icon: <PlusCircle className="h-4 w-4" />,

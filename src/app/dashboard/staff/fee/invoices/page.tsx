@@ -8,8 +8,9 @@ import { Session, AcademicSessionPeriod } from '@/lib/types';
 import {
   Search, AlertCircle, Check, X, Loader2, Users, FileText, PlusCircle, ShieldMinus,
   RefreshCw, MoreVertical, Mail, Printer, Info, User, Wallet, Eye, ExternalLink, SearchIcon,
-  AlertTriangle, Building2
+  AlertTriangle, Building2, ShoppingCart,
 } from 'lucide-react';
+import InvoiceCartModal from '@/components/fee/InvoiceCartModal';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 let _toastId = 0;
@@ -132,6 +133,7 @@ function LedgerContent() {
   const [adHocModalOpen, setAdHocModalOpen] = useState(false);
   const [chargeCategory, setChargeCategory] = useState('fine');
   const [studentDetailModal, setStudentDetailModal] = useState<any | null>(null);
+  const [cartTarget, setCartTarget] = useState<{ studentId: number; periodId: number | null } | null>(null);
   const [invoiceDrawer, setInvoiceDrawer] = useState<{ type: 'student'; parent: any; ledgerStudent: any } | { type: 'family'; parent: any } | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState<{ actionType: 'send_reminders' | 'send_summaries'; scope: 'all' | 'selected'; count: number } | null>(null);
 
@@ -915,6 +917,7 @@ function LedgerContent() {
                                     <td className="px-4 py-3 text-center">
                                        <div className="flex items-center justify-center gap-2 text-slate-400">
                                          <button onClick={() => setInvoiceDrawer({ type: 'student', parent, ledgerStudent })} className="hover:text-indigo-600 transition-colors" title="View full billing breakdown" aria-label={`View invoice details for ${studentDisplayName}`}><Eye className="w-4 h-4"/></button>
+                                         <button onClick={() => setCartTarget({ studentId: st.id, periodId: filterPeriodId ? Number(filterPeriodId) : null })} className="hover:text-indigo-600 transition-colors" title="Edit invoice items (add / remove fees)" aria-label={`Edit invoice items for ${studentDisplayName}`}><ShoppingCart className="w-4 h-4"/></button>
                                          <button onClick={() => router.push(`/dashboard/staff/fee/payments/new?student_id=${st.id}`)} className="hover:text-emerald-600 transition-colors" title="Record a payment for this student" aria-label={`Receive payment for ${studentDisplayName}`}><Wallet className="w-4 h-4"/></button>
                                        </div>
                                     </td>
@@ -1052,6 +1055,7 @@ function LedgerContent() {
                                   <td className="px-4 py-3 text-center">
                                      <div className="flex items-center justify-center gap-2 text-slate-400">
                                          <button onClick={() => setInvoiceDrawer({ type: 'student', parent, ledgerStudent })} className="hover:text-indigo-600 transition-colors" title="View full billing breakdown" aria-label={`View invoice details for ${studentDisplayName}`}><Eye className="w-4 h-4"/></button>
+                                         <button onClick={() => setCartTarget({ studentId: st.id, periodId: filterPeriodId ? Number(filterPeriodId) : null })} className="hover:text-indigo-600 transition-colors" title="Edit invoice items (add / remove fees)" aria-label={`Edit invoice items for ${studentDisplayName}`}><ShoppingCart className="w-4 h-4"/></button>
                                          <button onClick={() => router.push(`/dashboard/staff/fee/payments/new?student_id=${st.id}`)} className="hover:text-emerald-600 transition-colors" title="Record a payment for this student" aria-label={`Receive payment for ${studentDisplayName}`}><Wallet className="w-4 h-4"/></button>
                                       </div>
                                   </td>
@@ -1338,6 +1342,15 @@ function LedgerContent() {
           </div>
         )}
 
+        {/* ── Invoice Cart (add / remove fee lines for any period of the current session) ── */}
+        <InvoiceCartModal
+          open={!!cartTarget}
+          studentId={cartTarget?.studentId ?? null}
+          initialPeriodId={cartTarget?.periodId ?? null}
+          onClose={() => setCartTarget(null)}
+          onChanged={fetchLedger}
+        />
+
         {/* ── Invoice Detail Drawer ── */}
         {invoiceDrawer && (
           <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in slide-in-from-right-8" onClick={() => setInvoiceDrawer(null)}>
@@ -1403,6 +1416,14 @@ function LedgerContent() {
                         <div className="h-px bg-white/10 my-1"></div>
                         <div className="flex justify-between items-center"><span className="text-xs font-black uppercase tracking-widest">Balance Due</span><span className="text-lg font-black">{formatCurrency(breakdown.balance)}</span></div>
                       </div>
+
+                      <button
+                        onClick={() => { setCartTarget({ studentId: st.id, periodId: filterPeriodId ? Number(filterPeriodId) : null }); setInvoiceDrawer(null); }}
+                        className="w-full py-3 rounded-xl bg-gradient-to-r from-slate-900 to-indigo-900 text-white text-sm font-black shadow-lg shadow-indigo-900/10 hover:from-slate-800 hover:to-indigo-800 transition-all flex items-center justify-center gap-2 active:scale-[0.99]"
+                      >
+                        <ShoppingCart className="w-4 h-4" /> Edit invoice items
+                        <span className="text-[10px] font-bold text-indigo-200">add / remove fees</span>
+                      </button>
 
                       <div className="flex gap-3">
                         {ledgerStudent.invoice && (
