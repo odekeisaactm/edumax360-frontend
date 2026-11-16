@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { assessmentAISettingsAPI, aiServicesAPI, academicCalendarAPI } from '@/lib/api';
+import ExamSecuritySettingsCard from '@/components/assessment/ExamSecuritySettingsCard';
 import {
   AssessmentAISettings,
   AssessmentAISettingsFormValues,
@@ -443,6 +444,8 @@ export default function AISettingsPage() {
   const [showSuccess, setShowSuccess] = useState(false);
 
   const canEdit = user?.is_superuser || hasPermission('assessment_center.change_assessmentaisettingsmodel');
+  // The backend allows staff accounts to change school-wide exam security (same rule as AI settings).
+  const canEditSecurity = !!(user?.is_superuser || (user as { is_staff?: boolean } | null)?.is_staff || canEdit);
 
   useEffect(() => {
     setMounted(true);
@@ -552,7 +555,10 @@ export default function AISettingsPage() {
           onClose={() => setIsEditing(false)}
         />
       )}
-      <div className="min-h-[600px] flex items-center justify-center">
+      <div className="space-y-6 pb-4">
+        <ExamSecuritySettingsCard canEdit={canEditSecurity} />
+      </div>
+      <div className="min-h-[480px] flex items-center justify-center">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-100 p-10 text-center space-y-6">
           <div className="w-20 h-20 bg-gradient-to-br from-violet-100 to-purple-100 rounded-2xl flex items-center justify-center mx-auto">
             <Brain className="h-10 w-10 text-violet-600" />
@@ -622,6 +628,9 @@ export default function AISettingsPage() {
           </button>
         )}
       </div>
+
+      {/* ── School-wide exam security (device approval + enforcement) ── */}
+      <ExamSecuritySettingsCard canEdit={canEditSecurity} />
 
       {/* ── Stat chips ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

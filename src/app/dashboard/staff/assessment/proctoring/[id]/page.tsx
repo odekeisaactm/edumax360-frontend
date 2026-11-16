@@ -32,6 +32,33 @@ interface StudentData {
   face_alerts: number;
   device_type: string | null;
   hall: string | null;
+  /** Heartbeat from the exam client (null for older backends). */
+  last_seen_at?: string | null;
+  is_online?: boolean;
+  client_platform?: string | null;
+  violations?: number;
+  app_exits?: number;
+}
+
+const PLATFORM_LABEL: Record<string, string> = { web: 'Web', windows: 'Windows', android: 'Android', ios: 'iOS' };
+
+/** Online / Offline pill for in-progress attempts. */
+function PresenceBadge({ student }: { student: StudentData }) {
+  if (student.status !== 'in_progress' || student.is_online === undefined) return null;
+  const platform = student.client_platform ? PLATFORM_LABEL[student.client_platform] || student.client_platform : null;
+  if (student.is_online) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700" title={platform ? `Online on ${platform}` : 'Online'}>
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online{platform ? ` · ${platform}` : ''}
+      </span>
+    );
+  }
+  const since = student.last_seen_at ? new Date(student.last_seen_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600" title="The exam device has stopped checking in">
+      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline{since ? ` since ${since}` : ''}
+    </span>
+  );
 }
 
 interface TimelineEvent {
@@ -468,7 +495,7 @@ function StudentSlideOver({ student, events, onClose, onWarn, onSubmit, onExtend
           <div className="px-6 py-4 border-b border-slate-100 grid grid-cols-3 gap-3 flex-shrink-0">
             {[
               { label: 'Answers', value: `${student.answers_saved}/${student.total_questions}` },
-              { label: 'Tab Switches', value: student.tab_switches },
+              { label: 'Violations', value: student.violations ?? student.tab_switches },
               { label: 'Face Alerts', value: student.face_alerts },
             ].map(({ label, value }) => (
               <div key={label} className="bg-slate-50 rounded-xl p-3 text-center">
@@ -925,6 +952,7 @@ export default function ProctoringRoom() {
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-slate-900 truncate">{student.student.name}</p>
                             <p className="text-xs text-slate-400 truncate">{student.student.registration_number}</p>
+                            <PresenceBadge student={student} />
                           </div>
                         </div>
 
@@ -947,11 +975,11 @@ export default function ProctoringRoom() {
                           <CameraStatusIcon status={student.camera_status} />
                         </div>
 
-                        {/* Tab switches */}
-                        <div className="w-12 shrink-0 text-center">
-                          {student.tab_switches > 0 ? (
-                            <span className={`text-xs font-bold ${student.tab_switches >= 5 ? 'text-red-600' : student.tab_switches >= 3 ? 'text-amber-600' : 'text-slate-500'}`}>
-                              {student.tab_switches}✕
+                        {/* Left the exam (tab / app / unpin) */}
+                        <div className="w-12 shrink-0 text-center" title="Times the student left the exam (tab switch, app switch or unpinning)">
+                          {(student.app_exits ?? student.tab_switches) > 0 ? (
+                            <span className={`text-xs font-bold ${(student.app_exits ?? student.tab_switches) >= 5 ? 'text-red-600' : (student.app_exits ?? student.tab_switches) >= 3 ? 'text-amber-600' : 'text-slate-500'}`}>
+                              {student.app_exits ?? student.tab_switches}✕
                             </span>
                           ) : (
                             <span className="text-xs text-slate-300">—</span>

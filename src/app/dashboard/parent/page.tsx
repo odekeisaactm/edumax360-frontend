@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { announcementsAPI, queriesAPI } from '@/lib/communication.service';
 import { Announcement, Query } from '@/lib/types';
+import CbtAppDownloadCard from '@/components/assessment/CbtAppDownloadCard';
 
 // ============================================================================
 // HELPERS
@@ -309,6 +310,9 @@ export default function ParentDashboard() {
           })}
         </div>
       </div>
+
+      {/* ── CBT exam app download (hidden until staff publish a release) ── */}
+      <CbtAppDownloadCard />
 
       {/* ── 4. COMMUNICATION WIDGETS ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">

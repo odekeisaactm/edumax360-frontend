@@ -378,6 +378,13 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               requiredPermissions: ['assessment_center.view_authorizeddevicemodel'],
             },
             {
+              name: 'CBT App Releases',
+              href: '/dashboard/staff/assessment/app-releases',
+              icon: <PackageCheck className="h-4 w-4" />,
+              current: isCurrentPath('/dashboard/staff/assessment/app-releases'),
+              requiredPermissions: ['assessment_center.view_authorizeddevicemodel'],
+            },
+            {
               name: 'Settings',
               href: '/dashboard/staff/assessment/ai-settings',
               icon: <Bot className="h-4 w-4" />,
