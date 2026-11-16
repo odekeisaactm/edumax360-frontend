@@ -9,6 +9,7 @@ import {
   Check, X, RotateCcw, Save, ChevronLeft, ChevronRight,
   Target,
 } from 'lucide-react';
+import RichContent from '@/components/assessment/rich/RichContent';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -516,7 +517,7 @@ export default function MarkingDetailPage() {
                 {/* Question text */}
                 <div>
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Question</p>
-                  <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap">{currentAnswer.question_text}</p>
+                  <RichContent text={currentAnswer.question_text} className="text-sm text-slate-900 leading-relaxed" />
                   {(currentAnswer.question_image || currentAnswer.image || currentAnswer.image_url) && (
                     <img
                       src={getImageUrl(currentAnswer.question_image || currentAnswer.image || currentAnswer.image_url || '') || ''}
@@ -543,7 +544,7 @@ export default function MarkingDetailPage() {
                             : 'bg-slate-50 border-slate-200 text-slate-600'
                           }`}>
                             <span className="font-bold flex-shrink-0 w-5">{key}.</span>
-                            <span className="flex-1">{val}</span>
+                            <RichContent text={String(val)} inline className="flex-1" />
                             {isCorrect && <Check className="h-4 w-4 text-emerald-600 flex-shrink-0" />}
                             {isSelected && !isCorrect && <X className="h-4 w-4 text-red-500 flex-shrink-0" />}
                           </div>
@@ -581,7 +582,7 @@ export default function MarkingDetailPage() {
                           <Target className="h-4 w-4 text-blue-600" />
                           <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Model Answer / Marking Scheme</p>
                         </div>
-                        <p className="text-sm text-blue-900 leading-relaxed whitespace-pre-wrap">{currentAnswer.model_answer}</p>
+                        <RichContent text={currentAnswer.model_answer} className="text-sm text-blue-900 leading-relaxed" />
                       </div>
                     )}
 

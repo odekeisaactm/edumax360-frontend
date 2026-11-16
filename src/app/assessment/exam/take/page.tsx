@@ -14,6 +14,7 @@ import {
   BarChart2, Maximize, Plus, Trash2,
 } from 'lucide-react';
 import * as faceapi from 'face-api.js';
+import RichContent from '@/components/assessment/rich/RichContent';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -2018,7 +2019,7 @@ function ExamTakingPageInner() {
                         }`}>{currentQ.question_type.replace('_', ' ')}</span>
                         <span className="text-xs text-slate-400">{currentQ.max_mark} mark{currentQ.max_mark !== 1 ? 's' : ''}</span>
                       </div>
-                      <p className="text-base text-slate-900 leading-relaxed whitespace-pre-wrap">{currentQ.question_text}</p>
+                      <RichContent text={currentQ.question_text} className="text-base text-slate-900 leading-relaxed" />
                     </div>
                   </div>
 
@@ -2049,7 +2050,7 @@ function ExamTakingPageInner() {
                               className="sr-only"
                               onChange={e => handleAnswerChange(currentQ.exam_question_id, e.target.value, true)} />
                             <span className="text-sm text-slate-800 leading-relaxed">
-                              <span className="font-bold text-slate-600 mr-1">{key}.</span>{value}
+                              <span className="font-bold text-slate-600 mr-1">{key}.</span><RichContent text={String(value)} inline />
                             </span>
                           </label>
                         );

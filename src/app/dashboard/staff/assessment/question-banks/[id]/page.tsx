@@ -31,6 +31,10 @@ import {
   File,
 } from 'lucide-react';
 import { QuestionBulkUploadStatus } from '@/lib/assessment.types';
+import RichEditor from '@/components/assessment/rich/RichEditor';
+import RichContent from '@/components/assessment/rich/RichContent';
+import MathTextInput from '@/components/assessment/rich/MathTextInput';
+import { hasRichContent } from '@/components/assessment/rich/richText';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 let _toastId = 0;
@@ -682,6 +686,8 @@ function QuestionFormModal({ open, editing, bankId, onClose, onSaved }: {
   // ── Shared fields ──
   const [questionType, setQuestionType]       = useState<QType>('objective');
   const [questionText, setQuestionText]       = useState('');
+  // Bumped after the form is (re)populated so the rich editors remount with the new content.
+  const [formKey, setFormKey]                 = useState(0);
   const [diagram, setDiagram]                 = useState<File | null>(null);
   const [defaultMark, setDefaultMark]         = useState(1);
   const [maxMark, setMaxMark]                 = useState(1);
@@ -788,6 +794,7 @@ function QuestionFormModal({ open, editing, bankId, onClose, onSaved }: {
       setOptionLabelType('ABC');
     }
     setError(null);
+    setFormKey(k => k + 1);
   }, [open, editing]);
 
   if (!open) return null;
@@ -798,7 +805,7 @@ function QuestionFormModal({ open, editing, bankId, onClose, onSaved }: {
   const showSubQuestion = questionType !== 'objective';
 
   const handleSubmit = async () => {
-    if (!questionText.trim()) { setError('Question text is required.'); return; }
+    if (!hasRichContent(questionText)) { setError('Question text is required.'); return; }
     if (isObjective && !correctAnswer) { setError('Please select the correct answer.'); return; }
     if (isTrueFalse && !correctAnswer) { setError('Please select True or False.'); return; }
     if (isObjective && Object.values(options).filter(v => v.trim()).length < 2) {
@@ -1002,12 +1009,12 @@ function QuestionFormModal({ open, editing, bankId, onClose, onSaved }: {
           {/* Question Text */}
           <div>
             <label className={labelCls}>Question Text <span className="text-red-500">*</span></label>
-            <textarea
+            <RichEditor
+              key={`q-${formKey}`}
               value={questionText}
-              onChange={e => setQuestionText(e.target.value)}
-              rows={4}
-              placeholder="Enter the question…"
-              className={`${inputCls} resize-none`}
+              onChange={setQuestionText}
+              placeholder="Enter the question… (use Equation, Symbols or Graph for maths and science)"
+              minHeight={120}
             />
           </div>
 
@@ -1050,12 +1057,11 @@ function QuestionFormModal({ open, editing, bankId, onClose, onSaved }: {
                   <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center font-bold text-slate-600 text-sm flex-shrink-0">
                     {label}
                   </div>
-                  <input
-                    type="text"
+                  <MathTextInput
                     value={options[label] || ''}
                     placeholder={`Option ${label}`}
-                    onChange={e => setOptions(prev => ({ ...prev, [label]: e.target.value }))}
-                    className={`${inputCls} flex-1`}
+                    onChange={v => setOptions(prev => ({ ...prev, [label]: v }))}
+                    className={inputCls}
                   />
                   <label title="Mark as correct answer" className="flex-shrink-0 cursor-pointer">
                     <input
@@ -1118,12 +1124,12 @@ function QuestionFormModal({ open, editing, bankId, onClose, onSaved }: {
                 <label className={labelCls}>
                   Model Answer <span className="text-slate-400 font-normal">(optional)</span>
                 </label>
-                <textarea
+                <RichEditor
+                  key={`m-${formKey}`}
                   value={modelAnswer}
-                  onChange={e => setModelAnswer(e.target.value)}
-                  rows={6}
+                  onChange={setModelAnswer}
                   placeholder="Expected answer or marking scheme…"
-                  className={`${inputCls} resize-none`}
+                  minHeight={140}
                 />
               </div>
 
@@ -1227,7 +1233,7 @@ function QuestionCard({ question, index, canEdit, canDelete, onEdit, onDelete }:
               {question.max_mark} mark{parseFloat(question.max_mark.toString()) !== 1 ? 's' : ''}
             </span>
           </div>
-          <p className="text-sm text-slate-800 leading-relaxed line-clamp-2">{question.question_text}</p>
+          <RichContent text={question.question_text} preview className="text-sm text-slate-800 leading-relaxed line-clamp-2" />
 
           {isTrueFalse && (
             <p className="text-xs mt-1.5">
@@ -1269,9 +1275,8 @@ function QuestionCard({ question, index, canEdit, canDelete, onEdit, onDelete }:
       {/* Expanded detail */}
       {expanded && (
         <div className="ml-16 mr-5 mb-4 space-y-3">
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-700 leading-relaxed">
-            {question.question_text}
-          </div>
+          <RichContent text={question.question_text}
+            className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-700 leading-relaxed" />
 
           {isObjective && question.options && (
             <div className="space-y-1.5">
@@ -1284,7 +1289,7 @@ function QuestionCard({ question, index, canEdit, canDelete, onEdit, onDelete }:
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                     question.correct_answer === key ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'
                   }`}>{key}</div>
-                  <span className="text-sm text-slate-700 flex-1">{val}</span>
+                  <RichContent text={String(val)} inline className="text-sm text-slate-700 flex-1" />
                   {question.correct_answer === key && <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />}
                 </div>
               ))}
@@ -1294,7 +1299,7 @@ function QuestionCard({ question, index, canEdit, canDelete, onEdit, onDelete }:
           {isWritten && question.model_answer && (
             <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
               <p className="text-xs font-semibold text-blue-700 mb-1">Model Answer</p>
-              <p className="text-sm text-blue-800">{question.model_answer}</p>
+              <RichContent text={question.model_answer} className="text-sm text-blue-800" />
             </div>
           )}
 

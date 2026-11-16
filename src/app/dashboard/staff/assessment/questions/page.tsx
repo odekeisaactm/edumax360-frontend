@@ -26,6 +26,7 @@ import {
   GraduationCap,
   Library,
 } from 'lucide-react';
+import RichContent from '@/components/assessment/rich/RichContent';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface AllowedClass {
@@ -165,7 +166,7 @@ function QuestionRow({ question, bankName, subjectName, className, index, canEdi
             <span className="text-xs text-slate-400">{question.max_mark} mark{parseFloat(question.max_mark.toString()) !== 1 ? 's' : ''}</span>
           </div>
 
-          <p className="text-sm text-slate-800 leading-relaxed line-clamp-2 mb-2">{question.question_text}</p>
+          <RichContent text={question.question_text} preview className="text-sm text-slate-800 leading-relaxed line-clamp-2 mb-2" />
 
           <div className="flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-50 text-violet-700 text-[10px] font-semibold rounded-md border border-violet-100 max-w-[200px] truncate">
@@ -228,9 +229,8 @@ function QuestionRow({ question, bankName, subjectName, className, index, canEdi
       {/* Expanded detail */}
       {expanded && (
         <div className="ml-5 mr-5 mb-4 space-y-3">
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-700 leading-relaxed">
-            {question.question_text}
-          </div>
+          <RichContent text={question.question_text}
+            className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-700 leading-relaxed" />
 
           {isObjective && question.options && (
             <div className="space-y-1.5">
@@ -239,7 +239,7 @@ function QuestionRow({ question, bankName, subjectName, className, index, canEdi
                   question.correct_answer === key ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}>
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                     question.correct_answer === key ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'}`}>{key}</div>
-                  <span className="text-sm text-slate-700 flex-1">{val}</span>
+                  <RichContent text={String(val)} inline className="text-sm text-slate-700 flex-1" />
                   {question.correct_answer === key && <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />}
                 </div>
               ))}
@@ -249,7 +249,7 @@ function QuestionRow({ question, bankName, subjectName, className, index, canEdi
           {isWritten && question.model_answer && (
             <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
               <p className="text-xs font-semibold text-blue-700 mb-1">Model Answer</p>
-              <p className="text-sm text-blue-800">{question.model_answer}</p>
+              <RichContent text={question.model_answer} className="text-sm text-blue-800" />
             </div>
           )}
 

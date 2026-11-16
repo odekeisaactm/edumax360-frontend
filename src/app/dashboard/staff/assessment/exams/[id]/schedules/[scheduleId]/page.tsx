@@ -16,6 +16,8 @@ import {
   RefreshCw, Search, Eye, BrainCircuit, Users, UserCheck,
   AlertTriangle, Hash,
 } from 'lucide-react';
+import RichContent from '@/components/assessment/rich/RichContent';
+import { richToPlain } from '@/components/assessment/rich/richText';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -242,7 +244,7 @@ function QuestionPreviewModal({ open, question, onClose }: { open: boolean; ques
                  <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border ${DIFF_COLORS[question.difficulty_level]}`}>{question.difficulty_level}</span>
                  <span className="text-xs font-bold text-slate-400">Score Weight: {question.max_mark} mk</span>
               </div>
-              <p className="text-lg font-bold text-slate-800 leading-relaxed">{question.question_text}</p>
+              <RichContent text={question.question_text} className="text-lg font-bold text-slate-800 leading-relaxed" />
               {question.diagram && (
                 <div className="rounded-2xl border border-slate-100 overflow-hidden shadow-sm max-w-md"><img src={question.diagram} alt="Diagram" className="w-full h-auto" /></div>
               )}
@@ -252,7 +254,7 @@ function QuestionPreviewModal({ open, question, onClose }: { open: boolean; ques
                 {Object.entries(question.options).map(([label, text]) => (
                   <div key={label} className={`p-4 rounded-2xl border flex items-start gap-4 transition-all ${question.correct_answer === label ? 'bg-emerald-50 border-emerald-200 shadow-sm' : 'bg-slate-50 border-slate-100'}`}>
                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${question.correct_answer === label ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-100' : 'bg-white text-slate-400 shadow-sm'}`}>{label}</div>
-                     <span className={`text-sm font-bold ${question.correct_answer === label ? 'text-emerald-900' : 'text-slate-600'}`}>{text}</span>
+                     <RichContent text={String(text)} inline className={`text-sm font-bold ${question.correct_answer === label ? 'text-emerald-900' : 'text-slate-600'}`} />
                      {question.correct_answer === label && <CheckCircle2 className="h-4 w-4 text-emerald-500 ml-auto shrink-0" />}
                   </div>
                 ))}
@@ -263,7 +265,7 @@ function QuestionPreviewModal({ open, question, onClose }: { open: boolean; ques
                 {question.model_answer && (
                   <div className="bg-emerald-50/50 border border-emerald-100 rounded-[1.5rem] p-6">
                     <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3 flex items-center gap-2"><CheckCircle2 className="h-3 w-3" /> Model Answer</h4>
-                    <p className="text-sm font-bold text-emerald-900 leading-relaxed whitespace-pre-wrap">{question.model_answer}</p>
+                    <RichContent text={question.model_answer} className="text-sm font-bold text-emerald-900 leading-relaxed" />
                   </div>
                 )}
                 {question.keywords && (question.keywords as any).length > 0 && (
@@ -427,7 +429,7 @@ function QuestionCard({ question, order, action, onPreview }: {
             <span className={`px-1.5 py-0.5 rounded-md text-xs font-semibold border ${diffCls}`}>{question.difficulty_level}</span>
             <span className="text-xs text-slate-400">{question.max_mark} mk</span>
           </div>
-          <p className="text-sm text-slate-700 line-clamp-2 leading-relaxed">{question.question_text}</p>
+          <RichContent text={question.question_text} preview className="text-sm text-slate-700 line-clamp-2 leading-relaxed" />
         </div>
         <div className="shrink-0 flex items-center gap-1">
           <button onClick={() => onPreview(question as any)} className="p-1.5 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all opacity-0 group-hover/card:opacity-100" title="Preview full question"><Eye className="h-3.5 w-3.5" /></button>
@@ -666,7 +668,7 @@ const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
     if (selectedQuestions.some(sq => sq.id === q.id)) return false;
     if (filterType       && q.question_type    !== filterType)       return false;
     if (filterDifficulty && q.difficulty_level !== filterDifficulty) return false;
-    if (searchQuery && !q.question_text.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (searchQuery && !richToPlain(q.question_text).toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   }));
 

@@ -24,6 +24,7 @@ import {
   Plus,
   Zap,
 } from 'lucide-react';
+import RichContent from '@/components/assessment/rich/RichContent';
 
 // ─── Style constants ─────────────────────────────────────────────────────────
 
@@ -271,7 +272,7 @@ export default function ScannedSchedulePage() {
                                  <div key={q.id} className="p-4 border border-slate-100 rounded-2xl flex items-start gap-4 hover:border-emerald-200 transition-all">
                                     <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center font-black text-sm text-slate-600 shrink-0">{q.question_number}</div>
                                     <div className="flex-1">
-                                       <p className="text-sm font-bold text-slate-700 leading-relaxed">{q.question_text}</p>
+                                       <RichContent text={q.question_text} className="text-sm font-bold text-slate-700 leading-relaxed" />
                                        <div className="flex items-center gap-3 mt-2">
                                           <span className="text-[10px] font-black text-slate-400 uppercase">Max Mark: {q.max_mark}</span>
                                           {q.ai_detected && <span className="flex items-center gap-1 text-[8px] font-black text-emerald-500 bg-emerald-50 px-1.5 py-0.5 rounded uppercase tracking-tighter"><Zap className="h-2 w-2" /> AI Extracted</span>}
