@@ -162,8 +162,11 @@ function InvigilatorModal({ open, assignedIds, staffList, isSaving, onSave, onCl
   useEffect(() => { setSelectedIds(assignedIds); }, [assignedIds, open]);
   if (!open) return null;
 
+  const q = search.trim().toLowerCase();
   const filtered = staffList.filter(s =>
-    (s.full_name || `${s.first_name} ${s.last_name}`).toLowerCase().includes(search.toLowerCase())
+    !q
+    || (s.full_name || `${s.first_name} ${s.last_name}`).toLowerCase().includes(q)
+    || String(s.staff_id || '').toLowerCase().includes(q)
   );
   const toggle = (id: number) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const selectedStaff = staffList.filter(s => selectedIds.includes(s.id));
@@ -178,7 +181,7 @@ function InvigilatorModal({ open, assignedIds, staffList, isSaving, onSave, onCl
         <div className="p-5 space-y-4 flex-1 overflow-y-auto min-h-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input type="text" placeholder="Search staff by name..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" />
+            <input type="text" autoFocus placeholder={`Search ${staffList.length} staff by name or staff ID…`} value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" />
           </div>
           {filtered.length > 0 ? (
             <div className="space-y-1.5 max-h-60 overflow-y-auto">
@@ -538,7 +541,8 @@ export default function ExamScheduleDetailPage() {
       const [banksResponse, hallData, staffData] = await Promise.all([
         questionBanksAPI.getAvailableForSchedule(scheduleId!),
         examinationHallsAPI.list({ is_active: true }),
-        staffAPI.list({ status: 'active' }),
+        // All active staff (the list API pages at 20 by default)
+        staffAPI.list({ status: 'active', page_size: 1000 }),
       ]);
       setQuestionBanks(banksResponse.banks ?? []);
       setHalls(hallData);
@@ -736,8 +740,10 @@ const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
   const handleSaveQuestions = async () => {
     if (!scheduleId) return;
     if (selectedQuestions.length === 0) {
-      showToast('error', 'No questions selected.');
-      return;
+      // Saving an empty list clears the schedule (it goes back to draft).
+      if (!window.confirm('Remove ALL questions from this schedule? It will go back to draft until questions are added again.')) {
+        return;
+      }
     }
     if (isOverMarks) {
       showToast('error', `Total marks (${currentMarks}) exceeds exam limit (${targetMarks}). Please remove questions.`);
@@ -753,7 +759,9 @@ const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
           selectedQuestions.filter(q => q.custom_mark != null).map(q => [q.id, q.custom_mark!])
         ),
       });
-      showToast('success', `${selectedQuestions.length} questions saved`);
+      showToast('success', selectedQuestions.length
+        ? `${selectedQuestions.length} questions saved`
+        : 'All questions removed from this schedule');
       await fetchAll(true);
     } catch (err) {
       showToast('error', extractError(err));
@@ -1006,7 +1014,7 @@ const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="border border-slate-100 rounded-2xl overflow-hidden">
                   <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                    <span className="text-sm font-semibold text-slate-700">Available ({filteredAvailable.length})</span>
+                    <span className="text-sm font-semibold text-slate-700">Available ({filteredAvailable.length}){availableQuestions.length > 0 && <span className="text-xs font-medium text-slate-400"> · {availableQuestions.length} in bank</span>}</span>
                     {canEdit && filteredAvailable.length > 0 && (
                       <button onClick={handleAddAll} className="text-xs font-bold text-violet-600 hover:text-violet-800 flex items-center gap-1">
                         <Plus className="h-3 w-3" /> Add All
@@ -1017,7 +1025,11 @@ const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
                     {loadingQuestions ? (
                       <div className="flex items-center justify-center py-16"><Loader2 className="h-7 w-7 text-violet-400 animate-spin" /></div>
                     ) : groupedAvailable.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-16 text-center gap-2"><BookOpen className="h-10 w-10 text-slate-200" /><p className="text-sm text-slate-400">No questions found</p></div>
+                      <div className="flex flex-col items-center justify-center py-16 text-center gap-2"><BookOpen className="h-10 w-10 text-slate-200" /><p className="text-sm text-slate-400">{
+                        selectedBank && availableQuestions.length > 0 && availableQuestions.every(aq => selectedQuestions.some(sq => sq.id === aq.id))
+                          ? `All ${availableQuestions.length} questions from this bank are already added`
+                          : selectedBank ? 'No questions match the filters' : 'Select a question bank'
+                      }</p></div>
                     ) : groupedAvailable.map(group => (
                       <div key={group.type} className="space-y-3">
                         <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-md">

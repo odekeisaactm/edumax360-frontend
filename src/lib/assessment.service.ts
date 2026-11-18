@@ -119,10 +119,35 @@ import type {
  * Unwrap paginated or direct list response.
  * DRF returns { count, results } for lists.
  */
+export interface ExamSchedulesOverview {
+  total: number;
+  active: number;
+  skipped: number;
+  by_status: { ready: number; partial: number; draft: number };
+  subjects: { id: number; name: string; total: number; active: number; ready: number }[];
+  classes: { id: number; name: string; total: number; active: number }[];
+}
+
 function unwrapList<T>(data: any): T[] {
   if (data && Array.isArray(data.results)) return data.results;
   if (Array.isArray(data)) return data;
   return [];
+}
+
+/**
+ * Load EVERY page of a paginated list (the API pages at 20 by default).
+ * Asks for 1000 per page and walks ?page=N while the server reports more,
+ * so pickers / lists are never silently cut at 20.
+ */
+async function getAllPages<T>(url: string, params?: Record<string, any>, maxItems = 10000): Promise<T[]> {
+  const out: T[] = [];
+  for (let page = 1; page <= 50; page++) {
+    const res = await api.get(url, { params: { ...(params || {}), page_size: 1000, page } });
+    const data = res.data;
+    out.push(...unwrapList<T>(data));
+    if (!data || Array.isArray(data) || !data.next || out.length >= maxItems) break;
+  }
+  return out;
 }
 
 /**
@@ -139,8 +164,7 @@ function unwrap<T>(data: any): T {
 
 export const aiServicesAPI = {
   list: async (): Promise<AIServiceConfig[]> => {
-    const res = await api.get('/api/assessment/ai-services/');
-    return unwrapList<AIServiceConfig>(res.data);
+    return getAllPages<AIServiceConfig>('/api/assessment/ai-services/');
   },
 
   get: async (id: number): Promise<AIServiceConfig> => {
@@ -213,8 +237,7 @@ export const assessmentAISettingsAPI = {
 
 export const examinationHallsAPI = {
   list: async (filters?: { school_section?: number; is_active?: boolean }): Promise<ExaminationHall[]> => {
-    const res = await api.get('/api/assessment/examination-halls/', { params: filters });
-    return unwrapList<ExaminationHall>(res.data);
+    return getAllPages<ExaminationHall>('/api/assessment/examination-halls/', filters);
   },
 
   get: async (id: number): Promise<ExaminationHall> => {
@@ -275,8 +298,7 @@ export const authorizedDevicesAPI = {
     is_blocked?: boolean;
     device_type?: string;
   }): Promise<AuthorizedDevice[]> => {
-    const res = await api.get('/api/assessment/authorized-devices/', { params: filters });
-    return unwrapList<AuthorizedDevice>(res.data);
+    return getAllPages<AuthorizedDevice>('/api/assessment/authorized-devices/', filters);
   },
 
   get: async (id: number): Promise<AuthorizedDevice> => {
@@ -370,8 +392,7 @@ export const authorizedDevicesAPI = {
 
 export const deviceApprovalRequestsAPI = {
   list: async (filters?: { status?: string }): Promise<DeviceApprovalRequest[]> => {
-    const res = await api.get('/api/assessment/device-approval-requests/', { params: filters });
-    return unwrapList<DeviceApprovalRequest>(res.data);
+    return getAllPages<DeviceApprovalRequest>('/api/assessment/device-approval-requests/', filters);
   },
 
   getPending: async (): Promise<{ count: number; requests: DeviceApprovalRequest[] }> => {
@@ -386,8 +407,7 @@ export const deviceApprovalRequestsAPI = {
 
 export const topicsAPI = {
   list: async (filters?: { subject?: number; student_class?: number }): Promise<Topic[]> => {
-    const res = await api.get('/api/assessment/topics/', { params: filters });
-    return unwrapList<Topic>(res.data);
+    return getAllPages<Topic>('/api/assessment/topics/', filters);
   },
 
   get: async (id: number): Promise<Topic> => {
@@ -437,8 +457,7 @@ export const questionBanksAPI = {
     is_active?: boolean;
     search?: string;
   }): Promise<QuestionBank[]> => {
-    const res = await api.get('/api/assessment/question-banks/', { params: filters });
-    return unwrapList<QuestionBank>(res.data);
+    return getAllPages<QuestionBank>('/api/assessment/question-banks/', filters);
   },
 
   get: async (id: number): Promise<QuestionBank> => {
@@ -544,8 +563,7 @@ export const questionsAPI = {
     question_bank__student_class?: number;
     question_bank__topic?: number;
   }): Promise<Question[]> => {
-    const res = await api.get('/api/assessment/questions/', { params: filters });
-    return unwrapList<Question>(res.data);
+    return getAllPages<Question>('/api/assessment/questions/', filters);
   },
 
   get: async (id: number): Promise<Question> => {
@@ -611,13 +629,19 @@ export const examsAPI = {
     is_practice_mode?: boolean;
     search?: string;
   }): Promise<Exam[]> => {
-    const res = await api.get('/api/assessment/exams/', { params: filters });
-    return unwrapList<Exam>(res.data);
+    return getAllPages<Exam>('/api/assessment/exams/', filters);
   },
 
-  get: async (id: number): Promise<ExamDetail> => {
-    const res = await api.get(`/api/assessment/exams/${id}/`);
+  get: async (id: number, opts?: { includeSchedules?: boolean }): Promise<ExamDetail> => {
+    const params = opts?.includeSchedules === false ? { include_schedules: 0 } : undefined;
+    const res = await api.get(`/api/assessment/exams/${id}/`, { params });
     return unwrap<ExamDetail>(res.data);
+  },
+
+  /** Counts per status / subject / class — no schedule rows (fast). */
+  schedulesOverview: async (id: number): Promise<ExamSchedulesOverview> => {
+    const res = await api.get(`/api/assessment/exams/${id}/schedules_overview/`);
+    return res.data as ExamSchedulesOverview;
   },
 
   create: async (data: ExamFormValues): Promise<Exam> => {
@@ -702,9 +726,12 @@ export const examSchedulesAPI = {
     subject?: number;
     class_configuration?: number;
     setup_status?: string;
+    /** active (default on the exam page) | ready | pending | skipped | all */
+    status_group?: 'active' | 'ready' | 'pending' | 'skipped' | 'all';
+    student_class?: number;
+    search?: string;
   }): Promise<ExamSchedule[]> => {
-    const res = await api.get('/api/assessment/exam-schedules/', { params: filters });
-    return unwrapList<ExamSchedule>(res.data);
+    return getAllPages<ExamSchedule>('/api/assessment/exam-schedules/', filters);
   },
 
   get: async (id: number): Promise<ExamScheduleDetail> => {
@@ -808,10 +835,7 @@ export const examSchedulesAPI = {
 
 export const examSectionsAPI = {
   list: async (examScheduleId: number): Promise<ExamSection[]> => {
-    const res = await api.get('/api/assessment/exam-sections/', {
-      params: { exam_schedule: examScheduleId },
-    });
-    return unwrapList<ExamSection>(res.data);
+    return getAllPages<ExamSection>('/api/assessment/exam-sections/', { exam_schedule: examScheduleId });
   },
 
   get: async (id: number): Promise<ExamSection> => {
@@ -843,8 +867,7 @@ export const examQuestionsAPI = {
     exam_schedule?: number;
     exam_section?: number;
   }): Promise<ExamQuestion[]> => {
-    const res = await api.get('/api/assessment/exam-questions/', { params: filters });
-    return unwrapList<ExamQuestion>(res.data);
+    return getAllPages<ExamQuestion>('/api/assessment/exam-questions/', filters);
   },
 
   bulkAdd: async (data: BulkAddQuestionsPayload): Promise<BulkAddQuestionsResponse> => {
@@ -994,8 +1017,7 @@ export const proctoringAPI = {
     reviewed?: boolean;
     action_taken?: string;
   }): Promise<ProctoringEvent[]> => {
-    const res = await api.get('/api/assessment/proctoring-events/', { params: filters });
-    return unwrapList<ProctoringEvent>(res.data);
+    return getAllPages<ProctoringEvent>('/api/assessment/proctoring-events/', filters);
   },
 
   /** Create event — use FormData if attaching snapshot */
@@ -1046,8 +1068,7 @@ export const invigilatorSessionsAPI = {
     is_active?: boolean;
     invigilator?: number;
   }): Promise<InvigilatorSession[]> => {
-    const res = await api.get('/api/assessment/invigilator-sessions/', { params: filters });
-    return unwrapList<InvigilatorSession>(res.data);
+    return getAllPages<InvigilatorSession>('/api/assessment/invigilator-sessions/', filters);
   },
 
   startMonitoring: async (examScheduleId: number): Promise<{
@@ -1113,8 +1134,7 @@ export const scannedSheetsAPI = {
     ocr_status?: string;
     ai_grading_status?: string;
   }): Promise<ScannedAnswerSheet[]> => {
-    const res = await api.get('/api/assessment/scanned-sheets/', { params: filters });
-    return unwrapList<ScannedAnswerSheet>(res.data);
+    return getAllPages<ScannedAnswerSheet>('/api/assessment/scanned-sheets/', filters);
   },
 
   upload: async (data: FormData): Promise<ScannedAnswerSheet> => {
@@ -1153,8 +1173,7 @@ export const scannedSheetsAPI = {
 
 export const aiMarkingQueueAPI = {
   list: async (filters?: { status?: string }): Promise<AIMarkingQueue[]> => {
-    const res = await api.get('/api/assessment/ai-marking-queue/', { params: filters });
-    return unwrapList<AIMarkingQueue>(res.data);
+    return getAllPages<AIMarkingQueue>('/api/assessment/ai-marking-queue/', filters);
   },
 
   getStats: async (): Promise<AIMarkingQueueStats> => {
@@ -1204,8 +1223,7 @@ export const resultTransferAPI = {
     exam?: number;
     is_transferred?: boolean;
   }): Promise<ExamResultTransferConfig[]> => {
-    const res = await api.get('/api/assessment/result-transfers/', { params });
-    return unwrapList<ExamResultTransferConfig>(res.data);
+    return getAllPages<ExamResultTransferConfig>('/api/assessment/result-transfers/', params);
   },
 
   get: async (id: number): Promise<ExamResultTransferConfig> => {

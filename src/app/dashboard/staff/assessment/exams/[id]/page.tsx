@@ -5,6 +5,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { examsAPI, examSchedulesAPI } from '@/lib/api';
+import type { ExamSchedulesOverview } from '@/lib/assessment.service';
+import { Search as SearchIcon, X as XIcon } from 'lucide-react';
 import { Exam, ExamSchedule, ExamDetail } from '@/lib/types';
 import {
   ClipboardList, ArrowLeft, AlertCircle, X, Check,
@@ -94,12 +96,14 @@ function ToastStack({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: numb
 function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const counter = useRef(0);
-  const show = (type: Toast['type'], message: string) => {
+  // Stable identity: data loaders depend on showToast.
+  const show = useCallback((type: Toast['type'], message: string) => {
     const id = ++counter.current;
     setToasts(p => [...p, { id, type, message }]);
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 4500);
-  };
-  return { toasts, showToast: show, removeToast: (id: number) => setToasts(p => p.filter(t => t.id !== id)) };
+  }, []);
+  const removeToast = useCallback((id: number) => setToasts(p => p.filter(t => t.id !== id)), []);
+  return { toasts, showToast: show, removeToast };
 }
 
 // ─── Confirm Modal ────────────────────────────────────────────────────────────
@@ -668,6 +672,14 @@ export default function ExamDetailPage() {
 
   const [exam, setExam] = useState<Exam | null>(null);
   const [schedules, setSchedules] = useState<ExamSchedule[]>([]);
+  const [overview, setOverview] = useState<ExamSchedulesOverview | null>(null);
+  const [schedulesLoading, setSchedulesLoading] = useState(false);
+  // Server-side filters: the exam page never loads every schedule at once.
+  const [fSubject, setFSubject] = useState('');
+  const [fClass, setFClass] = useState('');
+  const [fStatus, setFStatus] = useState<'active' | 'pending' | 'ready' | 'skipped' | 'all'>('active');
+  const [fSearch, setFSearch] = useState('');
+  const [fSearchDebounced, setFSearchDebounced] = useState('');
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
@@ -706,34 +718,69 @@ export default function ExamDetailPage() {
     setMounted(true);
   }, []);
 
-  // ── Fetch Data — uses examData.schedules directly (no pagination) ────────
+  // ── Fetch: exam (without schedules) + overview counts; schedules separately ──
+  const fetchSchedules = useCallback(async (silent = false) => {
+    if (!canView) return;
+    if (!silent) setSchedulesLoading(true);
+    try {
+      const rows = await examSchedulesAPI.list({
+        exam: examId,
+        status_group: fStatus,
+        ...(fSubject ? { subject: Number(fSubject) } : {}),
+        ...(fClass ? { student_class: Number(fClass) } : {}),
+        ...(fSearchDebounced ? { search: fSearchDebounced } : {}),
+      });
+      setSchedules(rows);
+      if (!silent) {
+        // Small result: open every subject. Large: start collapsed (fast render).
+        const ids = new Set<number>();
+        if (rows.length <= 60) {
+          rows.forEach((s: ExamSchedule) => {
+            ids.add(typeof s.subject === 'object' ? (s.subject as any).id : (s.subject as number));
+          });
+        }
+        setExpandedSubjects(ids);
+      }
+    } catch (err) {
+      if (!silent) showToast('error', extractError(err));
+    } finally {
+      if (!silent) setSchedulesLoading(false);
+    }
+  }, [canView, examId, fStatus, fSubject, fClass, fSearchDebounced, showToast]);
+
   const fetchData = useCallback(async (silent = false) => {
     if (!canView) return;
     if (!silent) { setLoading(true); setPageError(null); }
     try {
-      // ONE request — the exam detail response already contains ALL schedules
-      const examData = await examsAPI.get(examId);
+      const [examData, ov] = await Promise.all([
+        examsAPI.get(examId, { includeSchedules: false }),
+        examsAPI.schedulesOverview(examId),
+      ]);
       setExam(examData);
-      setSchedules(examData.schedules ?? []);
+      setOverview(ov);
 
       if (polling && examData.schedules_created) {
         setPolling(false);
       }
-
-      if (!silent) {
-        const ids = new Set<number>();
-        (examData.schedules ?? []).forEach((s: ExamSchedule) => {
-          const sid = typeof s.subject === 'object' ? (s.subject as any).id : s.subject;
-          ids.add(sid);
-        });
-        setExpandedSubjects(ids);
-      }
+      if (silent) await fetchSchedules(true);
     } catch (err) {
       if (!silent) setPageError(extractError(err));
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [examId, canView, polling]);
+  }, [examId, canView, polling, fetchSchedules]);
+
+  // Debounce the search box
+  useEffect(() => {
+    const t = setTimeout(() => setFSearchDebounced(fSearch.trim()), 350);
+    return () => clearTimeout(t);
+  }, [fSearch]);
+
+  // Reload schedules whenever a filter changes
+  useEffect(() => {
+    if (mounted && exam) fetchSchedules();
+    setSelectedSchedules(new Set());
+  }, [mounted, exam?.id, fetchSchedules]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (mounted) fetchData();
@@ -900,14 +947,12 @@ export default function ExamDetailPage() {
     a.subject_name.localeCompare(b.subject_name)
   );
 
-  const totalSchedules = schedules.length;
-  const activeSchedules = schedules.filter(s => getExpectedTotal(s) > 0);
-  const skippedSchedules = schedules.filter(s => getExpectedTotal(s) === 0);
-
-  const totalActive = activeSchedules.length;
-  const readyActive = activeSchedules.filter(s => s.setup_status === 'ready').length;
-  const partialActive = activeSchedules.filter(s => s.setup_status === 'partial').length;
-  const draftActive = activeSchedules.filter(s => s.setup_status === 'draft').length;
+  const totalSchedules = overview?.total ?? 0;
+  const totalActive = overview?.active ?? 0;
+  const readyActive = overview?.by_status.ready ?? 0;
+  const partialActive = overview?.by_status.partial ?? 0;
+  const draftActive = overview?.by_status.draft ?? 0;
+  const skippedSchedules = { length: overview?.skipped ?? 0 };
 
   const progress = totalActive > 0 ? Math.round((readyActive / totalActive) * 100) : 0;
   const allReady = totalActive > 0 && readyActive === totalActive;
@@ -1174,7 +1219,58 @@ export default function ExamDetailPage() {
             </div>
           )}
 
-          {schedules.length === 0 && (
+          {totalSchedules > 0 && (
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+              <select value={fSubject} onChange={e => setFSubject(e.target.value)}
+                className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500">
+                <option value="">All subjects ({overview?.subjects.length ?? 0})</option>
+                {overview?.subjects.map(sub => (
+                  <option key={sub.id} value={sub.id}>{sub.name} · {sub.ready}/{sub.active} ready{sub.total - sub.active ? ` · ${sub.total - sub.active} skipped` : ''}</option>
+                ))}
+              </select>
+              <select value={fClass} onChange={e => setFClass(e.target.value)}
+                className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500">
+                <option value="">All classes</option>
+                {overview?.classes.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} · {c.active} active</option>
+                ))}
+              </select>
+              <select value={fStatus} onChange={e => setFStatus(e.target.value as typeof fStatus)}
+                className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500">
+                <option value="active">Active ({totalActive})</option>
+                <option value="pending">Not ready ({totalActive - readyActive})</option>
+                <option value="ready">Ready ({readyActive})</option>
+                <option value="skipped">Skipped ({skippedSchedules.length})</option>
+                <option value="all">All ({totalSchedules})</option>
+              </select>
+              <div className="relative">
+                <SearchIcon className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input value={fSearch} onChange={e => setFSearch(e.target.value)} placeholder="Search code, subject, class, arm"
+                  className="w-full pl-9 pr-8 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" />
+                {fSearch && (
+                  <button onClick={() => setFSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600">
+                    <XIcon className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {schedulesLoading && (
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-10 flex items-center justify-center gap-3 text-sm text-slate-500">
+              <Loader2 className="h-5 w-5 animate-spin text-violet-400" /> Loading schedules…
+            </div>
+          )}
+
+          {!schedulesLoading && totalSchedules > 0 && schedules.length === 0 && (
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-10 text-center">
+              <p className="font-semibold text-slate-700 mb-1">No schedules match these filters</p>
+              <button onClick={() => { setFSubject(''); setFClass(''); setFStatus('all'); setFSearch(''); }}
+                className="mt-2 text-sm font-semibold text-violet-600 hover:underline">Show all schedules</button>
+            </div>
+          )}
+
+          {totalSchedules === 0 && (
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-16 text-center">
               <ClipboardList className="h-14 w-14 text-slate-200 mx-auto mb-4" />
               <p className="font-semibold text-slate-700 mb-1">No Schedules Found</p>
@@ -1192,7 +1288,7 @@ export default function ExamDetailPage() {
             </div>
           )}
 
-          {schedules.length > 0 && (
+          {!schedulesLoading && schedules.length > 0 && (
             <div className="space-y-3">
               {canEdit && (
                 <div className="flex items-center gap-3 px-2">
@@ -1201,7 +1297,7 @@ export default function ExamDetailPage() {
                     Select All
                   </button>
                   <span className="text-sm text-slate-400">|</span>
-                  <span className="text-sm text-slate-500">{schedules.length} schedules total</span>
+                  <span className="text-sm text-slate-500">{schedules.length} shown of {totalSchedules}</span>
                 </div>
               )}
 
