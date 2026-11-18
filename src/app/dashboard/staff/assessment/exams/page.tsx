@@ -158,9 +158,9 @@ export default function ExamsPage() {
   const [deletingExam, setDeletingExam] = useState<Exam | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const canView   = user?.is_superuser || hasPermission('assessment_center.view_exammodel');
-  const canCreate = user?.is_superuser || hasPermission('assessment_center.add_exammodel');
-  const canDelete = user?.is_superuser || hasPermission('assessment_center.delete_exammodel');
+  const canView   = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.view_exammodel');
+  const canCreate = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.create_own_exam');
+  const canDelete = user?.is_superuser || hasPermission('assessment_center.can_publish_exam');
 
   useEffect(() => {
     setMounted(true);

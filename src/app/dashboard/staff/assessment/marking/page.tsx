@@ -109,7 +109,7 @@ export default function MarkingHubPage() {
   // Permission: match the backend gate exactly.
   const canView = !!user && (
     user.is_superuser
-    || hasPermission('result.can_publish_result')
+    || hasPermission('assessment_center.can_publish_exam')
     || hasPermission('assessment_center.change_studentanswermodel')
   );
 

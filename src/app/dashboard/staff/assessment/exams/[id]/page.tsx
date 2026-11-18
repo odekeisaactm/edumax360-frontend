@@ -691,9 +691,13 @@ export default function ExamDetailPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
 
-  const canView    = user?.is_superuser || hasPermission('assessment_center.view_exammodel');
-  const hasEditPerm = user?.is_superuser || hasPermission('assessment_center.change_exammodel');
-  const hasDeletePerm = user?.is_superuser || hasPermission('assessment_center.delete_exammodel');
+  const isExamOfficer = !!(user?.is_superuser || hasPermission('assessment_center.can_publish_exam'));
+  const canView    = isExamOfficer || hasPermission('assessment_center.view_exammodel');
+  // Exam Officer: every exam. Teachers with "Create exams (own subjects)": only exams they created.
+  const ownsExam = !!(exam && user && (exam as { created_by?: number | null }).created_by === user.id
+    && hasPermission('assessment_center.create_own_exam'));
+  const hasEditPerm = isExamOfficer || ownsExam;
+  const hasDeletePerm = isExamOfficer || ownsExam;
 
   const canEdit    = hasEditPerm && !exam?.is_published;
   const canPublish = hasEditPerm;

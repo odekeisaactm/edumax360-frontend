@@ -151,7 +151,7 @@ export default function CreateExamPage() {
   const [showResultsImmediately, setShowResultsImmediately] = useState(false);
   const [isPracticeMode, setIsPracticeMode] = useState(false);
 
-  const canCreate = user?.is_superuser || hasPermission('assessment_center.add_exammodel');
+  const canCreate = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.create_own_exam');
 
   useEffect(() => {
     setMounted(true);
@@ -171,7 +171,7 @@ export default function CreateExamPage() {
     try {
       const [periodsData, uploadableRes, classesRes] = await Promise.all([
         academicCalendarAPI.listSessionPeriods(),
-        api.get('/api/academic/class-subjects/uploadable/', { params: { result_type: 'score' } }),
+        api.get('/api/assessment/my-scope/'),
         api.get('/api/academic/classes/', { params: { is_active: true } }),
       ]);
 

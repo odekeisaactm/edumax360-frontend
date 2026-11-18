@@ -30,7 +30,7 @@ export default function ResultTransferListPage() {
   const [mounted, setMounted] = useState(false);
 
   const canManage =
-    !!user && (user.is_superuser || hasPermission('result.can_publish_result'));
+    !!user && (user.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.change_examresulttransferconfigmodel'));
 
   const [configs, setConfigs] = useState<ExamResultTransferConfig[]>([]);
   const [loading, setLoading] = useState(true);

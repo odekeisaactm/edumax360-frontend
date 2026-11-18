@@ -56,7 +56,8 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
 
     // Leaf item — check permission
     if (item.requiredPermissions && item.requiredPermissions.length > 0) {
-      return hasPermission(item.requiredPermissions[0]);
+      // Any one of the listed permissions grants access.
+      return item.requiredPermissions.some(p => hasPermission(p));
     }
 
     // No permission required — always show
@@ -197,6 +198,13 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           requiredPermissions: ['academic_structure.view_academic_setup'],
         },
         {
+          name: 'Bulk Teacher Assignment',
+          href: '/dashboard/staff/academic/bulk-assign',
+          icon: <UserCheck className="h-4 w-4" />,
+          current: isCurrentPath('/dashboard/staff/academic/bulk-assign'),
+          requiredPermissions: ['academic_structure.view_academic_setup', 'academic_structure.manage_academic_setup'],
+        },
+        {
           name: 'Subjects',
           href: '/dashboard/staff/academic/subjects',
           icon: <BookOpen className="h-4 w-4" />,
@@ -299,35 +307,35 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           href: '/dashboard/staff/assessment/exams',
           icon: <FileText className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/assessment/exams'),
-          requiredPermissions: ['assessment_center.view_exammodel'],
+          requiredPermissions: ['assessment_center.view_exammodel', 'assessment_center.can_publish_exam'],
         },
         {
           name: 'Proctoring',
           href: '/dashboard/staff/assessment/proctoring',
           icon: <Shield className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/assessment/proctoring'),
-          requiredPermissions: ['assessment_center.view_exammodel'],
+          requiredPermissions: ['assessment_center.view_exammodel', 'assessment_center.can_publish_exam'],
         },
         {
           name: 'Marking',
           href: '/dashboard/staff/assessment/marking',
           icon: <CheckSquare className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/assessment/marking'),
-          requiredPermissions: ['assessment_center.change_studentanswermodel'],
+          requiredPermissions: ['assessment_center.change_studentanswermodel', 'assessment_center.can_publish_exam'],
         },
 //         {
 //           name: 'Analytics',
 //           href: '/dashboard/staff/assessment/analytics',
 //           icon: <BarChart className="h-4 w-4" />,
 //           current: isCurrentPath('/dashboard/staff/assessment/analytics'),
-//           requiredPermissions: ['assessment_center.view_exammodel'],
+//           requiredPermissions: ['assessment_center.view_exammodel', 'assessment_center.can_publish_exam'],
 //         },
         {
           name: 'Result Transfer',
           href: '/dashboard/staff/assessment/result-transfer',
           icon: <RefreshCw className="h-4 w-4" />,
           current: isCurrentPath('/dashboard/staff/assessment/result-transfer'),
-          requiredPermissions: ['assessment_center.change_examresulttransferconfigmodel'],
+          requiredPermissions: ['assessment_center.view_examresulttransferconfigmodel', 'assessment_center.can_publish_exam'],
         },
         {
           name: 'Question Library',
@@ -339,21 +347,21 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               href: '/dashboard/staff/assessment/question-banks',
               icon: <Database className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/assessment/question-banks'),
-              requiredPermissions: ['assessment_center.view_questionbankmodel'],
+              requiredPermissions: ['assessment_center.view_questionbankmodel', 'assessment_center.can_publish_exam'],
             },
             {
               name: 'Questions',
               href: '/dashboard/staff/assessment/questions',
               icon: <ListChecks className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/assessment/questions'),
-              requiredPermissions: ['assessment_center.view_questionmodel'],
+              requiredPermissions: ['assessment_center.view_questionmodel', 'assessment_center.can_publish_exam'],
             },
             {
               name: 'Topics',
               href: '/dashboard/staff/assessment/topics',
               icon: <List className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/assessment/topics'),
-              requiredPermissions: ['assessment_center.view_topicmodel'],
+              requiredPermissions: ['assessment_center.view_topicmodel', 'assessment_center.can_publish_exam'],
             },
 
           ],
@@ -368,35 +376,35 @@ export function StaffSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               href: '/dashboard/staff/assessment/examination-halls',
               icon: <Building className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/assessment/examination-halls'),
-              requiredPermissions: ['assessment_center.view_examinationhallmodel'],
+              requiredPermissions: ['assessment_center.view_examinationhallmodel', 'assessment_center.can_publish_exam'],
             },
             {
               name: 'Devices',
               href: '/dashboard/staff/assessment/devices',
               icon: <Smartphone className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/assessment/devices'),
-              requiredPermissions: ['assessment_center.view_authorizeddevicemodel'],
+              requiredPermissions: ['assessment_center.view_authorizeddevicemodel', 'assessment_center.can_publish_exam'],
             },
             {
               name: 'CBT App Releases',
               href: '/dashboard/staff/assessment/app-releases',
               icon: <PackageCheck className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/assessment/app-releases'),
-              requiredPermissions: ['assessment_center.view_authorizeddevicemodel'],
+              requiredPermissions: ['assessment_center.can_publish_exam'],
             },
             {
               name: 'Settings',
               href: '/dashboard/staff/assessment/ai-settings',
               icon: <Bot className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/assessment/ai-settings'),
-              requiredPermissions: ['assessment_center.view_exammodel'],
+              requiredPermissions: ['assessment_center.view_assessmentaisettingsmodel', 'assessment_center.can_publish_exam'],
             },
             {
               name: 'AI Services',
               href: '/dashboard/staff/assessment/ai-services',
               icon: <Cpu className="h-4 w-4" />,
               current: isCurrentPath('/dashboard/staff/assessment/ai-services'),
-              requiredPermissions: ['assessment_center.view_exammodel'],
+              requiredPermissions: ['assessment_center.view_aiserviceconfigmodel', 'assessment_center.can_publish_exam'],
             },
           ],
         },

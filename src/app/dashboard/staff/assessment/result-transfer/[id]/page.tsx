@@ -110,7 +110,7 @@ export default function ResultTransferDetailPage() {
   const configId = params?.id ? parseInt(params.id as string) : null;
 
   const canManage =
-    !!user && (user.is_superuser || hasPermission('result.can_publish_result'));
+    !!user && (user.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.change_examresulttransferconfigmodel'));
 
   // Data
   const [config, setConfig] = useState<ExamResultTransferConfig | null>(null);

@@ -499,7 +499,7 @@ export default function ExamScheduleDetailPage() {
   const [markingReady, setMarkingReady] = useState(false);
 
   const isPublished = schedule ? schedule.is_published === true : false;
-  const canEdit = !isPublished && (user?.is_superuser || hasPermission('assessment_center.change_examschedulemodel'));
+  const canEdit = !isPublished && (user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.change_examschedulemodel'));
 
   useEffect(() => { setMounted(true); }, []);
 

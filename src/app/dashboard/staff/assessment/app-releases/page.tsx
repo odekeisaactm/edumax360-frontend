@@ -45,8 +45,8 @@ function errorText(err: unknown, fallback: string): string {
 const EMPTY = { platform: 'android' as 'android' | 'windows', version: '', min_version: '', notes: '', external_url: '' };
 
 export default function CbtAppReleasesPage() {
-  const { user } = useAuth();
-  const isAdmin = !!(user?.is_superuser || (user as { is_staff?: boolean } | null)?.is_staff);
+  const { user, hasPermission } = useAuth();
+  const isAdmin = !!(user?.is_superuser || (user as { is_staff?: boolean } | null)?.is_staff || hasPermission('assessment_center.can_publish_exam'));
   const [releases, setReleases] = useState<Release[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY);

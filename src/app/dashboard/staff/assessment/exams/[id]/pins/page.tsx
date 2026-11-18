@@ -221,7 +221,7 @@ export default function PrintPinsPage() {
   const [mounted, setMounted] = useState(false);
 
   const examId = params?.id ? parseInt(params.id as string) : null;
-  const canView = user?.is_superuser || hasPermission('assessment_center.view_exammodel');
+  const canView = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.view_exammodel');
 
   // ── Data ──
   const [exam, setExam]                         = useState<ExamDetail | null>(null);

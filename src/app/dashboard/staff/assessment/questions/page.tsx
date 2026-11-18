@@ -307,9 +307,9 @@ export default function AllQuestionsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canView   = user?.is_superuser || hasPermission('assessment_center.view_questionmodel');
-  const canEdit   = user?.is_superuser || hasPermission('assessment_center.change_questionmodel');
-  const canDelete = user?.is_superuser || hasPermission('assessment_center.delete_questionmodel');
+  const canView   = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.view_questionmodel');
+  const canEdit   = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.change_questionmodel');
+  const canDelete = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.delete_questionmodel');
 
   useEffect(() => {
     setMounted(true);
@@ -338,7 +338,7 @@ export default function AllQuestionsPage() {
     const initData = async () => {
       try {
         const [uploadableRes, classesRes, topicsData] = await Promise.all([
-          api.get('/api/academic/class-subjects/uploadable/', { params: { result_type: 'score' } }),
+          api.get('/api/assessment/my-scope/'),
           api.get('/api/academic/classes/', { params: { is_active: true } }),
           topicsAPI.list({}),
         ]);

@@ -41,7 +41,7 @@ export default function ScannedExamsListPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchQuery] = useState('');
 
-  const canCreate = user?.is_superuser || hasPermission('assessment_center.add_scannedexammodel');
+  const canCreate = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.add_scannedexammodel');
 
   const fetchExams = useCallback(async () => {
     setLoading(true);

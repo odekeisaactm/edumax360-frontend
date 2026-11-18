@@ -445,7 +445,7 @@ export default function AISettingsPage() {
 
   const canEdit = user?.is_superuser || hasPermission('assessment_center.change_assessmentaisettingsmodel');
   // The backend allows staff accounts to change school-wide exam security (same rule as AI settings).
-  const canEditSecurity = !!(user?.is_superuser || (user as { is_staff?: boolean } | null)?.is_staff || canEdit);
+  const canEditSecurity = !!(user?.is_superuser || (user as { is_staff?: boolean } | null)?.is_staff || hasPermission('assessment_center.can_publish_exam'));
 
   useEffect(() => {
     setMounted(true);

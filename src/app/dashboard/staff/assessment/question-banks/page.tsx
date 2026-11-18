@@ -351,10 +351,10 @@ export default function QuestionBanksPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canView   = user?.is_superuser || hasPermission('assessment_center.view_questionbankmodel');
-  const canCreate = user?.is_superuser || hasPermission('assessment_center.add_questionbankmodel');
-  const canEdit   = user?.is_superuser || hasPermission('assessment_center.change_questionbankmodel');
-  const canDelete = user?.is_superuser || hasPermission('assessment_center.delete_questionbankmodel');
+  const canView   = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.view_questionbankmodel');
+  const canCreate = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.add_questionbankmodel');
+  const canEdit   = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.change_questionbankmodel');
+  const canDelete = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.delete_questionbankmodel');
 
   useEffect(() => {
     setMounted(true);
@@ -376,7 +376,7 @@ export default function QuestionBanksPage() {
     try {
       const [banksData, uploadableRes, classesRes, topicsData] = await Promise.all([
         questionBanksAPI.list({}), // Backend is filtered!
-        api.get('/api/academic/class-subjects/uploadable/', { params: { result_type: 'score' } }),
+        api.get('/api/assessment/my-scope/'),
         api.get('/api/academic/classes/', { params: { is_active: true } }), // Need base IDs
         topicsAPI.list({}), // Backend is filtered!
       ]);

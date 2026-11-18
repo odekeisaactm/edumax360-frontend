@@ -302,7 +302,7 @@ export default function ProctoringSelector() {
   // Exam officers (and superusers) see ALL published schedules.
   // Regular invigilators see only their own.
   const seesAllSchedules =
-    user?.is_superuser || hasPermission('result.can_publish_result');
+    user?.is_superuser || hasPermission('assessment_center.can_publish_exam');
 
   const showToast = (type: Toast['type'], message: string) => {
     const id = ++counter.current;

@@ -1350,10 +1350,10 @@ export default function QuestionBankDetailPage() {
     setMounted(true);
   }, []);
 
-  const canView   = user?.is_superuser || hasPermission('assessment_center.view_questionmodel');
-  const canCreate = user?.is_superuser || hasPermission('assessment_center.add_questionmodel');
-  const canEdit   = user?.is_superuser || hasPermission('assessment_center.change_questionmodel');
-  const canDelete = user?.is_superuser || hasPermission('assessment_center.delete_questionmodel');
+  const canView   = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.view_questionmodel');
+  const canCreate = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.add_questionmodel');
+  const canEdit   = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.change_questionmodel');
+  const canDelete = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.delete_questionmodel');
 
   // ── Sort helper ──
   const sortQuestions = (qs: Question[]): Question[] =>

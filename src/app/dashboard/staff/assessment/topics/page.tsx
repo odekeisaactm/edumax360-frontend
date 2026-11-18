@@ -301,10 +301,10 @@ export default function TopicsPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const canView   = user?.is_superuser || hasPermission('assessment_center.view_topicmodel');
-  const canCreate = user?.is_superuser || hasPermission('assessment_center.add_topicmodel');
-  const canEdit   = user?.is_superuser || hasPermission('assessment_center.change_topicmodel');
-  const canDelete = user?.is_superuser || hasPermission('assessment_center.delete_topicmodel');
+  const canView   = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.view_topicmodel');
+  const canCreate = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.add_topicmodel');
+  const canEdit   = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.change_topicmodel');
+  const canDelete = user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.delete_topicmodel');
 
   useEffect(() => {
     setMounted(true);
@@ -326,7 +326,7 @@ export default function TopicsPage() {
     try {
       const [topicsData, uploadableRes, classesRes] = await Promise.all([
         topicsAPI.list({}),
-        api.get('/api/academic/class-subjects/uploadable/', { params: { result_type: 'score' } }),
+        api.get('/api/assessment/my-scope/'),
         academicAPI.listClasses({ is_active: true }),
       ]);
 
