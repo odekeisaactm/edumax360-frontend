@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Feature Summary</title>
+<style>
+  @page { size: A4; margin: 0; }
+  :root {
+    --ink: #1b1f3b; --muted: #5b6078; --brand: #5b3df5; --brand-d: #3a22b8;
+    --soft: #f3f1ff; --line: #e4e2f3; --accent: #12b5a5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: var(--ink); font-size: 10.2pt; line-height: 1.45;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { width: 210mm; height: 297mm; padding: 16mm 16mm 14mm; position: relative; overflow: hidden; page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+  .foot { position: absolute; bottom: 8mm; left: 16mm; right: 16mm; display: flex; justify-content: space-between;
+          font-size: 8pt; color: var(--muted); border-top: 1px solid var(--line); padding-top: 3mm; }
+
+  /* Cover */
+  .cover { padding: 0; background: linear-gradient(160deg, #2a1a8f 0%, #5b3df5 55%, #7c5cff 100%); color: #fff; }
+  .cover-in { padding: 24mm 18mm 0; }
+  .eyebrow { letter-spacing: .18em; text-transform: uppercase; font-size: 9pt; opacity: .8; }
+  .cover h1 { font-size: 33pt; line-height: 1.08; margin: 6mm 0 4mm; font-weight: 700; }
+  .cover .lead { font-size: 12.5pt; max-width: 150mm; opacity: .92; margin: 0; }
+  .glance { margin: 14mm 18mm 0; background: #fff; color: var(--ink); border-radius: 5mm; padding: 9mm 9mm 7mm; }
+  .glance h2 { margin: 0 0 5mm; font-size: 13pt; color: var(--brand-d); }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm 6mm; }
+  .tile { display: flex; gap: 3.5mm; align-items: flex-start; }
+  .tile .n { flex: none; width: 8mm; height: 8mm; border-radius: 2mm; background: var(--soft); color: var(--brand);
+             font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 9.5pt; }
+  .tile b { display: block; font-size: 10.2pt; }
+  .tile span { color: var(--muted); font-size: 9pt; }
+  .cover-strip { position: absolute; bottom: 14mm; left: 18mm; right: 18mm; display: flex; gap: 3mm; flex-wrap: wrap; }
+  .chip { border: 1px solid rgba(255,255,255,.45); border-radius: 20mm; padding: 1.2mm 3.5mm; font-size: 8.5pt; }
+
+  /* Content */
+  h2.sec { font-size: 15pt; margin: 0 0 1.5mm; color: var(--brand-d); }
+  .sub { color: var(--muted); margin: 0 0 5mm; font-size: 9.6pt; }
+  .module { border: 1px solid var(--line); border-radius: 4mm; padding: 5.5mm 6mm 5mm; margin-bottom: 5mm; break-inside: avoid; }
+  .module.hero { border: none; background: var(--soft); }
+  .mhead { display: flex; align-items: center; gap: 3mm; margin-bottom: 2mm; }
+  .badge { flex: none; width: 9mm; height: 9mm; border-radius: 2.5mm; background: var(--brand); color: #fff;
+           font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 10pt; }
+  .mhead h3 { margin: 0; font-size: 12.5pt; }
+  .tag { margin-left: auto; font-size: 7.8pt; font-weight: 600; color: var(--accent); border: 1px solid var(--accent);
+         border-radius: 10mm; padding: .6mm 2.6mm; white-space: nowrap; }
+  .intro { margin: 0 0 3mm; color: var(--muted); }
+  ul { margin: 0; padding-left: 4.5mm; }
+  li { margin: 0 0 1.4mm; }
+  li b { color: var(--ink); }
+  .cols { columns: 2; column-gap: 8mm; }
+  .cols li { break-inside: avoid; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+  .grid2 .module { margin-bottom: 0; }
+  .practice { margin-top: 3mm; border-left: 3px solid var(--accent); background: #effaf8; padding: 2.4mm 3.5mm;
+              font-size: 9.2pt; border-radius: 0 2mm 2mm 0; }
+  .practice b { color: #0b8378; }
+
+  .strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; margin-top: 5mm; }
+  .pill { background: var(--soft); border-radius: 3mm; padding: 4mm; }
+  .pill b { display: block; color: var(--brand-d); margin-bottom: 1mm; font-size: 10pt; }
+  .pill span { font-size: 8.8pt; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- ═════════ PAGE 1 — COVER + AT A GLANCE ═════════ -->
+<section class="page cover">
+  <div class="cover-in">
+    <div class="eyebrow">Feature Summary</div>
+    <h1>One platform for teaching,<br>assessment and school operations</h1>
+    <p class="lead">From lesson planning and secure computer-based exams to results, fees,
+      attendance and parent engagement — connected in one system and supported by AI where it saves teachers real time.</p>
+  </div>
+
+  <div class="glance">
+    <h2>At a glance</h2>
+    <div class="tiles">
+      <div class="tile"><div class="n">1</div><div><b>Assessment &amp; CBT</b><span>Secure exams on web, Windows and Android, with AI proctoring and AI marking</span></div></div>
+      <div class="tile"><div class="n">2</div><div><b>Learning Resources</b><span>Schemes of work and AI-assisted lesson notes with an approval workflow</span></div></div>
+      <div class="tile"><div class="n">3</div><div><b>Results &amp; Report Cards</b><span>Configurable grading, automatic computation, broadsheets and analytics</span></div></div>
+      <div class="tile"><div class="n">4</div><div><b>Fees &amp; Finance</b><span>Invoicing, discounts, online payment, wallets, income and expenses</span></div></div>
+      <div class="tile"><div class="n">5</div><div><b>Attendance &amp; Gate</b><span>Fingerprint and barcode attendance with safety alerts to staff and parents</span></div></div>
+      <div class="tile"><div class="n">6</div><div><b>Communication &amp; Parent Portal</b><span>SMS, WhatsApp and email; parents see results and pay fees online</span></div></div>
+      <div class="tile"><div class="n">7</div><div><b>Students, Staff &amp; Payroll</b><span>Records, promotion, timetables, leave, payroll and payslips</span></div></div>
+      <div class="tile"><div class="n">8</div><div><b>Inventory &amp; School Shop</b><span>Stock, purchase orders, shop sales and books/uniform allocation</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ PAGE 2 — ASSESSMENT & CBT ═════════ -->
+<section class="page">
+  <h2 class="sec">Teaching &amp; Assessment</h2>
+  <p class="sub">The core of the platform: how lessons are prepared, exams are set and delivered, and scores are produced.</p>
+
+  <div class="module hero">
+    <div class="mhead"><div class="badge">01</div><h3>Assessment &amp; Computer-Based Testing</h3><span class="tag">Flagship</span></div>
+    <p class="intro">A complete exam workflow — from building question banks to marking and publishing — with strong controls against malpractice.</p>
+    <ul class="cols">
+      <li><b>Rich question banks</b> with equations, symbols, graphs and diagrams; bulk upload from Excel.</li>
+      <li><b>AI question generation</b> from a subject and topic, reviewed by the teacher before use.</li>
+      <li><b>Exam scheduling</b> by class, arm and subject, with exam halls, timing windows and question requirements.</li>
+      <li><b>Secure entry</b> with student exam PINs (printable) and approved exam devices.</li>
+      <li><b>Dedicated exam apps</b> for Windows and Android that lock the device to the exam and detect app switching, split-screen, overlays and screen capture.</li>
+      <li><b>AI webcam proctoring</b>: detects no face, multiple faces and a different person from the student's photo; periodic snapshots for review.</li>
+      <li><b>Live invigilation dashboard</b>: see who is online, send warnings, grant extra time, or end a student's exam.</li>
+      <li><b>Never lose an answer</b>: answers are kept on the device and auto-saved; a student can resume after a power cut or on another computer.</li>
+      <li><b>Students answer theory with maths and graphs</b>, not just plain text.</li>
+      <li><b>Instant objective marking</b> and <b>AI marking of theory</b>, with teacher review for low-confidence answers.</li>
+      <li><b>Scanned paper exams</b>: upload answer sheets for marking alongside CBT.</li>
+      <li><b>One-click transfer</b> of exam scores into the results module.</li>
+    </ul>
+    <div class="practice"><b>In practice:</b> a student's power goes off mid-exam. They log in again and continue exactly where they stopped — same questions, same answers, the timer still fair.</div>
+  </div>
+
+  <div class="module">
+    <div class="mhead"><div class="badge">02</div><h3>Learning Resources</h3><span class="tag">AI-assisted</span></div>
+    <p class="intro">Helps teachers plan and prepare quality lessons faster, while giving school leaders oversight of what is taught.</p>
+    <ul class="cols">
+      <li><b>Schemes of work</b> planned week by week, including non-teaching weeks; import from an existing document.</li>
+      <li><b>AI lesson note writing</b> from a topic and learning objectives.</li>
+      <li><b>AI rewrite</b> of a whole note or a selected paragraph, following the teacher's instruction.</li>
+      <li><b>AI vetting</b> checks a note's quality before it goes for approval, with feedback for the teacher.</li>
+      <li><b>Approval workflow</b> for notes and schemes, with optional auto-approval.</li>
+      <li><b>AI summaries and text-to-speech audio</b> of notes; PDF download; control over what students can access.</li>
+    </ul>
+  </div>
+
+  <div class="foot"><span>Feature Summary</span><span>2</span></div>
+</section>
+
+<!-- ═════════ PAGE 3 — RESULTS, FEES, FINANCE ═════════ -->
+<section class="page">
+  <h2 class="sec">Results &amp; Money</h2>
+  <p class="sub">Accurate report cards and complete visibility of every naira the school bills, receives and spends.</p>
+
+  <div class="module">
+    <div class="mhead"><div class="badge">03</div><h3>Results &amp; Report Cards</h3></div>
+    <ul class="cols">
+      <li><b>Fully configurable</b> score fields, grading scales, behaviour ratings and comment templates.</li>
+      <li><b>Score entry</b> by subject teachers, with tracking of who has and hasn't uploaded.</li>
+      <li><b>Automatic computation</b> of totals, grades, positions and statistics.</li>
+      <li><b>Teacher and principal comments</b>, individually or in bulk from templates.</li>
+      <li><b>Controlled publishing</b> to parents, and printable report cards.</li>
+      <li><b>Broadsheets, cumulative results, prize lists, analytics</b> and a full results archive.</li>
+    </ul>
+  </div>
+
+  <div class="module">
+    <div class="mhead"><div class="badge">04</div><h3>Fees &amp; Billing</h3></div>
+    <ul class="cols">
+      <li><b>Flexible fee structures</b> by class, group and term; bulk invoice generation.</li>
+      <li><b>Family invoices</b> so parents pay for all their children in one place.</li>
+      <li><b>Discounts and waivers</b>, including class-based discount tiers.</li>
+      <li><b>Online payment</b> through integrated payment gateways, with automatic receipts.</li>
+      <li><b>Debtor tracking and payment reminders.</b></li>
+      <li><b>Safe corrections</b> to issued invoices, with a full history.</li>
+    </ul>
+  </div>
+
+  <div class="module">
+    <div class="mhead"><div class="badge">05</div><h3>Finance &amp; Wallets</h3></div>
+    <ul class="cols">
+      <li><b>Income and expense</b> recording by category, with bank accounts and deposits.</li>
+      <li><b>Digital wallets</b> for students, parents and staff, with transfers and full ledgers.</li>
+      <li><b>Supplier payments and advance payments.</b></li>
+      <li><b>Financial dashboard and reports.</b></li>
+    </ul>
+    <div class="practice"><b>In practice:</b> a parent funds a wallet once and uses it for fees and school-shop purchases, and the bursar sees every transaction in one ledger.</div>
+  </div>
+
+  <h2 class="sec" style="margin-top:7mm">Why it stands out</h2>
+  <div class="strip">
+    <div class="pill"><b>Role-based access</b><span>Every staff member sees and does only what their role allows.</span></div>
+    <div class="pill"><b>Works anywhere</b><span>Phone, tablet and computer, plus dedicated exam apps.</span></div>
+    <div class="pill"><b>Built for real conditions</b><span>Unreliable power and internet don't cost students their work.</span></div>
+    <div class="pill"><b>AI where it matters</b><span>Lesson notes, question setting, marking and proctoring.</span></div>
+  </div>
+
+  <div class="foot"><span>Feature Summary</span><span>3</span></div>
+</section>
+
+<!-- ═════════ PAGE 4 — DAY-TO-DAY OPERATIONS ═════════ -->
+<section class="page">
+  <h2 class="sec">Daily Operations &amp; Engagement</h2>
+  <p class="sub">Safety at the gate, clear communication with families, and less paperwork for the school office.</p>
+
+  <div class="grid2">
+    <div class="module">
+      <div class="mhead"><div class="badge">06</div><h3>Attendance &amp; Gate</h3></div>
+      <ul>
+        <li><b>Fingerprint and barcode</b> attendance (ZKTeco, DigitalPersona), plus manual roll call.</li>
+        <li><b>Gate, class and subject</b> attendance.</li>
+        <li><b>Separate time rules</b> for students and staff, with automatic late marking.</li>
+        <li><b>Safety alerts</b>: if a student steps out and doesn't return, staff are alerted, then the parent.</li>
+      </ul>
+    </div>
+    <div class="module">
+      <div class="mhead"><div class="badge">07</div><h3>Communication</h3></div>
+      <ul>
+        <li><b>SMS, WhatsApp and email</b> from one place.</li>
+        <li><b>Bulk campaigns</b> with reusable templates and delivery tracking.</li>
+        <li><b>Announcements</b> and a scrolling notice board.</li>
+        <li><b>Parent queries</b> with follow-up until each one is resolved.</li>
+      </ul>
+    </div>
+    <div class="module">
+      <div class="mhead"><div class="badge">08</div><h3>Parent Portal</h3></div>
+      <ul>
+        <li><b>All their children</b> in one account.</li>
+        <li><b>Results</b>, including cumulative results.</li>
+        <li><b>Pay fees online</b>, fund wallets and view payment history.</li>
+        <li><b>Announcements and queries</b> directly with the school.</li>
+      </ul>
+    </div>
+    <div class="module">
+      <div class="mhead"><div class="badge">09</div><h3>Students &amp; Academics</h3></div>
+      <ul>
+        <li><b>Student and guardian records</b>, documents and custom fields; bulk upload and bulk update.</li>
+        <li><b>Classes, arms, subjects</b> and timetables.</li>
+        <li><b>End-of-session promotion</b> with class mapping; alumni records.</li>
+        <li><b>Bulk assignment</b> of form and subject teachers.</li>
+      </ul>
+    </div>
+    <div class="module">
+      <div class="mhead"><div class="badge">10</div><h3>HR &amp; Payroll</h3></div>
+      <ul>
+        <li><b>Staff records</b>, departments, positions, documents and leave.</li>
+        <li><b>Salary structures and payroll</b> processing in bulk.</li>
+        <li><b>Payslips</b> (monthly and annual), bonuses, loans and salary advances.</li>
+        <li><b>Staff self-service</b> for payslips and bonuses.</li>
+      </ul>
+    </div>
+    <div class="module">
+      <div class="mhead"><div class="badge">11</div><h3>Inventory &amp; School Shop</h3></div>
+      <ul>
+        <li><b>Stock across locations</b>: stock in and out, transfers and purchase orders.</li>
+        <li><b>School shop sales</b>, paid from cash or wallet.</li>
+        <li><b>Books and uniforms</b> allocated per student, with collection tracking.</li>
+        <li><b>Credit control</b> for buyers with outstanding debt.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="foot"><span>Feature Summary</span><span>4</span></div>
+</section>
+
+</body>
+</html>

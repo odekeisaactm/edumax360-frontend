@@ -1019,6 +1019,27 @@ function ExamTakingPageInner() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [lastSaved, setLastSaved]   = useState<Date | null>(null);
   const autoSaveRef       = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  // Poll / autosave / snapshot intervals (ms). The server sends these in
+  // `client_config`, so they can be tuned without redeploying the page.
+  const [timings, setTimings] = useState({ poll: 15000, autosave: 20000, snapshot: 120000 });
+  const snapshotMsRef = useRef(120000);
+  const applyClientConfig = useCallback((cfg: any) => {
+    if (!cfg || typeof cfg !== 'object') return;
+    const sec = (v: any, min: number, max: number, fallback: number) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) * 1000 : fallback;
+    };
+    setTimings(prev => {
+      const next = {
+        poll: sec(cfg.poll_seconds, 5, 120, prev.poll),
+        autosave: sec(cfg.autosave_seconds, 10, 120, prev.autosave),
+        snapshot: sec(cfg.snapshot_seconds, 30, 900, prev.snapshot),
+      };
+      snapshotMsRef.current = next.snapshot;
+      return next.poll === prev.poll && next.autosave === prev.autosave && next.snapshot === prev.snapshot
+        ? prev : next;
+    });
+  }, []);
   const answersRef        = useRef<Record<number, Answer>>({});
   const savedSnapshotRef  = useRef<Record<number, string>>({});   // what the server already has
   const saveChainRef      = useRef<Promise<boolean>>(Promise.resolve(true)); // serialises saves
@@ -1174,6 +1195,7 @@ function ExamTakingPageInner() {
         return;
       }
 
+      applyClientConfig(data.client_config);
       setExamTitle(data.exam_title || 'Exam');
       setStudentName(data.student_name || '');
       setStudentClass(data.student_class || '');
@@ -1225,7 +1247,7 @@ function ExamTakingPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [attemptId, setServerRemaining, finishAndLeave]);
+  }, [attemptId, setServerRemaining, finishAndLeave, applyClientConfig]);
 
   // ── Fullscreen request ──
   const requestFullscreen = useCallback(() => {
@@ -1346,7 +1368,7 @@ function ExamTakingPageInner() {
           },
         }).catch(() => {});
       } catch { /* ignore */ }
-    }, 60000);
+    }, snapshotMsRef.current);
   }, [attemptId]);
 
   const loadCamera = useCallback(async () => {
@@ -1429,6 +1451,7 @@ function ExamTakingPageInner() {
     try {
       const res = await api.get(`/api/assessment/exam-attempts/${attemptId}/check-warnings/`);
       const warnings = (res.data?.warnings || []) as InvigilatorWarning[];
+      applyClientConfig(res.data?.client_config);
 
       // Invigilator ended this exam: stop all saving/timers, tell the student, then leave.
       const termination = warnings.find(w => w.is_termination);
@@ -1461,7 +1484,7 @@ function ExamTakingPageInner() {
         });
       }
     } catch { /* fail silently */ }
-  }, [attemptId, cleanup, setServerRemaining, showWarning]);
+  }, [attemptId, cleanup, setServerRemaining, showWarning, applyClientConfig]);
 
   const acknowledgeWarning = useCallback(async (id: number) => {
     const wasTermination = !!activeWarningRef.current?.is_termination;
@@ -1659,16 +1682,16 @@ function ExamTakingPageInner() {
   // Autosave — one stable interval
   useEffect(() => {
     if (loading) return;
-    autoSaveRef.current = setInterval(autoSave, 20000);
+    autoSaveRef.current = setInterval(autoSave, timings.autosave);
     return () => clearInterval(autoSaveRef.current);
-  }, [autoSave, loading]);
+  }, [autoSave, loading, timings.autosave]);
 
-  // Poll warnings + server time every 5 s
+  // Poll warnings + server time (interval set by the server, default 15 s)
   useEffect(() => {
     if (loading) return;
-    warningPollRef.current = setInterval(pollWarnings, 5000);
+    warningPollRef.current = setInterval(pollWarnings, timings.poll);
     return () => clearInterval(warningPollRef.current);
-  }, [pollWarnings, loading]);
+  }, [pollWarnings, loading, timings.poll]);
 
   // Retry proctoring events that failed to send
   useEffect(() => {
