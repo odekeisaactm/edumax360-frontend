@@ -488,6 +488,13 @@ export interface ExamSchedule {
   total_theory_questions: number;
   total_subjective_questions: number;
   total_marks: number;
+  // "Answer N of M" per type (null = answer all; 0 = shown but not scored)
+  objective_to_answer?: number | null;
+  theory_to_answer?: number | null;
+  subjective_to_answer?: number | null;
+  // Detail only: questions/marks frozen once a student started; marks actually counted
+  is_locked?: boolean;
+  counted_total_marks?: number;
   // Status
   setup_status: SetupStatus;
   lifecycle_status?: LifecycleStatus;
@@ -526,6 +533,9 @@ export interface QuestionRequirementsFormValues {
   total_objective_questions: number;
   total_theory_questions: number;
   total_subjective_questions: number;
+  objective_to_answer?: number | null;
+  theory_to_answer?: number | null;
+  subjective_to_answer?: number | null;
 }
 
 export interface QuestionRequirementsResponse {

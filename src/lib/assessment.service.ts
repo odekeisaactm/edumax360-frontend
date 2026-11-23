@@ -744,6 +744,12 @@ export const examSchedulesAPI = {
     return unwrap<ExamSchedule>(res.data);
   },
 
+  /** Partial update (e.g. only the schedule's total_marks). */
+  patch: async (id: number, data: Record<string, unknown>): Promise<ExamSchedule> => {
+    const res = await api.patch(`/api/assessment/exam-schedules/${id}/`, data);
+    return unwrap<ExamSchedule>(res.data);
+  },
+
   setQuestionRequirements: async (
     id: number,
     data: QuestionRequirementsFormValues

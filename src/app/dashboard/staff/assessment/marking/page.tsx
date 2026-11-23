@@ -34,6 +34,70 @@ interface AttemptRow {
   pending_count: number;
   low_confidence_count: number;
   has_theory: boolean;
+  /** Paper theory total entered by the teacher (null = per-question marks) */
+  manual_theory_score?: number | null;
+}
+
+/**
+ * Theory written on paper: one total per student, saved on Enter / leaving the box.
+ * Empty = use the per-question theory marks again.
+ */
+function TheoryTotalInput({ row, onSaved }: {
+  row: AttemptRow;
+  onSaved: (updated: Partial<AttemptRow>) => void;
+}) {
+  const initial = row.manual_theory_score ?? null;
+  const [value, setValue] = useState(initial === null ? '' : String(initial));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => { setValue(initial === null ? '' : String(initial)); }, [initial]);
+
+  const save = async () => {
+    const v = value.trim();
+    const next = v === '' ? null : Number(v);
+    if (next === initial) return;
+    if (next !== null && (isNaN(next) || next < 0 || next > row.theory_max)) {
+      setErr(`0 – ${row.theory_max}`);
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      const res = await api.post(`/api/assessment/teacher/attempt/${row.attempt_id}/theory-total/`, { score: next });
+      const d = res.data;
+      onSaved({
+        manual_theory_score: d.manual_theory_score,
+        theory_score: d.theory_score, theory_max: d.theory_max,
+        total_score: d.total_score, total_max: d.total_max,
+        percentage: d.percentage ?? row.percentage,
+        marking_status: d.manual_theory_score !== null ? 'manual_marked' : row.marking_status,
+        pending_count: d.manual_theory_score !== null ? 0 : row.pending_count,
+      });
+    } catch (e: any) {
+      setErr(e?.response?.data?.error || 'Not saved');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-1 flex flex-col items-center gap-0.5">
+      <div className="flex items-center gap-1">
+        <input
+          type="number" min={0} max={row.theory_max} step="0.5" value={value}
+          placeholder="paper"
+          title={`Theory total from the paper script (out of ${row.theory_max}). Leave empty to use per-question marks.`}
+          onChange={e => setValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+          className={`w-16 px-1.5 py-0.5 border rounded-md text-xs text-center focus:outline-none focus:ring-2 focus:ring-violet-500 ${err ? 'border-red-300' : 'border-slate-200'}`}
+        />
+        {saving && <Loader2 className="h-3 w-3 animate-spin text-violet-500" />}
+      </div>
+      {err && <span className="text-[10px] text-red-500">{err}</span>}
+    </div>
+  );
 }
 
 interface MarkingListResponse {
@@ -580,7 +644,21 @@ export default function MarkingHubPage() {
                               </td>
                               <td className="px-4 py-3 text-center text-slate-700">
                                 {row.theory_max > 0 ? (
-                                  <span className="font-medium">{row.theory_score}/{row.theory_max}</span>
+                                  <>
+                                    <span className="font-medium">{row.theory_score}/{row.theory_max}</span>
+                                    {row.manual_theory_score != null && (
+                                      <span className="ml-1 text-[10px] font-semibold text-blue-600">paper</span>
+                                    )}
+                                    {markable && (
+                                      <TheoryTotalInput
+                                        row={row}
+                                        onSaved={upd => setMarkingData(prev => prev ? {
+                                          ...prev,
+                                          attempts: prev.attempts.map(a => a.attempt_id === row.attempt_id ? { ...a, ...upd } : a),
+                                        } : prev)}
+                                      />
+                                    )}
+                                  </>
                                 ) : (
                                   <span className="text-slate-300">—</span>
                                 )}

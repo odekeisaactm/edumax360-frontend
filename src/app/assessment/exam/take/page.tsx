@@ -987,6 +987,8 @@ function ExamTakingPageInner() {
 
   // ── Exam data ──
   const [examTitle, setExamTitle]             = useState('');
+  // "Answer N of M" per question type, e.g. { theory: 4 }
+  const [answerRules, setAnswerRules]         = useState<Record<string, number>>({});
   const [questions, setQuestions]             = useState<Question[]>([]);
   const [answers, setAnswers]                 = useState<Record<number, Answer>>({});
   const [studentName, setStudentName]         = useState('');
@@ -1196,6 +1198,7 @@ function ExamTakingPageInner() {
       }
 
       applyClientConfig(data.client_config);
+      setAnswerRules(data.answer_rules && typeof data.answer_rules === 'object' ? data.answer_rules : {});
       setExamTitle(data.exam_title || 'Exam');
       setStudentName(data.student_name || '');
       setStudentClass(data.student_class || '');
@@ -2028,6 +2031,19 @@ function ExamTakingPageInner() {
             {currentQ ? (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
                 <div className="p-6">
+                  {/* "Answer any N of M" instruction for this question type */}
+                  {(() => {
+                    const n = answerRules[currentQ.question_type];
+                    if (n === undefined || n === null) return null;
+                    const m = currentTabQs.length;
+                    return (
+                      <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-900">
+                        {n === 0
+                          ? 'These questions are not scored in this exam.'
+                          : <>Answer <b>any {n}</b> of these {m} questions. If you answer more, your best {n} count.</>}
+                      </div>
+                    );
+                  })()}
                   <div className="flex items-start gap-4 mb-5">
                     <div className="w-9 h-9 bg-blue-100 text-blue-700 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0">
                       {currentQIdx + 1}

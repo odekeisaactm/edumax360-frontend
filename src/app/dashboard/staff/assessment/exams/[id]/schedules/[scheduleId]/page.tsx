@@ -78,6 +78,11 @@ function unwrapList<T = any>(data: any): T[] {
 }
 
 // Auto-sorts by type, then by ID to keep groups clean
+/** Stable key of each selected question's custom mark (detects unsaved mark edits). */
+function marksKey(qs: SelectedQuestion[]): string {
+  return qs.map(q => `${q.id}:${q.custom_mark ?? ''}`).sort().join(',');
+}
+
 function sortQuestions(qs: SelectedQuestion[]): SelectedQuestion[] {
   return [...qs].sort((a, b) => {
     const ai = TYPE_ORDER.indexOf(a.question_type);
@@ -476,6 +481,12 @@ export default function ExamScheduleDetailPage() {
   const [reqTheory,     setReqTheory]     = useState(0);
   const [reqSubjective, setReqSubjective] = useState(0);
   const [savingReqs,    setSavingReqs]    = useState(false);
+  // "Answer N of M" per type ('' = answer all) and the schedule's exam mark
+  const [ansObjective,  setAnsObjective]  = useState('');
+  const [ansTheory,     setAnsTheory]     = useState('');
+  const [ansSubjective, setAnsSubjective] = useState('');
+  const [schedMarks,    setSchedMarks]    = useState('');
+  const [initialMarksKey, setInitialMarksKey] = useState('');
 
   // ── Questions ──────────────────────────────────────────────────────────────
   const [activeTab,          setActiveTab]          = useState<'manual' | 'ai' | 'bulk'>('manual');
@@ -502,7 +513,9 @@ export default function ExamScheduleDetailPage() {
   const [markingReady, setMarkingReady] = useState(false);
 
   const isPublished = schedule ? schedule.is_published === true : false;
-  const canEdit = !isPublished && (user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.change_examschedulemodel'));
+  // Once any student has started, questions / marks / counts are frozen (server enforces it too)
+  const isLocked = schedule?.is_locked === true;
+  const canEdit = !isPublished && !isLocked && (user?.is_superuser || hasPermission('assessment_center.can_publish_exam') || hasPermission('assessment_center.change_examschedulemodel'));
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -525,6 +538,11 @@ export default function ExamScheduleDetailPage() {
       setReqObjective(data.total_objective_questions ?? 0);
       setReqTheory(data.total_theory_questions ?? 0);
       setReqSubjective(data.total_subjective_questions ?? 0);
+      const asText = (v?: number | null) => (v === null || v === undefined ? '' : String(v));
+      setAnsObjective(asText(data.objective_to_answer));
+      setAnsTheory(asText(data.theory_to_answer));
+      setAnsSubjective(asText(data.subjective_to_answer));
+      setSchedMarks(asText(data.total_marks != null ? Number(data.total_marks) : null));
 
       const qs: SelectedQuestion[] = (assigned.questions || [])
         .map((q: any, idx: number) => ({
@@ -537,6 +555,7 @@ export default function ExamScheduleDetailPage() {
       const sorted = sortQuestions(qs);
       setSelectedQuestions(sorted);
       setInitialQuestionIds(sorted.map(q => q.id).sort().join(','));
+      setInitialMarksKey(marksKey(sorted));
 
       const [banksResponse, hallData, staffData] = await Promise.all([
         questionBanksAPI.getAvailableForSchedule(scheduleId!),
@@ -623,13 +642,37 @@ export default function ExamScheduleDetailPage() {
       return;
     }
 
+    // "Answer N of M": N may not exceed the number of questions of that type
+    const rules: Array<[string, string, number]> = [
+      ['Objective', ansObjective, reqObjective], ['Theory', ansTheory, reqTheory],
+      ['Subjective', ansSubjective, reqSubjective],
+    ];
+    for (const [label, n, total] of rules) {
+      if (n !== '' && parseInt(n) > total) {
+        showToast('error', `${label}: students can't answer ${n} when only ${total} questions are set.`);
+        return;
+      }
+    }
+    const marksNum = parseFloat(schedMarks);
+    if (schedMarks !== '' && (isNaN(marksNum) || marksNum <= 0)) {
+      showToast('error', 'Exam mark must be a number above 0.');
+      return;
+    }
+
     setSavingReqs(true);
     try {
+      const toN = (v: string) => (v === '' ? null : parseInt(v));
       await examSchedulesAPI.setQuestionRequirements(scheduleId, {
         total_objective_questions:  reqObjective,
         total_theory_questions:     reqTheory,
         total_subjective_questions: reqSubjective,
+        objective_to_answer:  toN(ansObjective),
+        theory_to_answer:     toN(ansTheory),
+        subjective_to_answer: toN(ansSubjective),
       });
+      if (schedMarks !== '' && marksNum !== Number(schedule?.total_marks)) {
+        await examSchedulesAPI.patch(scheduleId, { total_marks: marksNum });
+      }
       showToast('success', 'Question requirements saved');
       await fetchAll(true);
     } catch (err) {
@@ -645,13 +688,25 @@ export default function ExamScheduleDetailPage() {
   const currentTheory     = selectedQuestions.filter(q => q.question_type === 'theory').length;
   const currentSubjective = selectedQuestions.filter(q => q.question_type === 'subjective').length;
 
-  // Marks Calculation
-  const currentMarks = selectedQuestions.reduce((sum, q) => {
-  const mark = q.custom_mark ?? q.max_mark ?? 0;
-  return sum + parseFloat(String(mark));
-}, 0);
-const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
-  const isOverMarks = currentMarks > targetMarks;
+  // Marks: with "answer N of M" only the N highest-mark questions of a type count
+  const markOf = (q: SelectedQuestion) => parseFloat(String(q.custom_mark ?? q.max_mark ?? 0)) || 0;
+  const ruleFor = (t: string): number | null => {
+    const v = t === 'objective' ? ansObjective : t === 'theory' ? ansTheory : t === 'subjective' ? ansSubjective : '';
+    return v === '' ? null : parseInt(v);
+  };
+  const currentMarks = (() => {
+    const byType: Record<string, number[]> = {};
+    selectedQuestions.forEach(q => { (byType[q.question_type] ||= []).push(markOf(q)); });
+    const total = Object.entries(byType).reduce((sum, [t, marks]) => {
+      const n = ruleFor(t);
+      const sorted = [...marks].sort((a, b) => b - a);
+      return sum + (n === null ? sorted : sorted.slice(0, n)).reduce((a, b) => a + b, 0);
+    }, 0);
+    return Math.round(total * 100) / 100;
+  })();
+  const targetMarks = parseFloat(schedMarks !== '' ? schedMarks : String(schedule?.total_marks ?? 0)) || 0;
+  // Not a hard rule any more: a mismatch only warns
+  const marksMismatch = targetMarks > 0 && selectedQuestions.length > 0 && Math.abs(currentMarks - targetMarks) > 0.001;
 
   const allRequirementsMet =
     (reqObjective + reqTheory + reqSubjective > 0) &&
@@ -659,7 +714,15 @@ const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
     currentTheory     === reqTheory     &&
     currentSubjective === reqSubjective;
 
-  const isDirty = selectedQuestions.map(q => q.id).sort().join(',') !== initialQuestionIds;
+  const isDirty = selectedQuestions.map(q => q.id).sort().join(',') !== initialQuestionIds
+    || marksKey(selectedQuestions) !== initialMarksKey;
+
+  const setQuestionMark = (questionId: number, value: string) => {
+    const v = value.trim();
+    const n = v === '' ? null : parseFloat(v);
+    if (n !== null && (isNaN(n) || n < 0)) return;
+    setSelectedQuestions(prev => prev.map(q => (q.id === questionId ? { ...q, custom_mark: n } : q)));
+  };
 
   const sortQs = (qs: Question[]) => [...qs].sort((a, b) => {
     const ai = TYPE_ORDER.indexOf(a.question_type);
@@ -745,8 +808,8 @@ const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
         return;
       }
     }
-    if (isOverMarks) {
-      showToast('error', `Total marks (${currentMarks}) exceeds exam limit (${targetMarks}). Please remove questions.`);
+    if (marksMismatch && !window.confirm(
+      `The questions add up to ${currentMarks} marks, but the exam mark is ${targetMarks}.\n\nSave anyway?`)) {
       return;
     }
 
@@ -963,19 +1026,45 @@ const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-          <SectionHeader icon={Target} title="Question Requirements" subtitle="Set expected question counts per type" />
+          <SectionHeader icon={Target} title="Question Requirements" subtitle="Questions per type, how many students answer, and the exam mark" />
+          {isLocked && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-800">
+              Students have already started this exam, so its questions, marks and counts are locked.
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
-              { label: 'Objective',  val: reqObjective,  set: setReqObjective,  current: currentObjective },
-              { label: 'Theory',     val: reqTheory,     set: setReqTheory,     current: currentTheory },
-              { label: 'Subjective', val: reqSubjective, set: setReqSubjective, current: currentSubjective },
-            ].map(({ label, val, set, current }) => (
+              { label: 'Objective',  val: reqObjective,  set: setReqObjective,  current: currentObjective,  ans: ansObjective,  setAns: setAnsObjective },
+              { label: 'Theory',     val: reqTheory,     set: setReqTheory,     current: currentTheory,     ans: ansTheory,     setAns: setAnsTheory },
+              { label: 'Subjective', val: reqSubjective, set: setReqSubjective, current: currentSubjective, ans: ansSubjective, setAns: setAnsSubjective },
+            ].map(({ label, val, set, current, ans, setAns }) => (
               <div key={label}>
-                <label className={labelCls}>{label}</label>
+                <label className={labelCls}>{label} questions</label>
                 <input type="number" min={0} value={val} onChange={e => set(parseInt(e.target.value) || 0)} className={inputCls} disabled={!canEdit} />
                 {val < current && <p className="text-xs text-red-500 mt-1">Remove {current - val} selected question(s) to save</p>}
+                {val > 0 && (
+                  <div className="mt-2">
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1">Students answer (blank = all)</label>
+                    <input type="number" min={0} max={val} value={ans} placeholder={`all ${val}`}
+                      onChange={e => setAns(e.target.value === '' ? '' : String(Math.max(0, parseInt(e.target.value) || 0)))}
+                      className={inputCls} disabled={!canEdit} />
+                    {ans !== '' && parseInt(ans) > val && <p className="text-xs text-red-500 mt-1">Can&apos;t be more than {val}</p>}
+                    {ans !== '' && parseInt(ans) <= val && (
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        {parseInt(ans) === 0 ? 'Shown to students but not scored' : `Answer any ${ans} of ${val} — best ${ans} count`}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
+          </div>
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className={labelCls}>Exam mark</label>
+              <input type="number" min={1} step="0.5" value={schedMarks} onChange={e => setSchedMarks(e.target.value)} className={inputCls} disabled={!canEdit} />
+              <p className="text-[11px] text-slate-500 mt-1">Questions currently count {currentMarks} marks{marksMismatch ? ' (does not match — allowed)' : ''}</p>
+            </div>
           </div>
           {canEdit && (
             <div className="flex justify-end mt-4">
@@ -1050,7 +1139,8 @@ const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
                 <div className="border border-slate-100 rounded-2xl overflow-hidden flex flex-col">
                   <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                     <span className="text-sm font-semibold text-slate-700">Selected ({selectedQuestions.length})</span>
-                    <div className={`text-xs font-bold px-2 py-1 rounded-md flex items-center gap-1 ${isOverMarks ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                    <div title={marksMismatch ? 'Does not match the exam mark — you can still save' : undefined}
+                      className={`text-xs font-bold px-2 py-1 rounded-md flex items-center gap-1 ${marksMismatch ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>
                       <Hash className="h-3 w-3" /> {currentMarks} / {targetMarks} marks
                     </div>
                   </div>
@@ -1059,7 +1149,14 @@ const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
                       ? <div className="flex flex-col items-center justify-center py-16 text-center gap-2"><ListChecks className="h-10 w-10 text-slate-200" /><p className="text-sm text-slate-400">No questions selected yet</p></div>
                       : selectedQuestions.map(q => (
                         <QuestionCard key={q.id} question={q} order={q._order} onPreview={setPreviewQuestion} action={canEdit ? (
-                          <button onClick={() => handleRemoveQuestion(q.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-200 transition-colors"><X className="h-3.5 w-3.5" /></button>
+                          <div className="flex items-center gap-1.5">
+                            {/* Mark for this exam (blank = the question's own mark) */}
+                            <input type="number" min={0} step="0.5" title="Mark for this exam"
+                              value={q.custom_mark ?? ''} placeholder={String(Number(q.max_mark ?? 0))}
+                              onChange={e => setQuestionMark(q.id, e.target.value)}
+                              className="w-14 px-1.5 py-1 border border-slate-200 rounded-lg text-xs text-center focus:outline-none focus:ring-2 focus:ring-violet-500" />
+                            <button onClick={() => handleRemoveQuestion(q.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-200 transition-colors"><X className="h-3.5 w-3.5" /></button>
+                          </div>
                         ) : undefined} />
                       ))}
                   </div>
@@ -1102,7 +1199,7 @@ const targetMarks = parseFloat(String(schedule?.total_marks ?? 0));
             </div>
             <div className="flex items-center gap-2 pr-1">
               <button onClick={() => fetchAll(true)} className="px-3 py-2 text-sm text-slate-400 hover:text-white transition-colors">Discard</button>
-              <button onClick={handleSaveQuestions} disabled={savingQuestions || isOverMarks} className="flex items-center gap-2 px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-violet-900/50 disabled:opacity-50">
+              <button onClick={handleSaveQuestions} disabled={savingQuestions} className="flex items-center gap-2 px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-violet-900/50 disabled:opacity-50">
                 {savingQuestions ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Questions
               </button>
             </div>
