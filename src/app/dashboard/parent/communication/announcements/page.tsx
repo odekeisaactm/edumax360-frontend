@@ -8,11 +8,10 @@
 // down by a small colored pin (color = priority), with an honest torn/ribbon
 // flag for anything urgent or high priority. The page background reads as
 // the board itself; the reading modal is where the "paper" gets picked up
-// and read close, so its headline switches to an editorial serif (Newsreader)
+// and read close, so its headline switches to an editorial serif
 // while the rest of the UI stays on the app's normal sans face.
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Newsreader } from 'next/font/google';
 import { announcementsAPI } from '@/lib/communication.service';
 import type { Announcement, AnnouncementPriority } from '@/lib/types';
 import RichTextViewer from '@/components/communication/RichTextViewer';
@@ -23,7 +22,9 @@ import {
   ArrowRight, FileText, PartyPopper
 } from 'lucide-react';
 
-const serif = Newsreader({ subsets: ['latin'], weight: ['500', '600', '700'], style: ['normal', 'italic'], display: 'swap' });
+// System serif (Georgia / Cambria / Times). Newsreader via next/font/google broke
+// production builds: Google now serves it from a URL the font loader can't resolve.
+const serif = { className: 'font-serif' };
 
 // ─── Helpers & Constants ───────────────────────────────────────────────────────
 
