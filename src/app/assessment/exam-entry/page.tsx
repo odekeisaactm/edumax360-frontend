@@ -13,7 +13,32 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-interface SchoolInfo { name: string; short_name?: string; logo?: string | null; }
+interface SchoolInfo {
+  name: string; short_name?: string; logo?: string | null;
+  // White-label credit, set per school in School Settings (same fields as the result sheet footer)
+  vendor_name?: string | null; vendor_phone?: string | null; vendor_website?: string | null;
+}
+
+/** "Daisies CBT · powered by …" — shown only when the school has vendor details set. */
+function VendorCredit({ info }: { info: SchoolInfo | null }) {
+  if (!info?.vendor_name) return null;
+  const site = (info.vendor_website || '').trim();
+  const href = site && !/^https?:\/\//i.test(site) ? `https://${site}` : site;
+  const label = (info.short_name || info.name || '').trim();
+  return (
+    <div className="mt-6 text-center text-xs text-slate-500 leading-relaxed">
+      {label && <p className="font-semibold text-slate-600">{label} CBT</p>}
+      <p className="text-[11px] uppercase tracking-wider text-slate-400">powered by</p>
+      <p className="font-semibold text-slate-700">{info.vendor_name}</p>
+      {info.vendor_phone && <p>{info.vendor_phone}</p>}
+      {site && (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+          {site.replace(/^https?:\/\//i, '')}
+        </a>
+      )}
+    </div>
+  );
+}
 
 type PageStep = 'checking-device' | 'unauthorized' | 'entry-form' | 'validating';
 // reg     → student types / resolves a reg number
@@ -555,6 +580,7 @@ export default function ExamEntryPage() {
               </div>
             )}
           </div>
+          <VendorCredit info={schoolInfo} />
         </div>
       </div>
     );
@@ -790,6 +816,8 @@ export default function ExamEntryPage() {
           <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
           Ensure you have a stable internet connection before starting
         </div>
+
+        <VendorCredit info={schoolInfo} />
       </div>
     </div>
   );
