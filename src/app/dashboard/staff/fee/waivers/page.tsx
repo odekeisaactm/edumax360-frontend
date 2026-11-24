@@ -345,10 +345,16 @@ function WaiversContent() {
         count = (listRes as any).count ?? results.length;
       }
 
-      const pending = results.filter((g: any) => g.status === 'pending').length;
-      const approvedTotal = results
-        .filter((g: any) => g.status === 'approved')
-        .reduce((sum: number, g: any) => sum + g.items.reduce((s: number, i: any) => s + parseFloat(i.amount_waived || 0), 0), 0);
+      // Term-wide totals from the server; fall back to this page only on old servers
+      const summary = (listRes as any)?.summary;
+      const pending = summary
+        ? Number(summary.pending_count) || 0
+        : results.filter((g: any) => g.status === 'pending').length;
+      const approvedTotal = summary
+        ? parseFloat(summary.total_approved_amount) || 0
+        : results
+          .filter((g: any) => g.status === 'approved')
+          .reduce((sum: number, g: any) => sum + g.items.reduce((s: number, i: any) => s + parseFloat(i.amount_waived || 0), 0), 0);
 
       setWaivers(results);
       setTotalCount(count);

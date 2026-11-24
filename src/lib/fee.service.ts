@@ -436,10 +436,27 @@ export const appliedDiscountsAPI = {
 // 6. FEE WAIVERS
 // ============================================================
 
+export interface FeeWaiverListResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: FeeWaiver[];
+  /** Totals for every waiver in the selected session/term (not just this page) */
+  summary?: { total_approved_amount: string; pending_count: number };
+}
+
 export const feeWaiversAPI = {
-  list: async (params?: { status?: string; invoice_item?: number; family_invoice_item?: number }): Promise<FeeWaiver[]> => {
+  /**
+   * Paginated: { count, next, previous, results, summary } — one result per waiver
+   * request (grouped items). `count` drives the page buttons; `summary` holds the
+   * term-wide totals. Unpaginated responses come back as a plain array.
+   */
+  list: async (params?: {
+    status?: string; invoice_item?: number; family_invoice_item?: number;
+    session?: string | number; period?: string | number; page?: number; page_size?: number;
+  }): Promise<FeeWaiverListResponse | FeeWaiver[]> => {
     const response = await api.get(`${FEE_API_BASE}/waivers/`, { params });
-    return response.data?.results || response.data || [];
+    return response.data ?? [];
   },
 
   create: async (data: { invoice_item?: number; family_invoice_item?: number; amount_waived: string | number; reason: string }): Promise<FeeWaiver> => {
