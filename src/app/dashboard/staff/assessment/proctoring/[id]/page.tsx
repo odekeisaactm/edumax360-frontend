@@ -9,7 +9,7 @@ import {
   MessageSquare, XCircle, Plus, Minus, Eye, Radio, Activity,
   ChevronDown, ChevronLeft, Search, Filter, MoreHorizontal,
   UserX, UserCheck, Flag, Image as ImageIcon, ZapOff, Zap,
-  Monitor, ArrowLeft, Send, Timer, SlidersHorizontal,
+  Monitor, ArrowLeft, Send, Timer, SlidersHorizontal, RotateCcw,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -38,6 +38,8 @@ interface StudentData {
   client_platform?: string | null;
   violations?: number;
   app_exits?: number;
+  /** Times an invigilator reopened this submitted exam */
+  reopen_count?: number;
 }
 
 const PLATFORM_LABEL: Record<string, string> = { web: 'Web', windows: 'Windows', android: 'Android', ios: 'iOS' };
@@ -436,17 +438,107 @@ function ExtendModal({ open, studentName, onExtend, onClose }: {
   );
 }
 
+// ─── Reopen Modal ─────────────────────────────────────────────────────────────
+// Gives a submitted student access again (same PIN, answers kept, re-marked).
+
+function ReopenModal({ open, studentName, reopenCount, onReopen, onClose }: {
+  open: boolean; studentName: string; reopenCount: number;
+  onReopen: (reason: string, minutes: number) => Promise<void>; onClose: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [minutes, setMinutes] = useState(0);
+  const [busy, setBusy] = useState(false);
+  if (!open) return null;
+
+  const presets = ['Submitted before finishing (e.g. theory)', 'Device / app problem', 'Submitted by mistake'];
+
+  const handle = async () => {
+    if (!reason.trim()) return;
+    setBusy(true);
+    await onReopen(reason.trim(), minutes);
+    setBusy(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[10050] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+        <div className="p-6">
+          <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <RotateCcw className="h-6 w-6 text-emerald-600" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-900 text-center mb-1">Reopen Exam</h3>
+          <p className="text-sm text-slate-500 text-center mb-4">
+            Let <strong className="text-slate-700">{studentName}</strong> back in. Their answers are kept;
+            they log in again with the same PIN.
+          </p>
+          {reopenCount > 0 && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+              Already reopened {reopenCount} time{reopenCount !== 1 ? 's' : ''} for this exam.
+            </p>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">
+                Reason <span className="text-red-500">*</span>
+              </label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {presets.map(p => (
+                  <button key={p} onClick={() => setReason(p)}
+                    className={`px-2 py-1 rounded-lg text-[11px] border ${reason === p ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-200 text-slate-600 hover:border-emerald-300'}`}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <input type="text" value={reason} onChange={e => setReason(e.target.value)}
+                placeholder="Why is this exam being reopened?"
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">
+                Extra minutes <span className="normal-case font-normal text-slate-400">(if their time has run out)</span>
+              </label>
+              <div className="grid grid-cols-5 gap-2">
+                {[0, 5, 10, 15, 30].map(m => (
+                  <button key={m} onClick={() => setMinutes(m)}
+                    className={`py-2 rounded-xl text-sm font-bold border ${minutes === m ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-200 text-slate-600 hover:border-emerald-300'}`}>
+                    {m === 0 ? 'None' : `+${m}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-3 mt-5">
+            <button onClick={onClose}
+              className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+              Cancel
+            </button>
+            <button onClick={handle} disabled={!reason.trim() || busy}
+              className="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+              Reopen
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Student Detail Slide-Over ────────────────────────────────────────────────
 
-function StudentSlideOver({ student, events, onClose, onWarn, onSubmit, onExtend }: {
+function StudentSlideOver({ student, events, onClose, onWarn, onSubmit, onExtend, onReopen }: {
   student: StudentData | null;
   events: TimelineEvent[];
   onClose: () => void;
   onWarn: () => void;
   onSubmit: () => void;
   onExtend: () => void;
+  onReopen: () => void;
 }) {
   const isActive = student?.status === 'in_progress';
+  const isSubmitted = student?.status === 'submitted' || student?.status === 'auto_submitted';
   const risk = RISK_CONFIG[student?.risk_level ?? 'low'];
   const status = STATUS_CONFIG[student?.status ?? 'not_started'];
 
@@ -560,6 +652,17 @@ function StudentSlideOver({ student, events, onClose, onWarn, onSubmit, onExtend
               </div>
             </div>
           )}
+          {isSubmitted && student?.attempt_id && (
+            <div className="px-6 py-4 border-t border-slate-100 flex-shrink-0 space-y-2">
+              {(student.reopen_count ?? 0) > 0 && (
+                <p className="text-xs text-amber-700 text-center">Reopened {student.reopen_count}× already</p>
+              )}
+              <button onClick={onReopen}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold rounded-xl transition-colors text-sm">
+                <RotateCcw className="h-4 w-4" /> Reopen Exam
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -603,6 +706,7 @@ export default function ProctoringRoom() {
   const [warningTarget, setWarningTarget] = useState<StudentData | null>(null);
   const [submitTarget, setSubmitTarget] = useState<StudentData | null>(null);
   const [extendTarget, setExtendTarget] = useState<StudentData | null>(null);
+  const [reopenTarget, setReopenTarget] = useState<StudentData | null>(null);
 
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -708,6 +812,18 @@ export default function ProctoringRoom() {
     }
   };
 
+  const handleReopen = async (reason: string, minutes: number) => {
+    if (!reopenTarget?.attempt_id) return;
+    try {
+      const res = await api.post(`/api/assessment/exam-attempts/${reopenTarget.attempt_id}/reopen/`, { reason, minutes });
+      showToast('success', res.data?.message || `${reopenTarget.student.name} can log in again`);
+      setReopenTarget(null);
+      await fetchData(true);
+    } catch (err) {
+      showToast('error', extractError(err));
+    }
+  };
+
   const handleReviewEvent = async (eventId: number, action: string) => {
     try {
       await api.post(`/api/assessment/proctoring-events/${eventId}/review/`, { action_taken: action });
@@ -775,6 +891,14 @@ export default function ProctoringRoom() {
         onExtend={handleExtendTime}
         onClose={() => setExtendTarget(null)}
       />
+      <ReopenModal
+        key={reopenTarget?.attempt_id ?? 'reopen'}
+        open={!!reopenTarget}
+        studentName={reopenTarget?.student.name ?? ''}
+        reopenCount={reopenTarget?.reopen_count ?? 0}
+        onReopen={handleReopen}
+        onClose={() => setReopenTarget(null)}
+      />
 
       {/* Slide-over */}
       <StudentSlideOver
@@ -784,6 +908,7 @@ export default function ProctoringRoom() {
         onWarn={() => { setWarningTarget(selectedStudent); setSelectedStudent(null); }}
         onSubmit={() => { setSubmitTarget(selectedStudent); setSelectedStudent(null); }}
         onExtend={() => { setExtendTarget(selectedStudent); setSelectedStudent(null); }}
+        onReopen={() => { setReopenTarget(selectedStudent); setSelectedStudent(null); }}
       />
       {selectedStudent && (
         <div className="fixed inset-0 z-[10020] bg-black/20" onClick={() => setSelectedStudent(null)} />
@@ -1010,6 +1135,11 @@ export default function ProctoringRoom() {
                               {student.status === 'submitted' || student.status === 'auto_submitted'
                                 ? `${student.answers_saved} answered`
                                 : '—'}
+                              {(student.reopen_count ?? 0) > 0 && (
+                                <span className="ml-1.5 text-[10px] font-semibold text-amber-700" title="Times reopened by an invigilator">
+                                  · reopened {student.reopen_count}×
+                                </span>
+                              )}
                             </span>
                           )}
                         </div>
@@ -1035,6 +1165,17 @@ export default function ProctoringRoom() {
                               title="Force submit"
                               className="p-1.5 rounded-lg text-red-600 hover:bg-red-100 transition-colors border border-red-200">
                               <XCircle className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                        {(student.status === 'submitted' || student.status === 'auto_submitted') && student.attempt_id && (
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => setReopenTarget(student)}
+                              title="Reopen exam (let the student back in)"
+                              className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-100 transition-colors border border-emerald-200">
+                              <RotateCcw className="h-3.5 w-3.5" />
                             </button>
                           </div>
                         )}
