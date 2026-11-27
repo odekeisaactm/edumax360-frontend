@@ -131,6 +131,35 @@ interface ScheduleItem {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+type ScheduleMap = Record<string, { subject_id: number; schedules: ScheduleItem[] }>;
+
+/** Classes that have a schedule in this exam */
+function classesFrom(bySubject: ScheduleMap): ClassOption[] {
+  const m = new Map<number, string>();
+  Object.values(bySubject).flatMap(g => g.schedules).forEach(s => m.set(s.class_id, s.class));
+  return Array.from(m.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Sections (arms) of a class that have a schedule in this exam */
+function sectionsFrom(bySubject: ScheduleMap, classId: number): SectionOption[] {
+  const m = new Map<number, string>();
+  Object.values(bySubject).forEach(g => g.schedules.forEach((s: any) => {
+    if (s.class_id === classId && s.section_id && s.section) m.set(s.section_id, s.section);
+  }));
+  return Array.from(m.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Subjects for a class + optional section */
+function subjectsFrom(bySubject: ScheduleMap, classId: number, sectionName: string | null): SubjectOption[] {
+  const out: SubjectOption[] = [];
+  Object.entries(bySubject).forEach(([subjectName, group]) => {
+    const match = group.schedules.find(s =>
+      s.class_id === classId && (sectionName === null || s.section === sectionName));
+    if (match) out.push({ name: subjectName, scheduleId: match.id });
+  });
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 const MARKING_STATUS: Record<string, { label: string; color: string }> = {
   marked:        { label: 'Marked',      color: 'bg-emerald-100 text-emerald-700' },
   manual_marked: { label: 'Manual',      color: 'bg-blue-100 text-blue-700' },
@@ -232,8 +261,21 @@ export default function MarkingHubPage() {
     setLoadingStudents(false);
   };
 
+  // Selections live in the address (?exam=&class=&section=&subject=) so that
+  // going to "Mark" and pressing Back returns to the same exam / class / subject.
+  const syncUrl = (sel: { exam?: number; cls?: number; section?: number; subject?: number }) => {
+    if (typeof window === 'undefined') return;
+    const qs = new URLSearchParams();
+    if (sel.exam) qs.set('exam', String(sel.exam));
+    if (sel.cls) qs.set('class', String(sel.cls));
+    if (sel.section) qs.set('section', String(sel.section));
+    if (sel.subject) qs.set('subject', String(sel.subject));
+    const q = qs.toString();
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${q ? `?${q}` : ''}`);
+  };
+
   // Step 1: Exam selected → fetch schedules_status, derive classes
-  const handleExamSelect = async (exam: Exam) => {
+  const handleExamSelect = async (exam: Exam, restoring = false): Promise<ScheduleMap | null> => {
     setSelectedExam(exam);
     setSelectedClass(null);
     setSelectedSection(null);
@@ -244,34 +286,24 @@ export default function MarkingHubPage() {
     cancelMarking();
     setError(null);
     setLoadingSchedules(true);
+    if (!restoring) syncUrl({ exam: exam.id });
 
     try {
       const statusData = await examsAPI.getSchedulesStatus(exam.id);
-      const bySubject = statusData.schedules_by_subject as unknown as Record<
-        string,
-        { subject_id: number; schedules: ScheduleItem[] }
-      >;
+      const bySubject = statusData.schedules_by_subject as unknown as ScheduleMap;
       setSchedulesBySubject(bySubject);
-
-      const classMap = new Map<number, string>();
-      Object.values(bySubject)
-        .flatMap(g => g.schedules)
-        .forEach(s => classMap.set(s.class_id, s.class));
-
-      setClasses(
-        Array.from(classMap.entries())
-          .map(([id, name]) => ({ id, name }))
-          .sort((a, b) => a.name.localeCompare(b.name))
-      );
+      setClasses(classesFrom(bySubject));
+      return bySubject;
     } catch {
       setError('Failed to load exam data.');
+      return null;
     } finally {
       setLoadingSchedules(false);
     }
   };
 
-  // Step 2: Class selected → derive sections (no API call)
-  const handleClassSelect = (cls: ClassOption) => {
+  // Step 2: Class selected → derive sections (no API call). Returns the sections.
+  const handleClassSelect = (cls: ClassOption, bySubject: ScheduleMap = schedulesBySubject, restoring = false) => {
     setSelectedClass(cls);
     setSelectedSection(null);
     setSelectedSubject(null);
@@ -279,49 +311,29 @@ export default function MarkingHubPage() {
     setSubjects([]);
     cancelMarking();
     setError(null);
+    if (!restoring) syncUrl({ exam: selectedExam?.id, cls: cls.id });
 
-    const sectionMap = new Map<number, string>();
-    Object.values(schedulesBySubject).forEach(group => {
-      group.schedules.forEach((s: any) => {
-        if (s.class_id === cls.id && s.section_id && s.section) {
-          sectionMap.set(s.section_id, s.section);
-        }
-      });
-    });
-
-    const derivedSections = Array.from(sectionMap.entries())
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
+    const derivedSections = sectionsFrom(bySubject, cls.id);
     setSections(derivedSections);
-
     if (derivedSections.length === 0) {
-      deriveSubjects(cls.id, null);
+      applySubjects(subjectsFrom(bySubject, cls.id, null));
     }
+    return derivedSections;
   };
 
   // Step 3: Section selected → subjects
-  const handleSectionSelect = (sec: SectionOption) => {
+  const handleSectionSelect = (sec: SectionOption, cls: ClassOption | null = selectedClass,
+                               bySubject: ScheduleMap = schedulesBySubject, restoring = false) => {
     setSelectedSection(sec);
     setSelectedSubject(null);
     setSubjects([]);
     cancelMarking();
     setError(null);
-    deriveSubjects(selectedClass!.id, sec.name);
+    if (!restoring) syncUrl({ exam: selectedExam?.id, cls: cls?.id, section: sec.id });
+    applySubjects(subjectsFrom(bySubject, cls!.id, sec.name));
   };
 
-  // Derive subjects for given class + optional section name
-  const deriveSubjects = (classId: number, sectionName: string | null) => {
-    const result: SubjectOption[] = [];
-    Object.entries(schedulesBySubject).forEach(([subjectName, group]) => {
-      const match = group.schedules.find(s => {
-        if (s.class_id !== classId) return false;
-        if (sectionName !== null && s.section !== sectionName) return false;
-        return true;
-      });
-      if (match) result.push({ name: subjectName, scheduleId: match.id });
-    });
-    result.sort((a, b) => a.name.localeCompare(b.name));
+  const applySubjects = (result: SubjectOption[]) => {
     setSubjects(result);
     if (result.length === 0) setError('No subjects found for this selection.');
   };
@@ -347,13 +359,43 @@ export default function MarkingHubPage() {
     }
   }, []);
 
-  const handleSubjectSelect = (sub: SubjectOption) => {
+  const handleSubjectSelect = (sub: SubjectOption, sel?: { exam?: number; cls?: number; section?: number }) => {
     setSelectedSubject(sub);
     setSearch('');
     setStatusFilter('all');
     cancelMarking();
+    syncUrl({
+      exam: sel?.exam ?? selectedExam?.id, cls: sel?.cls ?? selectedClass?.id,
+      section: sel?.section ?? selectedSection?.id, subject: sub.scheduleId,
+    });
     loadMarkingList(sub.scheduleId);
   };
+
+  // Restore the selections from the address once the exams have loaded
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current || loadingExams || exams.length === 0) return;
+    restoredRef.current = true;
+    const p = new URLSearchParams(window.location.search);
+    const exam = exams.find(e => e.id === Number(p.get('exam')));
+    if (!exam) return;
+    (async () => {
+      const bySubject = await handleExamSelect(exam, true);
+      if (!bySubject) return;
+      const cls = classesFrom(bySubject).find(c => c.id === Number(p.get('class')));
+      if (!cls) return;
+      const secs = handleClassSelect(cls, bySubject, true);
+      let sec: SectionOption | null = null;
+      if (secs.length > 0) {
+        sec = secs.find(s => s.id === Number(p.get('section'))) ?? null;
+        if (!sec) return;
+        handleSectionSelect(sec, cls, bySubject, true);
+      }
+      const sub = subjectsFrom(bySubject, cls.id, sec?.name ?? null)
+        .find(s => s.scheduleId === Number(p.get('subject')));
+      if (sub) handleSubjectSelect(sub, { exam: exam.id, cls: cls.id, section: sec?.id });
+    })();
+  }, [exams, loadingExams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRefresh = () => {
     if (selectedSubject) loadMarkingList(selectedSubject.scheduleId);

@@ -268,6 +268,7 @@ export default function StaffFundWalletPage() {
       if (paymentMode === 'offline') {
         const formData = new FormData();
         formData.append('staff', String(staffProfile.id));
+        formData.append('for_self', 'true'); // server uses the logged-in staff member's own wallet
         formData.append('amount', String(numAmount));
         formData.append('method', 'bank_transfer');
         formData.append('mode', 'offline');
@@ -286,6 +287,7 @@ export default function StaffFundWalletPage() {
       } else {
         const pendingPayload = {
           staff: staffProfile.id,
+          for_self: true, // server uses the logged-in staff member's own wallet
           amount: numAmount,
           method: 'online_gateway',
           mode: 'online',
